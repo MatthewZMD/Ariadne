@@ -150,6 +150,7 @@ function castRay(maze: number[][], pose: Pose, angle: number) {
 
 function renderScene(ctx: CanvasRenderingContext2D, game: Game, pose: Pose, moving: boolean) {
   const { width, height } = ctx.canvas;
+  const time = performance.now() * 0.001;
   const bob = moving ? Math.sin(pose.bob) * 3.5 : 0;
   const horizon = height * 0.47 + bob;
   const ceiling = ctx.createLinearGradient(0, 0, 0, horizon);
@@ -177,19 +178,36 @@ function renderScene(ctx: CanvasRenderingContext2D, game: Game, pose: Pose, movi
     const top = horizon - wallH / 2;
     const x = (i / RAYS) * width;
     const columnW = width / RAYS + 1;
-    const hash = ((ray.mapX * 37 + ray.mapY * 71) % 11) - 5;
+    const wallSeed = Math.abs(ray.mapX * 137 + ray.mapY * 263 + ray.side * 41);
+    const theme = wallSeed % 7;
+    const palettes = [
+      [76, 21, 42],  // mossy limestone
+      [24, 28, 46],  // warm terracotta
+      [205, 16, 45], // blue slate
+      [276, 13, 43], // faded violet stone
+      [44, 26, 47],  // ochre warning wall
+      [171, 17, 43], // impossible oxidized copper
+      [7, 18, 45],   // fossil-red sandstone
+    ];
+    const [hue, baseSaturation, baseLight] = palettes[theme];
+    const hash = (wallSeed % 11) - 5;
     const fog = Math.min(1, corrected / 10.5);
-    const light = Math.max(19, 47 - fog * 25 + hash * 0.45 - ray.side * 5);
-    const saturation = Math.max(7, 18 - fog * 8);
-    ctx.fillStyle = `hsl(41 ${saturation}% ${light}%)`;
+    const light = Math.max(18, baseLight - fog * 24 + hash * 0.38 - ray.side * 5);
+    const saturation = Math.max(7, baseSaturation - fog * 9);
+    ctx.fillStyle = `hsl(${hue} ${saturation}% ${light}%)`;
     ctx.fillRect(x, top, columnW, wallH);
 
-    const verticalMortar = ray.texture < 0.035 || ray.texture > 0.965;
-    if (verticalMortar) {
-      ctx.fillStyle = `rgba(18, 20, 17, ${0.26 + fog * 0.24})`;
-      ctx.fillRect(x, top, columnW, wallH);
-    }
+    // Staggered masonry: each row offsets its vertical joins like real blocks.
     const blockRows = 5;
+    for (let row = 0; row < blockRows; row++) {
+      const rowTop = top + wallH * (row / blockRows);
+      const rowBottom = top + wallH * ((row + 1) / blockRows);
+      const brickU = (ray.texture * 2 + (row % 2) * .5) % 1;
+      if (brickU < .035 || brickU > .965) {
+        ctx.fillStyle = `rgba(16, 18, 15, ${0.24 + fog * 0.22})`;
+        ctx.fillRect(x, rowTop, columnW, rowBottom - rowTop);
+      }
+    }
     for (let row = 1; row < blockRows; row++) {
       const seam = top + wallH * (row / blockRows);
       if (seam >= 0 && seam <= height) {
@@ -197,6 +215,81 @@ function renderScene(ctx: CanvasRenderingContext2D, game: Game, pose: Pose, movi
         ctx.fillRect(x, seam, columnW, Math.max(1, wallH * 0.008));
       }
     }
+
+    // Each cell receives one persistent wall character, derived from its grid
+    // coordinates. The effects are intentionally muted so variety stays calm.
+    if (theme === 0) {
+      const mossDepth = .1 + ((Math.sin(ray.texture * 19 + wallSeed) + 1) * .5) * .28;
+      ctx.fillStyle = `rgba(64, 91, 51, ${(.34 - fog * .18).toFixed(3)})`;
+      ctx.fillRect(x, top, columnW, wallH * mossDepth);
+      if ((Math.floor(ray.texture * 31 + wallSeed) % 9) === 0) {
+        ctx.fillStyle = `rgba(48, 77, 41, ${(.38 - fog * .18).toFixed(3)})`;
+        ctx.fillRect(x, top, columnW, wallH * Math.min(.7, mossDepth + .24));
+      }
+    } else if (theme === 1) {
+      for (let band = 0; band < 8; band++) {
+        const checker = (Math.floor(ray.texture * 8) + band + wallSeed) % 2;
+        if (checker === 0) {
+          ctx.fillStyle = `rgba(213, 151, 88, ${(.13 * (1 - fog)).toFixed(3)})`;
+          ctx.fillRect(x, top + wallH * band / 8, columnW, wallH / 8);
+        }
+      }
+    } else if (theme === 2) {
+      const bandTop = top + wallH * .37;
+      const bandH = wallH * .23;
+      const stripe = Math.floor(ray.texture * 13 + wallSeed) % 2;
+      ctx.fillStyle = stripe ? `rgba(175, 150, 82, ${.24 * (1 - fog)})` : `rgba(24, 29, 28, ${.27 * (1 - fog)})`;
+      ctx.fillRect(x, bandTop, columnW, bandH);
+    } else if (theme === 3) {
+      // A large geometric rune assembled from projected pixel segments.
+      for (let band = 0; band < 13; band++) {
+        const v = (band + .5) / 13;
+        const u = ray.texture;
+        const ring = Math.abs(Math.hypot((u - .5) * 1.7, (v - .5) * 1.7) - .34) < .055;
+        const stem = Math.abs(u - .5) < .045 && v > .22 && v < .78;
+        const arms = Math.abs(v - .5) < .05 && u > .24 && u < .76;
+        if (ring || stem || arms) {
+          ctx.fillStyle = `rgba(190, 156, 188, ${.28 * (1 - fog)})`;
+          ctx.fillRect(x, top + wallH * band / 13, columnW, wallH / 13 + 1);
+        }
+      }
+    } else if (theme === 4) {
+      // Tiny ceramic inlays that read like a constellation from a distance.
+      for (let dot = 0; dot < 4; dot++) {
+        const dotU = ((wallSeed * (dot + 3) * 17) % 91) / 91;
+        const dotV = ((wallSeed * (dot + 5) * 29) % 83) / 83;
+        if (Math.abs(ray.texture - dotU) < .018) {
+          ctx.fillStyle = `rgba(204, 194, 131, ${.38 * (1 - fog)})`;
+          ctx.fillRect(x, top + wallH * dotV, columnW, Math.max(2, wallH * .025));
+        }
+      }
+    } else if (theme === 5) {
+      // A very slow, low-contrast shimmer hints that this surface is unstable.
+      const wave = (Math.sin(ray.texture * 22 + time * .75 + wallSeed) + 1) * .5;
+      ctx.fillStyle = `rgba(${wave > .55 ? "76, 143, 132" : "122, 91, 129"}, ${(.07 + wave * .07) * (1 - fog)})`;
+      ctx.fillRect(x, top, columnW, wallH);
+    } else {
+      // Fossil rings embedded in the sandstone.
+      for (let band = 0; band < 15; band++) {
+        const v = (band + .5) / 15;
+        const radius = Math.hypot((ray.texture - .5) * 1.3, (v - .52) * 1.3);
+        if (Math.abs(radius - .18) < .025 || Math.abs(radius - .34) < .022) {
+          ctx.fillStyle = `rgba(225, 185, 139, ${.2 * (1 - fog)})`;
+          ctx.fillRect(x, top + wallH * band / 15, columnW, wallH / 15 + 1);
+        }
+      }
+    }
+
+    // Sparse cracks cross all wall families and break up perfect repetition.
+    for (let segment = 0; segment < 7; segment++) {
+      const v = (segment + .5) / 7;
+      const crackU = .16 + ((wallSeed % 47) / 47) * .55 + Math.sin(v * 14 + wallSeed) * .055;
+      if (Math.abs(ray.texture - crackU) < .012) {
+        ctx.fillStyle = `rgba(17, 18, 15, ${.26 * (1 - fog)})`;
+        ctx.fillRect(x, top + wallH * segment / 7, columnW, wallH / 7 + 1);
+      }
+    }
+
     const grain = (Math.sin(ray.texture * 74 + ray.mapX * 9 + ray.mapY * 5) + 1) * 0.5;
     ctx.fillStyle = `rgba(238, 224, 185, ${grain * 0.035 * (1 - fog)})`;
     ctx.fillRect(x, top, columnW, wallH);
