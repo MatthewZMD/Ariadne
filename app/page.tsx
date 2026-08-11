@@ -30,7 +30,15 @@ function key(x: number, y: number) {
   return `${x},${y}`;
 }
 
-function makeMaze(): number[][] {
+function seededRandom(seed: number) {
+  let value = seed >>> 0;
+  return () => {
+    value = (value * 1664525 + 1013904223) >>> 0;
+    return value / 4294967296;
+  };
+}
+
+function makeMaze(random: () => number): number[][] {
   const grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(1));
   const stack: Point[] = [{ x: 1, y: 1 }];
   grid[1][1] = 0;
@@ -47,7 +55,7 @@ function makeMaze(): number[][] {
       stack.pop();
       continue;
     }
-    const next = options[Math.floor(Math.random() * options.length)];
+    const next = options[Math.floor(random() * options.length)];
     grid[current.y + next.y / 2][current.x + next.x / 2] = 0;
     grid[current.y + next.y][current.x + next.x] = 0;
     stack.push({ x: current.x + next.x, y: current.y + next.y });
@@ -103,8 +111,8 @@ function shiftUnseen(game: Game, protectedCells: Set<string>) {
   return changes ? maze : game.maze;
 }
 
-function initialGame(): Game {
-  const maze = makeMaze();
+function initialGame(seed = 1337): Game {
+  const maze = makeMaze(seededRandom(seed));
   const exit = { x: SIZE - 2, y: SIZE - 2 };
   maze[exit.y][exit.x] = 0;
   const seen = visibleCells(maze, { x: 1, y: 1 }, 0);
@@ -230,7 +238,7 @@ export default function Home() {
     for (let y = 0; y < height; y += 4) ctx.fillRect(0, y, width, 1);
   }, [game]);
 
-  const reset = () => setGame(initialGame());
+  const reset = () => setGame(initialGame(Date.now()));
 
   return (
     <main className="shell">
