@@ -20,6 +20,7 @@ type Game = {
   seen: Set<string>;
   visitAge: Record<string, number>;
   player: Point;
+  spawnAngle: number;
   moves: number;
   shifts: number;
   message: string;
@@ -57,6 +58,20 @@ function makeMaze(random: () => number): number[][] {
     stack.push({ x: current.x + next.x, y: current.y + next.y });
   }
   return grid;
+}
+
+function chooseSpawnAngle(maze: number[][]) {
+  let bestDirection = 0;
+  let bestDepth = -1;
+  DIRS.forEach((direction, index) => {
+    let depth = 0;
+    while (maze[1 + direction.y * (depth + 1)]?.[1 + direction.x * (depth + 1)] === 0) depth++;
+    if (depth > bestDepth) {
+      bestDepth = depth;
+      bestDirection = index;
+    }
+  });
+  return bestDirection * (Math.PI / 2);
 }
 
 function connectedCells(maze: number[][], from: Point) {
@@ -122,14 +137,15 @@ function shiftUnseen(game: Game, protectedCells: Set<string>) {
 
 function initialGame(seed = 1337): Game {
   const maze = makeMaze(seededRandom(seed));
-  const pose = { x: 1.5, y: 1.5, angle: 0 };
+  const spawnAngle = chooseSpawnAngle(maze);
+  const pose = { x: 1.5, y: 1.5, angle: spawnAngle };
   const seen = visibleCells(maze, pose);
   const memory = Array.from({ length: SIZE }, () => Array(SIZE).fill(-1));
   seen.forEach((cell) => {
     const [x, y] = cell.split(",").map(Number);
     if (maze[y]?.[x] !== undefined) memory[y][x] = maze[y][x];
   });
-  return { maze, memory, seen, visitAge: { "1,1": 0 }, player: { x: 1, y: 1 }, moves: 0, shifts: 0, message: "NO DESTINATION // KEEP MOVING", };
+  return { maze, memory, seen, visitAge: { "1,1": 0 }, player: { x: 1, y: 1 }, spawnAngle, moves: 0, shifts: 0, message: "NO DESTINATION // KEEP MOVING" };
 }
 
 function castRay(maze: number[][], pose: Pose, angle: number) {
@@ -320,11 +336,11 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [game, setGame] = useState<Game>(() => initialGame());
   const gameRef = useRef(game);
-  const poseRef = useRef<Pose>({ x: 1.5, y: 1.5, angle: 0, bob: 0 });
+  const poseRef = useRef<Pose>({ x: 1.5, y: 1.5, angle: game.spawnAngle, bob: 0 });
   const heldRef = useRef(new Set<string>());
   const lastCellRef = useRef("1,1");
   const touchXRef = useRef<number | null>(null);
-  const [heading, setHeading] = useState("E");
+  const [heading, setHeading] = useState(() => bearing(game.spawnAngle));
 
   useEffect(() => { gameRef.current = game; }, [game]);
 
@@ -429,11 +445,12 @@ export default function Home() {
   };
 
   const reset = () => {
+    const nextGame = initialGame(Date.now());
     heldRef.current.clear();
-    poseRef.current = { x: 1.5, y: 1.5, angle: 0, bob: 0 };
+    poseRef.current = { x: 1.5, y: 1.5, angle: nextGame.spawnAngle, bob: 0 };
     lastCellRef.current = "1,1";
-    setHeading("E");
-    setGame(initialGame(Date.now()));
+    setHeading(bearing(nextGame.spawnAngle));
+    setGame(nextGame);
   };
 
   return (
