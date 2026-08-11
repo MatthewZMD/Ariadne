@@ -20,11 +20,9 @@ type Game = {
   seen: Set<string>;
   visitAge: Record<string, number>;
   player: Point;
-  exit: Point;
   moves: number;
   shifts: number;
   message: string;
-  escaped: boolean;
 };
 
 const key = (x: number, y: number) => `${x},${y}`;
@@ -78,10 +76,9 @@ function connectedCells(maze: number[][], from: Point) {
   return visited;
 }
 
-function topologyIsSafe(maze: number[][], from: Point, exit: Point) {
-  if (maze[from.y]?.[from.x] !== 0 || maze[exit.y]?.[exit.x] !== 0) return false;
+function topologyIsSafe(maze: number[][], from: Point) {
+  if (maze[from.y]?.[from.x] !== 0) return false;
   const connected = connectedCells(maze, from);
-  if (!connected.has(key(exit.x, exit.y))) return false;
   let openCells = 0;
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) if (maze[y][x] === 0) openCells++;
@@ -114,10 +111,10 @@ function shiftUnseen(game: Game, protectedCells: Set<string>) {
   for (let attempt = 0; attempt < 90 && changes < 6; attempt++) {
     const x = 1 + Math.floor(Math.random() * (SIZE - 2));
     const y = 1 + Math.floor(Math.random() * (SIZE - 2));
-    if (protectedCells.has(key(x, y)) || (x === game.exit.x && y === game.exit.y)) continue;
+    if (protectedCells.has(key(x, y))) continue;
     const old = maze[y][x];
     maze[y][x] = old ? 0 : 1;
-    if (topologyIsSafe(maze, game.player, game.exit)) changes++;
+    if (topologyIsSafe(maze, game.player)) changes++;
     else maze[y][x] = old;
   }
   return changes ? maze : game.maze;
@@ -125,8 +122,6 @@ function shiftUnseen(game: Game, protectedCells: Set<string>) {
 
 function initialGame(seed = 1337): Game {
   const maze = makeMaze(seededRandom(seed));
-  const exit = { x: SIZE - 2, y: SIZE - 2 };
-  maze[exit.y][exit.x] = 0;
   const pose = { x: 1.5, y: 1.5, angle: 0 };
   const seen = visibleCells(maze, pose);
   const memory = Array.from({ length: SIZE }, () => Array(SIZE).fill(-1));
@@ -134,7 +129,7 @@ function initialGame(seed = 1337): Game {
     const [x, y] = cell.split(",").map(Number);
     if (maze[y]?.[x] !== undefined) memory[y][x] = maze[y][x];
   });
-  return { maze, memory, seen, visitAge: { "1,1": 0 }, player: { x: 1, y: 1 }, exit, moves: 0, shifts: 0, message: "SIGNAL ACQUIRED // FIND THE GREEN DOOR", escaped: false };
+  return { maze, memory, seen, visitAge: { "1,1": 0 }, player: { x: 1, y: 1 }, moves: 0, shifts: 0, message: "NO DESTINATION // KEEP MOVING", };
 }
 
 function castRay(maze: number[][], pose: Pose, angle: number) {
@@ -307,10 +302,6 @@ function renderScene(ctx: CanvasRenderingContext2D, game: Game, pose: Pose, movi
     ctx.fillStyle = `rgba(238, 224, 185, ${grain * 0.035 * (1 - fog)})`;
     ctx.fillRect(x, top, columnW, wallH);
 
-    if (ray.mapX === game.exit.x && ray.mapY === game.exit.y) {
-      ctx.fillStyle = `rgba(95, 190, 112, ${0.54 * (1 - fog * .55)})`;
-      ctx.fillRect(x, top, columnW, wallH);
-    }
   }
 
   const fog = ctx.createRadialGradient(width / 2, horizon, height * .12, width / 2, horizon, width * .7);
@@ -340,7 +331,6 @@ export default function Home() {
   const visitCell = useCallback((x: number, y: number) => {
     lastCellRef.current = key(x, y);
     setGame((old) => {
-      if (old.escaped) return old;
       const pose = poseRef.current;
       const player = { x, y };
       const moves = old.moves + 1;
@@ -365,8 +355,7 @@ export default function Home() {
         const [cx, cy] = cell.split(",").map(Number);
         if (maze[cy]?.[cx] !== undefined) memory[cy][cx] = maze[cy][cx];
       });
-      const escaped = x === old.exit.x && y === old.exit.y;
-      return { ...old, maze, memory, seen, visitAge, player, moves, shifts, escaped, message: escaped ? "EXIT HELD IN SIGHT // LOOP BROKEN" : message };
+      return { ...old, maze, memory, seen, visitAge, player, moves, shifts, message };
     });
   }, []);
 
@@ -409,7 +398,7 @@ export default function Home() {
       let drive = 0;
       if (held.has("w") || held.has("arrowup")) drive += 1;
       if (held.has("s") || held.has("arrowdown")) drive -= 1;
-      const moving = drive !== 0 && !current.escaped;
+      const moving = drive !== 0;
       if (moving) {
         const distance = drive * MOVE_SPEED * dt;
         const nx = pose.x + Math.cos(pose.angle) * distance;
@@ -472,9 +461,6 @@ export default function Home() {
             onTouchEnd={() => { touchXRef.current = null; }}
           />
           <div className="vignette" />
-          {game.escaped && (
-            <div className="escape-card"><p>LOOP INTERRUPTED</p><h1>YOU HELD THE EXIT IN VIEW.</h1><button onClick={reset}>ENTER AGAIN</button></div>
-          )}
         </div>
 
         <aside className="console">
@@ -482,8 +468,7 @@ export default function Home() {
           <div className="minimap" style={{ gridTemplateColumns: `repeat(${SIZE}, 1fr)` }} aria-label="Map of remembered maze geometry">
             {game.memory.flatMap((row, y) => row.map((cell, x) => {
               const isPlayer = game.player.x === x && game.player.y === y;
-              const isExit = game.exit.x === x && game.exit.y === y && game.seen.has(key(x, y));
-              return <span key={key(x, y)} className={`${cell === 1 ? "wall" : cell === 0 ? "path" : "unknown"} ${isPlayer ? "player" : ""} ${isExit ? "exit" : ""}`} />;
+              return <span key={key(x, y)} className={`${cell === 1 ? "wall" : cell === 0 ? "path" : "unknown"} ${isPlayer ? "player" : ""}`} />;
             }))}
           </div>
           <p className="map-note">WARNING: MEMORY IS NOT GEOMETRY</p>
