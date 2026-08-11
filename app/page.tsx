@@ -18,6 +18,7 @@ type Game = {
   maze: number[][];
   memory: number[][];
   seen: Set<string>;
+  visitAge: Record<string, number>;
   player: Point;
   exit: Point;
   moves: number;
@@ -60,12 +61,11 @@ function makeMaze(random: () => number): number[][] {
   return grid;
 }
 
-function canReach(maze: number[][], from: Point, to: Point) {
+function connectedCells(maze: number[][], from: Point) {
   const queue = [from];
   const visited = new Set([key(from.x, from.y)]);
   while (queue.length) {
     const p = queue.shift()!;
-    if (p.x === to.x && p.y === to.y) return true;
     for (const d of DIRS) {
       const x = p.x + d.x;
       const y = p.y + d.y;
@@ -75,7 +75,20 @@ function canReach(maze: number[][], from: Point, to: Point) {
       }
     }
   }
-  return false;
+  return visited;
+}
+
+function topologyIsSafe(maze: number[][], from: Point, exit: Point) {
+  if (maze[from.y]?.[from.x] !== 0 || maze[exit.y]?.[exit.x] !== 0) return false;
+  const connected = connectedCells(maze, from);
+  if (!connected.has(key(exit.x, exit.y))) return false;
+  let openCells = 0;
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) if (maze[y][x] === 0) openCells++;
+  }
+  // Reject every candidate that would create a sealed room, orphan corridor,
+  // or disconnected loop anywhere in the maze—not only near the player.
+  return connected.size === openCells;
 }
 
 function visibleCells(maze: number[][], pose: Pick<Pose, "x" | "y" | "angle">) {
@@ -104,7 +117,7 @@ function shiftUnseen(game: Game, protectedCells: Set<string>) {
     if (protectedCells.has(key(x, y)) || (x === game.exit.x && y === game.exit.y)) continue;
     const old = maze[y][x];
     maze[y][x] = old ? 0 : 1;
-    if (canReach(maze, game.player, game.exit)) changes++;
+    if (topologyIsSafe(maze, game.player, game.exit)) changes++;
     else maze[y][x] = old;
   }
   return changes ? maze : game.maze;
@@ -121,7 +134,7 @@ function initialGame(seed = 1337): Game {
     const [x, y] = cell.split(",").map(Number);
     if (maze[y]?.[x] !== undefined) memory[y][x] = maze[y][x];
   });
-  return { maze, memory, seen, player: { x: 1, y: 1 }, exit, moves: 0, shifts: 0, message: "SIGNAL ACQUIRED // FIND THE GREEN DOOR", escaped: false };
+  return { maze, memory, seen, visitAge: { "1,1": 0 }, player: { x: 1, y: 1 }, exit, moves: 0, shifts: 0, message: "SIGNAL ACQUIRED // FIND THE GREEN DOOR", escaped: false };
 }
 
 function castRay(maze: number[][], pose: Pose, angle: number) {
@@ -331,12 +344,18 @@ export default function Home() {
       const pose = poseRef.current;
       const player = { x, y };
       const moves = old.moves + 1;
+      const visitAge = { ...old.visitAge, [key(x, y)]: moves };
       let maze = old.maze;
       let shifts = old.shifts;
       let message = "FOOTSTEPS ECHO BEHIND YOU";
       const protectedCells = visibleCells(maze, pose);
+      // Footprints have a grace period. Once they are more than twelve cells
+      // old and out of 360° line of sight, the maze may reclaim that geometry.
+      for (const [cell, lastVisit] of Object.entries(visitAge)) {
+        if (moves - lastVisit <= 12) protectedCells.add(cell);
+      }
       if (moves % 3 === 0) {
-        const shifted = shiftUnseen({ ...old, player, moves }, protectedCells);
+        const shifted = shiftUnseen({ ...old, player, moves, visitAge }, protectedCells);
         if (shifted !== maze) { maze = shifted; shifts++; message = "GEOMETRY SHIFT DETECTED OUTSIDE VIEW"; }
       }
       const seen = new Set(old.seen);
@@ -347,7 +366,7 @@ export default function Home() {
         if (maze[cy]?.[cx] !== undefined) memory[cy][cx] = maze[cy][cx];
       });
       const escaped = x === old.exit.x && y === old.exit.y;
-      return { ...old, maze, memory, seen, player, moves, shifts, escaped, message: escaped ? "EXIT HELD IN SIGHT // LOOP BROKEN" : message };
+      return { ...old, maze, memory, seen, visitAge, player, moves, shifts, escaped, message: escaped ? "EXIT HELD IN SIGHT // LOOP BROKEN" : message };
     });
   }, []);
 
