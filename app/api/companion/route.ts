@@ -1,9 +1,9 @@
-import { deterministicReply, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceEvidence, type PlayerActivity, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
+import { deterministicReply, verifiedAutonomousObservation, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type PlayerActivity, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 
 type RequestBody={
   sessionId:string;trigger:CompanionEvent;activity:PlayerActivity;recommendation:unknown;recommendationEvidence:GuidanceEvidence|null;
-  actualTrajectory:unknown[];currentView:unknown;environment:VisibleEnvironment;rememberedMap:string;
+  actualTrajectory:unknown[];currentView:EgocentricView;environment:VisibleEnvironment;rememberedMap:string;
   legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;playerMessage?:string;
 };
 
@@ -37,6 +37,11 @@ export function enforceActivityGrounding(reply:CompanionReply,activity:PlayerAct
   return{...reply,message:reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!movementClaim.test(sentence)).join(" ").trim()};
 }
 
+export function enforcePlayerView(reply:CompanionReply,body:Pick<RequestBody,"trigger"|"activity"|"environment"|"legalRoutes">):CompanionReply{
+  if(body.trigger.type==="player_message")return enforceActivityGrounding(reply,body.activity,body.trigger);
+  return{...reply,message:verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length),selectedRouteId:body.trigger.type==="idle"?null:reply.selectedRouteId};
+}
+
 function semanticRecommendation(value:unknown){
   if(!value||typeof value!=="object")return null;
   const item=value as {message?:unknown;kind?:unknown;suggestedRouteId?:unknown};
@@ -48,7 +53,7 @@ function semanticMovement(evidence:GuidanceEvidence|null){
   const initial=evidence.initialDirectionSimilarity>=.75?"The player's initial movement was in the recommended general direction.":evidence.initialDirectionSimilarity<=.25?"The player's initial movement was in the opposite general direction.":"The player's initial movement was sideways or ambiguous relative to the recommendation.";
   const overlap=evidence.suggestedCellOverlap>=.7?"Most subsequent movement overlapped the suggested path.":evidence.suggestedCellOverlap>=.3?"Some, but not all, subsequent movement overlapped the suggested path.":evidence.suggestedCellOverlap>0?"Only a small part of the movement overlapped the suggested path.":"The movement did not overlap the suggested path.";
   const progress=evidence.reachedSuggestedTarget?"The intended destination was reached.":evidence.movementTowardTarget>.2?"The player is meaningfully closer to the intended destination.":evidence.movementAwayFromTarget>.2?"The player is meaningfully farther from the intended destination.":"Distance to the intended destination has not changed meaningfully.";
-  const facts=[evidence.rejoinedAt?"The player diverged and later rejoined the suggested path.":"",evidence.reachedSameTargetByDifferentRoute?"The player reached the same destination by a different path.":"",evidence.recommendationContradictedByVisibleEvidence?"Current visible evidence contradicts the earlier recommendation.":"",evidence.loopEncountered?"A loop was encountered.":"",evidence.backtrackingObserved?"Sustained backtracking was observed.":""].filter(Boolean).join(" ");
+  const facts=[evidence.rejoinedAt?"The player diverged and later returned to the suggested path.":"",evidence.reachedSameTargetByDifferentRoute?"The player reached the same destination by a different path.":"",evidence.recommendationContradictedByVisibleEvidence?"The earlier recommendation is blocked in the player's current view.":"",evidence.backtrackingObserved?"The player walked back over recent steps.":""].filter(Boolean).join(" ");
   return`${initial} ${overlap} ${progress}${facts?` ${facts}`:""}`;
 }
 
@@ -69,11 +74,11 @@ async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply
 export async function POST(request:Request){
   let body:unknown;try{body=await request.json()}catch{return Response.json({error:"invalid JSON"},{status:400})}
   if(!validBody(body))return Response.json({error:"invalid companion request"},{status:400});
-  const fallback=()=>enforceActivityGrounding(groundReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.recentMessages),body.legalRoutes),body.activity,body.trigger);
+  const fallback=()=>enforcePlayerView(groundReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.recentMessages),body.legalRoutes),body);
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback"});
     const reply=await openRouter(body,apiKey);if(!validReply(reply,body.legalRoutes))return Response.json({...fallback(),source:"fallback"});
-    return Response.json({...enforceActivityGrounding(groundReply(reply,body.legalRoutes),body.activity,body.trigger),source:"provider"});
+    return Response.json({...enforcePlayerView(groundReply(reply,body.legalRoutes),body),source:"provider"});
   }catch{return Response.json({...fallback(),source:"fallback"})}
 }

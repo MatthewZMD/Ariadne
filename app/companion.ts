@@ -65,11 +65,9 @@ export type CompanionEvent =
   | {type:"target_reached"}
   | {type:"same_target_reached_differently"}
   | {type:"new_junction_visible";routeIds:string[]}
-  | {type:"loop_visible";locationId:string}
-  | {type:"familiar_place_visible";locationId:string}
+  | {type:"revisited_position"}
   | {type:"environment_visible";regionId:string;environment:ThemeId}
   | {type:"environment_entered";regionId:string;environment:ThemeId}
-  | {type:"landmark_visible";landmark:string}
   | {type:"sustained_backtrack"}
   | {type:"repeated_collision"}
   | {type:"idle";seconds:number;atChoice:boolean}
@@ -214,6 +212,16 @@ export function analyzePlayerActivity(samples:TrajectorySample[],now:number,last
   const state:PlayerActivity["state"]=stationarySeconds>=5?"stationary":translationIdle>=2&&turnIdle<2?"turning_in_place":"walking";
   const description=state==="stationary"?`The player has remained completely still for ${stationarySeconds} seconds. Their position and viewing direction have not changed during that time.`:state==="turning_in_place"?"The player is looking around without changing position.":"The player is currently walking or has walked within the last few seconds.";
   return{state,stationarySeconds:state==="stationary"?stationarySeconds:0,positionChangedSinceRecommendation:positionChanged,headingChangedSinceRecommendation:headingChanged,atVisibleChoice,description};
+}
+
+export function verifiedAutonomousObservation(event:CompanionEvent,environment:VisibleEnvironment,activity:PlayerActivity,routeCount:number){
+  if(event.type==="idle")return`You have stayed still for ${activity.stationarySeconds} seconds. I will wait.`;
+  if(event.type==="revisited_position")return"You have stood in this exact spot before.";
+  if(event.type==="environment_visible"&&environment)return`You can see ${environment.details.join(" and ")} here—this is ${/^([aeiou])/i.test(environment.name)?"an":"a"} ${environment.name}.`;
+  if(event.type==="recommendation_contradicted")return"The direction I gave you is blocked from where you are now. Sorry.";
+  if(event.type==="repeated_collision")return"There is a wall directly in front of you.";
+  if(event.type==="new_junction_visible"&&routeCount>1)return"There is more than one open direction from here.";
+  return"";
 }
 
 export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=7){

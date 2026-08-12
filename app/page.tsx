@@ -172,7 +172,7 @@ export default function Home(){
       else if(evidence?.reachedSuggestedTarget)event={type:"target_reached"};
       else{
         const locationId=cellKey(current.player.x,current.player.y),familiar=current.recent.slice(0,-1).includes(locationId)&&!seenFamiliarPlacesRef.current.has(locationId);
-        if(familiar){seenFamiliarPlacesRef.current.add(locationId);event={type:"familiar_place_visible",locationId}}
+        if(familiar){seenFamiliarPlacesRef.current.add(locationId);event={type:"revisited_position"}}
         else if(evidence&&(evidence.suggestedCellOverlap>=.45||evidence.rejoinedAt||evidence.newCellsRevealedOffSuggestedPath>=5))event={type:"trajectory_relationship_changed"};
       }
     }
