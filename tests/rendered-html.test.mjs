@@ -40,6 +40,14 @@ test("checkpoint cadence is bounded and shuffle bag prevents early repeats",()=>
   for(let i=0;i<themes.length;i+=THEME_IDS.length)assert.equal(new Set(themes.slice(i,i+THEME_IDS.length)).size,THEME_IDS.length);
 });
 
+test("theme definitions provide multiple projected wall sprites",async()=>{
+  const{THEMES}=await import("../app/themes.ts");
+  for(const[id,theme]of Object.entries(THEMES)){
+    assert.ok(theme.wallSprites.length>=3,`${id} needs wall sprite diversity`);
+    assert.equal(new Set(theme.wallSprites).size,theme.wallSprites.length);
+  }
+});
+
 async function render(){
   const workerUrl=new URL("../dist/server/index.js",import.meta.url);workerUrl.searchParams.set("test",`${process.pid}-${Date.now()}`);
   const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/",{headers:{accept:"text/html"}}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});

@@ -35,6 +35,33 @@ function sprite(ctx:CanvasRenderingContext2D,x:number,y:number,size:number,kind:
   ctx.restore();
 }
 
+function wallSprite(ctx:CanvasRenderingContext2D,x:number,top:number,width:number,height:number,u:number,kind:string,accent:string,alpha:number){
+  const cellX=Math.floor(u*16),draw=(gx:number,gy:number,gw:number,gh:number,color=accent)=>{
+    if(cellX>=gx&&cellX<gx+gw){ctx.fillStyle=color;ctx.globalAlpha=alpha;ctx.fillRect(x,top+height*gy/16,width,height*gh/16+1)}
+  };
+  ctx.save();ctx.imageSmoothingEnabled=false;
+  if(kind==="porthole"||kind==="frost-window"||kind==="broken-window"||kind==="root-window"){
+    for(let gy=2;gy<14;gy++){const edge=Math.abs(Math.hypot(cellX-7.5,gy-7.5)-5)<1.1;if(edge)draw(cellX,gy,1,1);else if(Math.hypot(cellX-7.5,gy-7.5)<4)draw(cellX,gy,1,1,"rgba(24,56,64,.75)")}
+    draw(7,2,1,12,"rgba(15,24,25,.55)");draw(2,7,12,1,"rgba(15,24,25,.55)");
+  }else if(kind.includes("pipe")||kind==="storm-gauge"||kind==="pressure-dial"){
+    draw(3,1,2,14);draw(10,1,2,14);draw(4,3,7,2);draw(4,11,7,2);for(let gy=5;gy<11;gy++){const ring=Math.abs(Math.hypot(cellX-7.5,gy-7.5)-2.4)<.8;if(ring)draw(cellX,gy,1,1,"rgba(224,191,112,.9)")}
+  }else if(kind==="bookcase"){
+    draw(1,1,14,14,"rgba(43,57,67,.72)");for(let gy=3;gy<15;gy+=4)draw(1,gy,14,1,"rgba(197,226,230,.65)");if(cellX>1&&cellX<15&&cellX%2===0)draw(cellX,2+(cellX%3)*4,1,3,"rgba(159,187,197,.75)");
+  }else if(kind.includes("crystal")||kind==="ice-crack"){
+    const center=7+Math.round(Math.sin(cellX)*2);if(Math.abs(cellX-center)<2)draw(cellX,2+Math.abs(cellX-center)*2,1,12-Math.abs(cellX-center)*3);if(cellX===4||cellX===11)draw(cellX,7,1,6,"rgba(210,250,245,.72)");
+  }else if(kind.includes("warning")||kind==="hazard-grid"||kind==="wind-arrow"){
+    for(let gy=2;gy<14;gy++)if((cellX+gy)%5<2)draw(cellX,gy,1,1,gy%2?accent:"rgba(24,25,23,.9)");
+  }else if(kind==="stone-face"||kind==="cave-eye"||kind==="eye-rune"){
+    if(cellX>2&&cellX<13){draw(cellX,3+Math.abs(cellX-8)/2,1,1);draw(cellX,11-Math.abs(cellX-8)/2,1,1)}
+    if(cellX===5||cellX===10)draw(cellX,6,1,3,"rgba(18,22,19,.8)");if(cellX>6&&cellX<9)draw(cellX,10,1,2);
+  }else if(kind.includes("vine")||kind==="tide-mark"||kind==="spiral-fossil"||kind==="spore-glyph"){
+    const gy=8+Math.round(Math.sin(cellX*.9)*3);draw(cellX,gy,1,2);if(cellX%4===0)draw(cellX,gy-2,2,2,"rgba(111,169,96,.72)");
+  }else{
+    draw(2,2,12,12,"rgba(25,29,26,.5)");if(cellX>3&&cellX<12&&(cellX%3===0))draw(cellX,4,1,8);draw(4,7,8,2);
+  }
+  ctx.globalAlpha=1;ctx.restore();
+}
+
 export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor[],x:number,y:number):AmbientEntity[]{
   const out:AmbientEntity[]=[];
   for(let cy=Math.floor(y)-9;cy<=Math.floor(y)+9;cy++)for(let cx=Math.floor(x)-9;cx<=Math.floor(x)+9;cx++){
@@ -67,6 +94,8 @@ export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anc
     if(theme.id==="foundry"&&seed%6===0){ctx.fillStyle=`rgba(229,93,37,${.2*(1-fog)})`;ctx.fillRect(x,top+wallH*.78,cw,wallH*.08)}
     if(theme.id==="cavern"){const wave=(Math.sin(ray.u*25+time+seed)+1)/2;ctx.fillStyle=`rgba(72,225,202,${(.07+wave*.1)*(1-fog)})`;ctx.fillRect(x,top,cw,wallH)}
     if(theme.id==="neutral"&&seed%5===0){const ring=Math.abs(Math.abs(ray.u-.5)-.22)<.025;if(ring){ctx.fillStyle=`rgba(205,180,133,${.2*(1-fog)})`;ctx.fillRect(x,top,cw,wallH)}}
+    const spriteChance=seed%5===0&&theme.influence>.08;
+    if(spriteChance){const wallKind=wall.wallSprites[seed%wall.wallSprites.length];wallSprite(ctx,x,top,cw,wallH,ray.u,wallKind,wall.accent,(.18+theme.influence*.64)*(1-fog*.7))}
   }
   const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<12).sort((a,b)=>b.dist-a.dist).slice(0,28);
   for(const v of visible){const sx=(.5+v.rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS)));if(v.dist>depths[rayIndex]+.2)continue;const size=Math.min(120,height/v.dist*.33*v.e.scale),sy=horizon+height/(v.dist*3.8);sprite(ctx,sx,sy,size,v.e.kind,THEMES[v.e.theme].accent,time,v.e.phase)}

@@ -34,6 +34,17 @@ function spawnAngle(world:InfiniteWorld){
   return best*Math.PI/2;
 }
 
+function plantCheckpoint(world:InfiniteWorld,x:number,y:number,theme:ThemeId,moves:number):ThemeAnchor{
+  const queue=[{x,y,d:0}],seen=new Set([cellKey(x,y)]);let best={x,y,d:0};
+  while(queue.length){
+    const p=queue.shift()!;if(p.d>best.d)best=p;if(p.d>=18)continue;
+    for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=p.x+dx,ny=p.y+dy,id=cellKey(nx,ny);if(!seen.has(id)&&world.tile(nx,ny,moves)===0){seen.add(id);queue.push({x:nx,y:ny,d:p.d+1})}
+    }
+  }
+  return{x:best.x,y:best.y,theme,bornAt:moves,triggered:false};
+}
+
 function newRun(seed=1337):Run{
   const world=new InfiniteWorld(seed);world.ensureAround(1,1,0);const angle=spawnAngle(world);
   const pose={x:1.5,y:1.5,angle,bob:0};const memory=new Map<string,MemoryCell>();
@@ -59,9 +70,13 @@ export default function Home(){
       if(firstVisit){visited.add(id);moves++}
       let anchors=[...old.anchors];const scheduler=schedulerRef.current;
       if(firstVisit&&moves>=scheduler.nextAt){
-        const theme=scheduler.nextTheme() as ThemeId;anchors.push({x,y,theme,bornAt:moves});scheduler.advance(moves);
-        message=THEMES[theme].signal;
+        const theme=scheduler.nextTheme() as ThemeId;anchors.push(plantCheckpoint(world,x,y,theme,moves));scheduler.advance(moves);
+        message="A DIFFERENT PRESSURE WAITS AHEAD";
       }
+      anchors=anchors.map(anchor=>{
+        if(!anchor.triggered&&Math.hypot(x-anchor.x,y-anchor.y)<2.25){message=THEMES[anchor.theme].signal;return{...anchor,triggered:true}}
+        return anchor;
+      });
       const visible=visibleCells(world,pose,moves),protectedChunks=new Set<string>();
       for(const cell of [...visible,...recent]){const[cx,cy]=cell.split(",").map(Number);const c=world.coords(cx,cy);protectedChunks.add(chunkKey(c.cx,c.cy))}
       world.ensureAround(x,y,moves);const before=world.chunks.size;world.prune(x,y,protectedChunks,moves);if(world.chunks.size<before)shifts++;
