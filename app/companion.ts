@@ -1,5 +1,6 @@
 import { cellKey, type InfiniteWorld } from "./world.mjs";
 import { themeAt, type ThemeAnchor, type ThemeId } from "./themes.ts";
+import { CAMERA_FOV } from "./camera.ts";
 import type { Pose } from "./renderer.ts";
 
 export type Point = [number, number];
@@ -8,7 +9,7 @@ export type ReplyKind = "guidance" | "praise" | "apology" | "agreement" | "refra
 
 export type RouteOption = {
   id:string;direction:RouteDirection;knownCells:Point[];targetCell:Point|null;
-  targetRegionId:string|null;description:string;score:number;
+  targetRegionId:string|null;description:string;instruction:string;score:number;
 };
 
 export type GuidanceIntent = {
@@ -37,6 +38,14 @@ export type GuidanceEvidence = {
 export type VisibleGeometry = {
   cells:Point[];junctions:Array<{id:string;cell:Point;open:string[]}>;
   corridorEnds:Point[];summary:string;
+};
+
+export type EgocentricView = {
+  facing:"north"|"east"|"south"|"west";
+  centerView:string;
+  openings:RouteDirection[];
+  blocked:RouteDirection[];
+  description:string;
 };
 
 export type VisibleEnvironment = {id:ThemeId;regionId:string;name:string;details:string[]}|null;
@@ -82,7 +91,7 @@ function openNeighbors(world:InfiniteWorld,x:number,y:number,tick:number):Point[
 
 export function forwardVisibleGeometry(world:InfiniteWorld,pose:Pose,tick:number,maxDistance=12):VisibleGeometry{
   const visible=new Set<string>(),points=new Map<string,Point>();
-  const rays=121,fov=Math.PI*.64;
+  const rays=121,fov=CAMERA_FOV;
   for(let i=0;i<rays;i++){
     const angle=pose.angle-fov/2+fov*(i/(rays-1));
     for(let d=.04;d<=maxDistance;d+=.055){
@@ -106,10 +115,34 @@ export function forwardVisibleGeometry(world:InfiniteWorld,pose:Pose,tick:number
 }
 
 function relativeDirection(pose:Pose,next:Point):RouteDirection{
-  const angle=Math.atan2(next[1]-pose.y,next[0]-pose.x),delta=wrapAngle(angle-pose.angle);
+  const angle=Math.atan2(next[1]+.5-pose.y,next[0]+.5-pose.x),delta=wrapAngle(angle-pose.angle);
   if(Math.abs(delta)<Math.PI/4)return"straight";
   if(Math.abs(delta)>Math.PI*3/4)return"back";
   return delta<0?"left":"right";
+}
+
+const routeInstruction=(direction:RouteDirection)=>direction==="straight"?"Continue through the open passage ahead.":direction==="back"?"Turn around and take the open passage behind you.":`Turn ${direction} into the open passage.`;
+
+function forwardClearance(world:InfiniteWorld,pose:Pose,tick:number){
+  for(let distance=.04;distance<=12;distance+=.04){
+    const x=Math.floor(pose.x+Math.cos(pose.angle)*distance),y=Math.floor(pose.y+Math.sin(pose.angle)*distance);
+    if(world.tile(x,y,tick)!==0)return distance;
+  }
+  return 12;
+}
+
+export function describeEgocentricView(world:InfiniteWorld,pose:Pose,tick:number,routes:RouteOption[]):EgocentricView{
+  const facing=["east","south","west","north"] as const;
+  const direction=facing[Math.round(((pose.angle%(Math.PI*2))+Math.PI*2)%(Math.PI*2)/(Math.PI/2))%4];
+  const openings=[...new Set(routes.map(route=>route.direction))];
+  const directions:RouteDirection[]=["straight","left","right","back"];
+  const blocked=directions.filter(item=>!openings.includes(item));
+  const clearance=forwardClearance(world,pose,tick);
+  const centerView=clearance<.75?"a wall fills the center of the view":clearance<2?"a wall is close ahead":clearance<5?"the passage continues briefly before a wall":"the passage extends ahead";
+  const openingText=openings.length?openings.map(item=>item==="straight"?"ahead":item==="back"?"behind":`on the ${item}`).join(", "):"none";
+  const blockedText=blocked.map(item=>item==="straight"?"ahead":item==="back"?"behind":`on the ${item}`).join(", ");
+  const blockedSentence=blocked.length?` There is no open passage ${blockedText}.`:"";
+  return{facing:direction,centerView,openings,blocked,description:`The player is facing ${direction}. ${centerView}. Verified open passages from the current position: ${openingText}.${blockedSentence}`};
 }
 
 export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<string,{tile:number}>,visited:Set<string>):RouteOption[]{
@@ -124,7 +157,8 @@ export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<
     const frontierBonus=openNeighbors(world,current[0],current[1],tick).filter(p=>!memory.has(pointKey(p))).length;
     const around=DIRS.map(([dx,dy])=>memory.get(cellKey(current[0]+dx,current[1]+dy))?.tile),confirmedEnding=around.every(tile=>tile!==undefined)&&openNeighbors(world,current[0],current[1],tick).length===1;
     const score=frontierBonus*4+(cells.length-knownVisits)*2-knownVisits-(direction==="back"?3:0)-(confirmedEnding?50:0);
-    return{id:`route:${pointKey(origin)}:${pointKey(first)}:${index}`,direction,knownCells:cells,targetCell:current,targetRegionId:null,description:`go ${direction} toward ${pointKey(current)} through ${cells.length} known open cell${cells.length===1?"":"s"}`,score};
+    const instruction=routeInstruction(direction);
+    return{id:`route:${pointKey(origin)}:${pointKey(first)}:${index}`,direction,knownCells:cells,targetCell:current,targetRegionId:null,description:`Verified open passage ${direction==="straight"?"ahead":direction==="back"?"behind the player":`on the player's ${direction}`}. It continues through ${cells.length} known open cell${cells.length===1?"":"s"}.`,instruction,score};
   }).sort((a,b)=>b.score-a.score);
   const viable=options.filter(route=>route.score>-30);return(viable.length?viable:options).slice(0,4);
 }
@@ -164,7 +198,7 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
 
 export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,previousMessages:CompanionMessage[]=[]):CompanionReply{
   const route=routes[0]??null,direction=route?.direction??"back";
-  const routeText=direction==="straight"?"Keep going straight.":direction==="back"?"Turn back toward the last junction.":`Take the passage on your ${direction}.`;
+  const routeText=route?.instruction??routeInstruction(direction);
   let message=routeText,kind:ReplyKind="guidance";
   if(event.type==="environment_visible"&&environment){
     const variants=[`We haven't found the exit yet, but you've found a ${environment.name}.`,`A ${environment.name}. Not what I expected, but the search continues.`,`No exit yet—but this ${environment.name} is worth finding.`];

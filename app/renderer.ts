@@ -1,9 +1,10 @@
 import { hash32, type InfiniteWorld } from "./world.mjs";
 import { THEMES, rememberedThemeAt, themeAt, type AmbientEntity, type ThemeAnchor, type ThemeMemory, type ThemeSample } from "./themes";
+import { CAMERA_FOV } from "./camera";
 
 export type Pose = { x:number; y:number; angle:number; bob:number };
 type Ray = {distance:number;mapX:number;mapY:number;side:number;u:number};
-const FOV=Math.PI/3, RAYS=360;
+const FOV=CAMERA_FOV, RAYS=360;
 const mix=(a:number,b:number,t:number)=>a+(b-a)*t;
 function rgb(hex:string){const value=parseInt(hex.slice(1),16);return[(value>>16)&255,(value>>8)&255,value&255]}
 type HexSurface="floor"|"ceiling"|"floorDetail"|"skyDetail";

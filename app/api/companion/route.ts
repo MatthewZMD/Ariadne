@@ -1,5 +1,5 @@
-import { deterministicReply, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceEvidence, type RouteOption, type VisibleEnvironment } from "../../companion";
-import { ARIADNE_SYSTEM_PROMPT } from "./prompt";
+import { deterministicReply, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceEvidence, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
+import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 
 type RequestBody={
   sessionId:string;trigger:CompanionEvent;recommendation:unknown;recommendationEvidence:GuidanceEvidence|null;
@@ -20,9 +20,34 @@ function validReply(value:unknown,routes:RouteOption[]):value is CompanionReply{
   return typeof reply.message==="string"&&reply.message.length<=320&&(reply.selectedRouteId===null||routes.some(r=>r.id===reply.selectedRouteId))&&replyKinds.includes(reply.kind);
 }
 
+const spatialLanguage=/\b(left|right|straight|ahead|behind|back|backward|forward|turn|passage|corridor|junction|route)\b/i;
+
+export function groundReply(reply:CompanionReply,routes:RouteOption[]):CompanionReply{
+  const route=routes.find(option=>option.id===reply.selectedRouteId)??null;
+  const nonSpatial=reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!spatialLanguage.test(sentence)).join(" ").trim();
+  if(reply.kind==="silence")return{...reply,message:"",selectedRouteId:null};
+  const message=[nonSpatial,route?.instruction].filter(Boolean).join(" ").slice(0,320);
+  return{...reply,message,selectedRouteId:route?.id??null};
+}
+
+function semanticRecommendation(value:unknown){
+  if(!value||typeof value!=="object")return null;
+  const item=value as {message?:unknown;kind?:unknown;suggestedRouteId?:unknown};
+  return{message:typeof item.message==="string"?item.message:"",kind:item.kind,suggestedRouteId:item.suggestedRouteId};
+}
+
+function semanticMovement(evidence:GuidanceEvidence|null){
+  if(!evidence)return"No earlier navigation recommendation is being evaluated.";
+  const initial=evidence.initialDirectionSimilarity>=.75?"The player's initial movement was in the recommended general direction.":evidence.initialDirectionSimilarity<=.25?"The player's initial movement was in the opposite general direction.":"The player's initial movement was sideways or ambiguous relative to the recommendation.";
+  const overlap=evidence.suggestedCellOverlap>=.7?"Most subsequent movement overlapped the suggested path.":evidence.suggestedCellOverlap>=.3?"Some, but not all, subsequent movement overlapped the suggested path.":evidence.suggestedCellOverlap>0?"Only a small part of the movement overlapped the suggested path.":"The movement did not overlap the suggested path.";
+  const progress=evidence.reachedSuggestedTarget?"The intended destination was reached.":evidence.movementTowardTarget>.2?"The player is meaningfully closer to the intended destination.":evidence.movementAwayFromTarget>.2?"The player is meaningfully farther from the intended destination.":"Distance to the intended destination has not changed meaningfully.";
+  const facts=[evidence.rejoinedAt?"The player diverged and later rejoined the suggested path.":"",evidence.reachedSameTargetByDifferentRoute?"The player reached the same destination by a different path.":"",evidence.recommendationContradictedByVisibleEvidence?"Current visible evidence contradicts the earlier recommendation.":"",evidence.loopEncountered?"A loop was encountered.":"",evidence.backtrackingObserved?"Sustained backtracking was observed.":""].filter(Boolean).join(" ");
+  return`${initial} ${overlap} ${progress}${facts?` ${facts}`:""}`;
+}
+
 function statePrompt(body:RequestBody){
-  const routes=body.legalRoutes.map(r=>({id:r.id,direction:r.direction,knownCells:r.knownCells,targetCell:r.targetCell,description:r.description}));
-  return `<maze_state>\nCURRENT VIEW\n${JSON.stringify(body.currentView)}\nVISIBLE ENVIRONMENT\n${JSON.stringify(body.environment)}\nREMEMBERED MAP\n${body.rememberedMap}\nPREVIOUS RECOMMENDATION\n${JSON.stringify(body.recommendation)}\nPLAYER MOVEMENT SINCE RECOMMENDATION\n${JSON.stringify(body.actualTrajectory)}\nCOMPARISON EVIDENCE\n${JSON.stringify(body.recommendationEvidence)}\nLEGAL ROUTES\n${JSON.stringify(routes)}\nRECENT CONVERSATION\n${JSON.stringify(body.recentMessages)}\nOLDER CONTEXT SUMMARY\n${body.olderContextSummary.slice(0,800)}\nMEANINGFUL EVENT\n${JSON.stringify(body.trigger)}\nOPTIONAL PLAYER MESSAGE\n${body.playerMessage??"none"}\n</maze_state>`;
+  const routes=body.legalRoutes.map(r=>({id:r.id,direction:r.direction,description:r.description,verifiedInstruction:r.instruction}));
+  return `<maze_state>\nEGOCENTRIC VIEW COMPUTED BY THE GAME\n${JSON.stringify(body.currentView)}\nVISIBLE ENVIRONMENT\n${JSON.stringify(body.environment)}\nPREVIOUS RECOMMENDATION\n${JSON.stringify(semanticRecommendation(body.recommendation))}\nPLAYER MOVEMENT INTERPRETED BY THE GAME\n${semanticMovement(body.recommendationEvidence)}\nLEGAL ROUTES COMPUTED BY THE GAME\n${JSON.stringify(routes)}\nRECENT CONVERSATION\n${JSON.stringify(body.recentMessages)}\nOLDER CONTEXT SUMMARY\n${body.olderContextSummary.slice(0,800)}\nMEANINGFUL EVENT\n${JSON.stringify(body.trigger)}\nOPTIONAL PLAYER MESSAGE\n${body.playerMessage??"none"}\n</maze_state>`;
 }
 
 async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply>{
@@ -42,6 +67,6 @@ export async function POST(request:Request){
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback"});
     const reply=await openRouter(body,apiKey);if(!validReply(reply,body.legalRoutes))return Response.json({...fallback(),source:"fallback"});
-    return Response.json({...reply,source:"provider"});
+    return Response.json({...groundReply(reply,body.legalRoutes),source:"provider"});
   }catch{return Response.json({...fallback(),source:"fallback"})}
 }

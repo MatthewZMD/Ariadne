@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compareTrajectory, deterministicReply } from "../app/companion.ts";
+import { compareTrajectory, describeEgocentricView, deterministicReply, planRoutes } from "../app/companion.ts";
 
 const intent={id:"g1",issuedAt:Date.now()-5000,message:"Continue east.",kind:"reach_junction",origin:[0,0],originHeading:0,suggestedRouteId:"east",suggestedCells:[[1,0],[2,0],[3,0],[4,0]],targetCell:[4,0],targetRegionId:null,avoidedCells:[],expiresWhen:"new_recommendation"};
 const sample=(cell,time)=>({time,position:cell,cell,heading:0,newlyVisibleCells:[],visibleJunctions:[],visibleEnvironment:null});
@@ -26,4 +26,15 @@ test("fallback language recognizes overlap-aware progress and environment discov
   const environment={id:"frozen",regionId:"frozen:0:0",name:"frozen archive",details:["ice","shelves"]};
   const reply=deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null,[]);
   assert.equal(reply.kind,"environment");assert.match(reply.message,/frozen archive/i);assert.equal(reply.selectedRouteId,"r1");
+});
+
+test("egocentric directions use cell centers and explicitly identify blocked sides",()=>{
+  const open=new Set(["0,0","1,0"]),world={tile:(x,y)=>open.has(`${x},${y}`)?0:1};
+  const memory=new Map([...open].map(key=>[key,{tile:0}])),pose={x:.5,y:.5,angle:0,bob:0};
+  const routes=planRoutes(world,pose,0,memory,new Set(["0,0"]));
+  assert.equal(routes.length,1);assert.equal(routes[0].direction,"straight");
+  assert.equal(routes[0].instruction,"Continue through the open passage ahead.");
+  const view=describeEgocentricView(world,pose,0,routes);
+  assert.equal(view.facing,"east");assert.deepEqual(view.openings,["straight"]);
+  assert.ok(view.blocked.includes("left"));assert.match(view.description,/no open passage.*left/i);
 });

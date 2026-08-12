@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } from "./world.mjs";
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
-import { compactMap, compareTrajectory, createGuidanceIntent, forwardVisibleGeometry, planRoutes, visibleEnvironment, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceIntent, type TrajectorySample } from "./companion";
+import { compactMap, compareTrajectory, createGuidanceIntent, describeEgocentricView, forwardVisibleGeometry, planRoutes, visibleEnvironment, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceIntent, type TrajectorySample } from "./companion";
 
 const MOVE_SPEED=1.65,TURN_SPEED=1.05,PLAYER_RADIUS=.18,MAP_RADIUS=10;
 type MemoryCell={tile:number;seenAt:number};
@@ -120,12 +120,12 @@ export default function Home(){
     if(requestInFlightRef.current){queue();return}
     if(!force&&now-lastCompanionCallRef.current<12000){queue();return}
     const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),environment=visibleEnvironment(current.anchors,geometry,pose);
-    const routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),intent=guidanceRef.current;
+    const routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),egocentricView=describeEgocentricView(current.world,pose,current.moves,routes),intent=guidanceRef.current;
     const contradicted=!!intent&&geometry.corridorEnds.some(end=>intent.suggestedCells.some(cell=>cell[0]===end[0]&&cell[1]===end[1]));
     const evidence=intent?compareTrajectory(intent,trajectoryRef.current,newlyRevealedRef.current,contradicted):null;
     requestInFlightRef.current=true;lastCompanionCallRef.current=now;if(event.type==="idle_at_choice")lastIdleCallRef.current=now;setCompanionStatus("THINKING");
     try{
-      const response=await fetch("/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:String(current.seed),trigger:event,recommendation:intent,recommendationEvidence:evidence,actualTrajectory:trajectoryRef.current.slice(-32),currentView:{summary:geometry.summary,junctions:geometry.junctions,corridorEnds:geometry.corridorEnds},environment,rememberedMap:compactMap(current.memory,[current.player.x,current.player.y]),legalRoutes:routes,recentMessages:messagesRef.current.slice(-8),olderContextSummary:messagesRef.current.slice(0,-8).slice(-8).map(m=>`${m.role}: ${m.text}`).join(" | "),playerMessage})});
+      const response=await fetch("/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:String(current.seed),trigger:event,recommendation:intent,recommendationEvidence:evidence,actualTrajectory:trajectoryRef.current.slice(-32),currentView:egocentricView,environment,rememberedMap:compactMap(current.memory,[current.player.x,current.player.y]),legalRoutes:routes,recentMessages:messagesRef.current.slice(-8),olderContextSummary:messagesRef.current.slice(0,-8).slice(-8).map(m=>`${m.role}: ${m.text}`).join(" | "),playerMessage})});
       const reply=await response.json() as CompanionReply;
       if(reply.message){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:reply.message,time:Date.now(),kind:reply.kind};
