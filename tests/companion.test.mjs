@@ -25,7 +25,7 @@ test("fallback language recognizes overlap-aware progress and environment discov
   const route={id:"r1",direction:"left",knownCells:[[1,0]],targetCell:[1,0],targetRegionId:null,description:"go left",score:2};
   const environment={id:"frozen",regionId:"frozen:0:0",name:"frozen archive",details:["ice","shelves"]};
   const reply=deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null,[]);
-  assert.equal(reply.kind,"environment");assert.match(reply.message,/frozen archive/i);assert.equal(reply.selectedRouteId,"r1");
+  assert.equal(reply.kind,"environment");assert.match(reply.message,/look at this/i);assert.equal(reply.selectedRouteId,"r1");
 });
 
 test("egocentric directions use cell centers and explicitly identify blocked sides",()=>{

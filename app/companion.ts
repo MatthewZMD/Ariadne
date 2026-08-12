@@ -263,7 +263,7 @@ export function verifiedAutonomousObservation(event:CompanionEvent,environment:V
 
 export function verifiedSocialReaction(kind:ReplyKind,event:CompanionEvent,evidence:GuidanceEvidence|null){
   if(event.type==="idle")return"";
-  if(event.type==="recommendation_contradicted")return"Sorry—I had that wrong.";
+  if(event.type==="recommendation_contradicted")return"Oh no—that's completely on me.";
   if(event.type==="same_target_reached_differently")return kind==="praise"?"Good choice.":"You were right to take that direction.";
   if(event.type==="trajectory_relationship_changed"&&evidence?.newCellsRevealedOffSuggestedPath)return kind==="agreement"?"Good call. There's more to see this way.":"Good choice. There's more to see this way.";
   if(event.type==="revisited_position")return"Good catch.";
@@ -281,25 +281,22 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
 }
 
 export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,previousMessages:CompanionMessage[]=[]):CompanionReply{
-  const route=routes[0]??null,direction=route?.direction??"back";
-  const routeText=route?.instruction??routeInstruction(direction);
-  let message=routeText,kind:ReplyKind="guidance";
+  const route=routes[0]??null;
+  let message="Okay, I have a really good feeling about this.",kind:ReplyKind="guidance";
   if(event.type==="environment_visible"&&environment){
-    const variants=[`We haven't found the exit yet, but you've found a ${environment.name}.`,`A ${environment.name}. Not what I expected, but the search continues.`,`No exit yet—but this ${environment.name} is worth finding.`];
-    message=`${variants[previousMessages.filter(m=>m.kind==="environment").length%variants.length]} ${route?routeText:""}`.trim();kind="environment";
+    const variants=["Oh my god, look at this.","Okay, wait—I love this.","I absolutely did not expect this."];
+    message=variants[previousMessages.filter(m=>m.kind==="environment").length%variants.length];kind="environment";
   }else if(event.type==="recommendation_contradicted"){
-    message=`Sorry—that route does not continue. ${routeText}`;kind="apology";
+    message="Oh no—that's completely on me.";kind="apology";
   }else if(event.type==="same_target_reached_differently"){
-    message=`Good choice. Your way reached the same area. ${routeText}`;kind="agreement";
+    message="Oh my god, you got there without me. I love that.";kind="agreement";
   }else if(event.type==="trajectory_relationship_changed"&&evidence){
-    if(evidence.rejoinedAt)message=`That works—you have joined the route again. ${routeText}`;
-    else if(evidence.newCellsRevealedOffSuggestedPath>evidence.newCellsRevealedOnSuggestedPath)message=`Good choice. This way has revealed more of the maze. ${routeText}`;
-    else message=`Good. We are still moving into new ground. ${routeText}`;
-    kind="praise";
+    const variants=["Okay, wait—you were absolutely onto something there.","Oh my god, yes. Trust that instinct.","I love that you committed to that."];
+    message=variants[previousMessages.filter(m=>m.kind==="praise").length%variants.length];kind="praise";
   }else if(event.type==="idle"){
-    message=`You have stayed still for ${event.seconds} seconds. I will wait.`;kind="observation";
+    message=event.atChoice?"Okay, I can feel you thinking. Come on—trust me on this one.":"Wait, what are we feeling here?";kind="observation";
   }else if(event.type==="player_message"){
-    message=`I hear you. ${routeText}`;kind="reply";
+    message="Okay, yes—I'm with you.";kind="reply";
   }
   return{message:message.slice(0,260),selectedRouteId:route?.id??null,kind};
 }

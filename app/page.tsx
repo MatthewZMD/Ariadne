@@ -70,15 +70,16 @@ export default function Home(){
   const[companionMessages,setCompanionMessages]=useState<CompanionMessage[]>([]),messagesRef=useRef<CompanionMessage[]>([]);
   const[companionStatus,setCompanionStatus]=useState<"LISTENING"|"THINKING"|"LINK STABLE">("LISTENING"),[companionInput,setCompanionInput]=useState(""),[chatOpen,setChatOpen]=useState(false);
   const guidanceRef=useRef<GuidanceIntent|null>(null),trajectoryRef=useRef<TrajectorySample[]>([]),observedAfterGuidanceRef=useRef(new Set<string>()),newlyRevealedRef=useRef(new Set<string>());
-  const seenJunctionsRef=useRef(new Set<string>()),seenEnvironmentsRef=useRef(new Set<string>()),lastCompanionCallRef=useRef(0),requestInFlightRef=useRef(false),pendingEventRef=useRef<{event:CompanionEvent;force:boolean}|null>(null),lastMovementRef=useRef(0),lastTurnRef=useRef(0),idleAnnouncedRef=useRef(false),collisionRef=useRef(0);
+  const seenJunctionsRef=useRef(new Set<string>()),seenEnvironmentsRef=useRef(new Set<string>()),lastCompanionCallRef=useRef(0),requestInFlightRef=useRef(false),pendingEventRef=useRef<{event:CompanionEvent;force:boolean}|null>(null),lastMovementRef=useRef(0),lastTurnRef=useRef(0),pauseObservedRef=useRef(false),collisionRef=useRef(0);
   const callCompanionRef=useRef<(event:CompanionEvent,playerMessage?:string,force?:boolean)=>Promise<void>>(async()=>{});
+  const respondedRelationshipsRef=useRef(new Set<string>());
   const contradictedGuidanceRef=useRef(new Set<string>());
   const seenFamiliarPlacesRef=useRef(new Set<string>());
   const applyRun=useCallback((next:Run)=>{
     const scheduler=createThemeScheduler(next.seed);next.anchors=[plantCheckpoint(next.world,1,1,scheduler.nextTheme() as ThemeId,scheduler.nextAt,next.spawnAngle)];
     next.entities=entitiesNear(next.seed,next.world,next.anchors,next.appearance,1.5,1.5);runRef.current=next;schedulerRef.current=scheduler;heldRef.current.clear();
     poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};lastCellRef.current="1,1";
-    guidanceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();contradictedGuidanceRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenJunctionsRef.current=new Set();seenEnvironmentsRef.current=new Set();pendingEventRef.current=null;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;idleAnnouncedRef.current=false;
+    guidanceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();contradictedGuidanceRef.current=new Set();respondedRelationshipsRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenJunctionsRef.current=new Set();seenEnvironmentsRef.current=new Set();pendingEventRef.current=null;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;pauseObservedRef.current=false;
     setCompanionMessages([]);setCompanionStatus("LISTENING");setCompanionInput("");setChatOpen(false);setHeading(bearing(next.spawnAngle));setRun(next);
   },[]);
   useEffect(()=>{runRef.current=run},[run]);
@@ -135,18 +136,18 @@ export default function Home(){
       const latest=runRef.current,latestPose=poseRef.current,latestGeometry=forwardVisibleGeometry(latest.world,latestPose,latest.moves);
       const latestApproaching=event.type==="new_junction_visible"?planApproachingJunctionRoutes(latest.world,latestPose,latest.moves,latestGeometry,latest.memory,latest.visited):[];
       const latestRoutes=latestApproaching.length?latestApproaching:planRoutes(latest.world,latestPose,latest.moves,latest.memory,latest.visited);
-      const route=event.type==="idle"?null:rebaseSelectedRoute(selectedAtRequest,latestRoutes);
-      const guidesNow=["initial_guidance","new_junction_visible","recommendation_contradicted","target_reached","same_target_reached_differently","revisited_position","repeated_collision","player_message"].includes(event.type);
-      const finalText=[reply.message.trim(),guidesNow?instructionForCurrentChoice(route,latestRoutes):""].filter(Boolean).join(" ");
-      if(finalText){
+      const route=rebaseSelectedRoute(selectedAtRequest,latestRoutes);
+      const guidesNow=["initial_guidance","new_junction_visible","recommendation_contradicted","target_reached","same_target_reached_differently","revisited_position","repeated_collision","player_message"].includes(event.type)||(event.type==="idle"&&event.atChoice);
+      const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",finalText=[reply.message.trim(),spokenInstruction].filter(Boolean).join(" ");
+      const duplicate=!guidesNow&&!!finalText&&messagesRef.current.slice(-8).some(message=>message.role==="ariadne"&&message.text.toLowerCase().replace(/[^a-z0-9]+/g," ").trim()===finalText.toLowerCase().replace(/[^a-z0-9]+/g," ").trim());
+      if(finalText&&!duplicate){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:reply.kind};
         setCompanionMessages(old=>[...old,message].slice(-18));
       }
-      const groundedReply={...reply,message:finalText},nextIntent=createGuidanceIntent(groundedReply,route,{...latestPose});
+      const groundedReply={...reply,message:spokenInstruction},nextIntent=spokenInstruction?createGuidanceIntent(groundedReply,route,{...latestPose}):null;
       if(nextIntent){guidanceRef.current=nextIntent;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set(geometry.cells.map(([x,y])=>cellKey(x,y)));newlyRevealedRef.current=new Set()}
     }catch{
-      const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:"The signal is faint. Keep moving; I am still mapping the route.",time:Date.now(),kind:"observation"};
-      setCompanionMessages(old=>[...old,message].slice(-18));
+      // A quiet companion is better than exposing a failed request in the world.
     }finally{
       requestInFlightRef.current=false;setCompanionStatus("LINK STABLE");
       const pending=pendingEventRef.current;
@@ -181,7 +182,11 @@ export default function Home(){
       else{
         const locationId=cellKey(current.player.x,current.player.y),familiar=current.recent.slice(0,-1).includes(locationId)&&!seenFamiliarPlacesRef.current.has(locationId);
         if(familiar){seenFamiliarPlacesRef.current.add(locationId);event={type:"revisited_position"}}
-        else if(evidence&&(evidence.suggestedCellOverlap>=.45||evidence.rejoinedAt||evidence.newCellsRevealedOffSuggestedPath>=5))event={type:"trajectory_relationship_changed"};
+        else if(evidence){
+          const relationship=evidence.rejoinedAt?"rejoined":evidence.newCellsRevealedOffSuggestedPath>=5?"explored":evidence.suggestedCellOverlap>=.45?"overlap":null;
+          const key=relationship&&intent?`${intent.id}:${relationship}`:null;
+          if(key&&!respondedRelationshipsRef.current.has(key)){respondedRelationshipsRef.current.add(key);event={type:"trajectory_relationship_changed"}}
+        }
       }
     }
     if(event)callCompanion(event,undefined,force);
@@ -192,16 +197,16 @@ export default function Home(){
       const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),environment=visibleEnvironment(current.anchors,geometry,pose);
       const sample:TrajectorySample={time:Date.now(),position:[pose.x,pose.y],cell:[Math.floor(pose.x),Math.floor(pose.y)],heading:pose.angle,newlyVisibleCells:[],visibleJunctions:geometry.junctions.map(j=>j.id),visibleEnvironment:environment?.id??null};
       trajectoryRef.current=[...trajectoryRef.current,sample].slice(-40);
-      const pending=pendingEventRef.current,activity=analyzePlayerActivity(trajectoryRef.current,Date.now(),lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0);
+      const pending=pendingEventRef.current;
       if(pending&&!requestInFlightRef.current&&(pending.force||Date.now()-lastCompanionCallRef.current>=12000)){pendingEventRef.current=null;callCompanion(pending.event,undefined,pending.force)}
-      else if(activity.state==="stationary"&&activity.stationarySeconds>=15&&!idleAnnouncedRef.current){idleAnnouncedRef.current=true;callCompanion({type:"idle",seconds:activity.stationarySeconds,atChoice:activity.atVisibleChoice});}
+      else{const activity=analyzePlayerActivity(trajectoryRef.current,Date.now(),lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0);if(activity.state==="stationary"&&activity.stationarySeconds>=15&&!pauseObservedRef.current){pauseObservedRef.current=true;callCompanion({type:"idle",seconds:activity.stationarySeconds,atChoice:activity.atVisibleChoice})}}
     },5000);return()=>clearInterval(interval);
   },[ready,callCompanion]);
 
   useEffect(()=>{
     const down=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;const k=e.key.toLowerCase();if(e.key==="Enter"){e.preventDefault();heldRef.current.clear();setChatOpen(true);requestAnimationFrame(()=>chatInputRef.current?.focus());return}if(k==="n"){e.preventDefault();applyRun(newRun(randomSeed()));return}if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
     const up=(e:KeyboardEvent)=>heldRef.current.delete(e.key.toLowerCase()),blur=()=>heldRef.current.clear();
-    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current&&e.movementX!==0){poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.00125);lastTurnRef.current=Date.now();idleAnnouncedRef.current=false}};
+    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current&&e.movementX!==0){poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.00125);lastTurnRef.current=Date.now();pauseObservedRef.current=false}};
     addEventListener("keydown",down);addEventListener("keyup",up);addEventListener("blur",blur);addEventListener("mousemove",mouse);
     return()=>{removeEventListener("keydown",down);removeEventListener("keyup",up);removeEventListener("blur",blur);removeEventListener("mousemove",mouse)};
   },[applyRun]);
@@ -217,14 +222,14 @@ export default function Home(){
     const tick=(now:number)=>{
       const dt=Math.min((now-previous)/1000,.05);previous=now;const current=runRef.current,pose=poseRef.current,held=heldRef.current;
       let turn=0;if(held.has("a")||held.has("arrowleft"))turn--;if(held.has("d")||held.has("arrowright"))turn++;
-      if(turn!==0){pose.angle=wrap(pose.angle+turn*TURN_SPEED*dt);lastTurnRef.current=Date.now();idleAnnouncedRef.current=false}let drive=0;if(held.has("w")||held.has("arrowup"))drive++;if(held.has("s")||held.has("arrowdown"))drive--;
+      if(turn!==0){pose.angle=wrap(pose.angle+turn*TURN_SPEED*dt);lastTurnRef.current=Date.now();pauseObservedRef.current=false}let drive=0;if(held.has("w")||held.has("arrowup"))drive++;if(held.has("s")||held.has("arrowdown"))drive--;
       const moving=drive!==0;if(moving){
         const beforeX=pose.x,beforeY=pose.y;
         const distance=drive*MOVE_SPEED*dt,nx=pose.x+Math.cos(pose.angle)*distance,ny=pose.y+Math.sin(pose.angle)*distance,w=current.world;
         w.ensureAround(Math.floor(nx),Math.floor(ny),current.moves);
         const clearX=w.tile(Math.floor(nx-PLAYER_RADIUS),Math.floor(pose.y-PLAYER_RADIUS))===0&&w.tile(Math.floor(nx+PLAYER_RADIUS),Math.floor(pose.y+PLAYER_RADIUS))===0;if(clearX)pose.x=nx;
         const clearY=w.tile(Math.floor(pose.x-PLAYER_RADIUS),Math.floor(ny-PLAYER_RADIUS))===0&&w.tile(Math.floor(pose.x+PLAYER_RADIUS),Math.floor(ny+PLAYER_RADIUS))===0;if(clearY)pose.y=ny;
-        const translated=Math.hypot(pose.x-beforeX,pose.y-beforeY);pose.bob+=dt*9;if(translated<.0005){collisionRef.current++;if(collisionRef.current===24)callCompanion({type:"repeated_collision"})}else{collisionRef.current=0;lastMovementRef.current=Date.now();idleAnnouncedRef.current=false}
+        const translated=Math.hypot(pose.x-beforeX,pose.y-beforeY);pose.bob+=dt*9;if(translated<.0005){collisionRef.current++;if(collisionRef.current===24)callCompanion({type:"repeated_collision"})}else{collisionRef.current=0;lastMovementRef.current=Date.now();pauseObservedRef.current=false}
         const cell=cellKey(Math.floor(pose.x),Math.floor(pose.y));if(cell!==lastCellRef.current)enterCell(Math.floor(pose.x),Math.floor(pose.y));
       }
       const next=bearing(pose.angle);setHeading(old=>old===next?old:next);
@@ -242,7 +247,7 @@ export default function Home(){
     <div className={`boot-screen ${ready?"ready":""}`} aria-live="polite"><span>GENERATING SIGNAL</span></div>
     <section className="viewport-wrap" aria-label="Infinite first person maze game"><div className="viewport-label"><span>CAM_01 // {heading}</span><span>{companionStatus} · ENTER CHAT · N NEW SIGNAL</span></div>
         <canvas ref={canvasRef} width={1280} height={720} tabIndex={0} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()}
-          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null){poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.0035);lastTurnRef.current=Date.now();idleAnnouncedRef.current=false}touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
+          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null){poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.0035);lastTurnRef.current=Date.now();pauseObservedRef.current=false}touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
         <div className="vignette comfort-vignette"/>{companionMessages.length>0&&<div className={`ariadne-chat ${chatOpen?"chat-open":""}`} aria-live="polite">{companionMessages.slice(-5).map(message=><div key={message.id} className={`ariadne-chat-line ${message.role} ${message.kind==="environment"?"discovery":""}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<YOU>"}</span> {message.text}</div>)}</div>}
         {chatOpen&&<form className="minecraft-chat-input" onSubmit={sendToCompanion}><span>&gt;</span><input ref={chatInputRef} aria-label="Message ARIADNE" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.form?.requestSubmit()}else if(e.key==="Escape"){e.preventDefault();setChatOpen(false);setCompanionInput("");e.currentTarget.blur();canvasRef.current?.focus()}}} placeholder="Message ARIADNE"/></form>}
     </section>
