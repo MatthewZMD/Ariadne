@@ -227,9 +227,25 @@ export function verifiedAutonomousObservation(event:CompanionEvent,environment:V
   if(event.type==="idle")return`You have stayed still for ${activity.stationarySeconds} seconds. I will wait.`;
   if(event.type==="revisited_position")return"You have stood in this exact spot before.";
   if(event.type==="environment_visible"&&environment)return`You can see ${environment.details.join(" and ")} here—this is ${/^([aeiou])/i.test(environment.name)?"an":"a"} ${environment.name}.`;
-  if(event.type==="recommendation_contradicted")return"The direction I gave you is blocked from where you are now. Sorry.";
+  if(event.type==="recommendation_contradicted")return"The direction I gave you is blocked from where you are now.";
   if(event.type==="repeated_collision")return"There is a wall directly in front of you.";
   if(event.type==="new_junction_visible"&&routeCount>1)return"There is more than one open direction from here.";
+  return"";
+}
+
+export function verifiedSocialReaction(kind:ReplyKind,event:CompanionEvent,evidence:GuidanceEvidence|null){
+  if(event.type==="idle")return"";
+  if(event.type==="recommendation_contradicted")return"Sorry—I had that wrong.";
+  if(event.type==="same_target_reached_differently")return kind==="praise"?"Good choice.":"You were right to take that direction.";
+  if(event.type==="trajectory_relationship_changed"&&evidence?.newCellsRevealedOffSuggestedPath)return kind==="agreement"?"Good call—your direction showed us something new.":"Good choice—your direction showed us something new.";
+  if(event.type==="revisited_position")return kind==="reframe"?"Good catch—we know this exact spot.":"Good catch.";
+  if(kind==="praise"){
+    if(event.type==="environment_visible")return"Good find.";
+    if(event.type==="target_reached")return"Good—that is where I was pointing.";
+  }
+  if(kind==="reframe"){
+    if(event.type==="environment_visible")return"Not the exit, but this is worth seeing.";
+  }
   return"";
 }
 

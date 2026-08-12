@@ -1,4 +1,4 @@
-import { deterministicReply, verifiedAutonomousObservation, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type PlayerActivity, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
+import { deterministicReply, verifiedAutonomousObservation, verifiedSocialReaction, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type PlayerActivity, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 
 type RequestBody={
@@ -37,9 +37,10 @@ export function enforceActivityGrounding(reply:CompanionReply,activity:PlayerAct
   return{...reply,message:reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!movementClaim.test(sentence)).join(" ").trim()};
 }
 
-export function enforcePlayerView(reply:CompanionReply,body:Pick<RequestBody,"trigger"|"activity"|"environment"|"legalRoutes">):CompanionReply{
+export function enforcePlayerView(reply:CompanionReply,body:Pick<RequestBody,"trigger"|"activity"|"environment"|"legalRoutes"|"recommendationEvidence">):CompanionReply{
   if(body.trigger.type==="player_message")return enforceActivityGrounding(reply,body.activity,body.trigger);
-  return{...reply,message:verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length),selectedRouteId:body.trigger.type==="idle"?null:reply.selectedRouteId};
+  const social=verifiedSocialReaction(reply.kind,body.trigger,body.recommendationEvidence),observation=verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length);
+  return{...reply,message:[social,observation].filter(Boolean).join(" "),selectedRouteId:body.trigger.type==="idle"?null:reply.selectedRouteId};
 }
 
 function semanticRecommendation(value:unknown){
