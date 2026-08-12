@@ -1,512 +1,125 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler, type ThemeScheduler } from "./world.mjs";
+import { entitiesNear, renderWorld, type Pose } from "./renderer";
+import { THEMES, type AmbientEntity, type ThemeAnchor, type ThemeId } from "./themes";
 
-const SIZE = 17;
-const FOV = Math.PI / 3;
-const RAYS = 360;
-const MOVE_SPEED = 2.05;
-const TURN_SPEED = 1.9;
-const PLAYER_RADIUS = 0.18;
-const DIRS = [
-  { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 0, y: -1 },
-];
-
-type Point = { x: number; y: number };
-type Pose = { x: number; y: number; angle: number; bob: number };
-type Game = {
-  maze: number[][];
-  memory: number[][];
-  seen: Set<string>;
-  visitAge: Record<string, number>;
-  player: Point;
-  spawnAngle: number;
-  moves: number;
-  shifts: number;
-  message: string;
+const MOVE_SPEED=2.05,TURN_SPEED=1.9,PLAYER_RADIUS=.18,MAP_RADIUS=10;
+type MemoryCell={tile:number;seenAt:number};
+type Run={
+  seed:number;world:InfiniteWorld;anchors:ThemeAnchor[];entities:AmbientEntity[];
+  memory:Map<string,MemoryCell>;visited:Set<string>;recent:string[];player:{x:number;y:number};
+  spawnAngle:number;moves:number;shifts:number;message:string;revision:number;
 };
 
-const key = (x: number, y: number) => `${x},${y}`;
-const wrapAngle = (angle: number) => (angle + Math.PI * 2) % (Math.PI * 2);
-const bearing = (angle: number) => ["E", "S", "W", "N"][Math.round(wrapAngle(angle) / (Math.PI / 2)) % 4];
+const wrap=(a:number)=>(a+Math.PI*2)%(Math.PI*2);
+const bearing=(a:number)=>["E","S","W","N"][Math.round(wrap(a)/(Math.PI/2))%4];
 
-function seededRandom(seed: number) {
-  let value = seed >>> 0;
-  return () => {
-    value = (value * 1664525 + 1013904223) >>> 0;
-    return value / 4294967296;
-  };
-}
-
-function makeMaze(random: () => number): number[][] {
-  const grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(1));
-  const stack: Point[] = [{ x: 1, y: 1 }];
-  grid[1][1] = 0;
-  while (stack.length) {
-    const current = stack[stack.length - 1];
-    const options = [
-      { x: 2, y: 0 }, { x: -2, y: 0 }, { x: 0, y: 2 }, { x: 0, y: -2 },
-    ].filter(({ x, y }) => {
-      const nx = current.x + x;
-      const ny = current.y + y;
-      return nx > 0 && ny > 0 && nx < SIZE - 1 && ny < SIZE - 1 && grid[ny][nx] === 1;
-    });
-    if (!options.length) { stack.pop(); continue; }
-    const next = options[Math.floor(random() * options.length)];
-    grid[current.y + next.y / 2][current.x + next.x / 2] = 0;
-    grid[current.y + next.y][current.x + next.x] = 0;
-    stack.push({ x: current.x + next.x, y: current.y + next.y });
-  }
-  return grid;
-}
-
-function chooseSpawnAngle(maze: number[][]) {
-  let bestDirection = 0;
-  let bestDepth = -1;
-  DIRS.forEach((direction, index) => {
-    let depth = 0;
-    while (maze[1 + direction.y * (depth + 1)]?.[1 + direction.x * (depth + 1)] === 0) depth++;
-    if (depth > bestDepth) {
-      bestDepth = depth;
-      bestDirection = index;
-    }
-  });
-  return bestDirection * (Math.PI / 2);
-}
-
-function connectedCells(maze: number[][], from: Point) {
-  const queue = [from];
-  const visited = new Set([key(from.x, from.y)]);
-  while (queue.length) {
-    const p = queue.shift()!;
-    for (const d of DIRS) {
-      const x = p.x + d.x;
-      const y = p.y + d.y;
-      if (maze[y]?.[x] === 0 && !visited.has(key(x, y))) {
-        visited.add(key(x, y));
-        queue.push({ x, y });
-      }
-    }
-  }
-  return visited;
-}
-
-function topologyIsSafe(maze: number[][], from: Point) {
-  if (maze[from.y]?.[from.x] !== 0) return false;
-  const connected = connectedCells(maze, from);
-  let openCells = 0;
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) if (maze[y][x] === 0) openCells++;
-  }
-  // Reject every candidate that would create a sealed room, orphan corridor,
-  // or disconnected loop anywhere in the maze—not only near the player.
-  return connected.size === openCells;
-}
-
-function visibleCells(maze: number[][], pose: Pick<Pose, "x" | "y" | "angle">) {
-  const visible = new Set<string>([key(Math.floor(pose.x), Math.floor(pose.y))]);
-  // A full line-of-sight shell is immutable. This includes the first wall hit
-  // by every ray, so regeneration can only happen behind occluding geometry.
-  const protectionRays = 360;
-  for (let i = 0; i < protectionRays; i++) {
-    const ray = (i / protectionRays) * Math.PI * 2;
-    for (let dist = 0.04; dist < 12; dist += 0.055) {
-      const x = Math.floor(pose.x + Math.cos(ray) * dist);
-      const y = Math.floor(pose.y + Math.sin(ray) * dist);
-      visible.add(key(x, y));
-      if (maze[y]?.[x] !== 0) break;
+function visibleCells(world:InfiniteWorld,pose:Pose,tick:number){
+  const visible=new Set<string>([cellKey(Math.floor(pose.x),Math.floor(pose.y))]);
+  for(let i=0;i<360;i++){
+    const angle=i/360*Math.PI*2;
+    for(let d=.04;d<12;d+=.055){
+      const x=Math.floor(pose.x+Math.cos(angle)*d),y=Math.floor(pose.y+Math.sin(angle)*d);
+      visible.add(cellKey(x,y));if(world.tile(x,y,tick)!==0)break;
     }
   }
   return visible;
 }
 
-function shiftUnseen(game: Game, protectedCells: Set<string>) {
-  const maze = game.maze.map((row) => [...row]);
-  let changes = 0;
-  for (let attempt = 0; attempt < 90 && changes < 6; attempt++) {
-    const x = 1 + Math.floor(Math.random() * (SIZE - 2));
-    const y = 1 + Math.floor(Math.random() * (SIZE - 2));
-    if (protectedCells.has(key(x, y))) continue;
-    const old = maze[y][x];
-    maze[y][x] = old ? 0 : 1;
-    if (topologyIsSafe(maze, game.player)) changes++;
-    else maze[y][x] = old;
-  }
-  return changes ? maze : game.maze;
+function spawnAngle(world:InfiniteWorld){
+  const dirs=[[1,0],[0,1],[-1,0],[0,-1]];let best=0,depth=-1;
+  dirs.forEach(([dx,dy],i)=>{let d=0;while(d<12&&world.tile(1+dx*(d+1),1+dy*(d+1))===0)d++;if(d>depth){depth=d;best=i}});
+  return best*Math.PI/2;
 }
 
-function initialGame(seed = 1337): Game {
-  const maze = makeMaze(seededRandom(seed));
-  const spawnAngle = chooseSpawnAngle(maze);
-  const pose = { x: 1.5, y: 1.5, angle: spawnAngle };
-  const seen = visibleCells(maze, pose);
-  const memory = Array.from({ length: SIZE }, () => Array(SIZE).fill(-1));
-  seen.forEach((cell) => {
-    const [x, y] = cell.split(",").map(Number);
-    if (maze[y]?.[x] !== undefined) memory[y][x] = maze[y][x];
-  });
-  return { maze, memory, seen, visitAge: { "1,1": 0 }, player: { x: 1, y: 1 }, spawnAngle, moves: 0, shifts: 0, message: "NO DESTINATION // KEEP MOVING" };
+function newRun(seed=1337):Run{
+  const world=new InfiniteWorld(seed);world.ensureAround(1,1,0);const angle=spawnAngle(world);
+  const pose={x:1.5,y:1.5,angle,bob:0};const memory=new Map<string,MemoryCell>();
+  visibleCells(world,pose,0).forEach(id=>{const[x,y]=id.split(",").map(Number);memory.set(id,{tile:world.tile(x,y),seenAt:0})});
+  return{seed,world,anchors:[],entities:[],memory,visited:new Set(["1,1"]),recent:["1,1"],player:{x:1,y:1},spawnAngle:angle,moves:0,shifts:0,message:"NO DESTINATION // KEEP MOVING",revision:0};
 }
 
-function castRay(maze: number[][], pose: Pose, angle: number) {
-  const rayX = Math.cos(angle);
-  const rayY = Math.sin(angle);
-  let mapX = Math.floor(pose.x);
-  let mapY = Math.floor(pose.y);
-  const deltaX = Math.abs(1 / (rayX || 0.00001));
-  const deltaY = Math.abs(1 / (rayY || 0.00001));
-  const stepX = rayX < 0 ? -1 : 1;
-  const stepY = rayY < 0 ? -1 : 1;
-  let sideX = rayX < 0 ? (pose.x - mapX) * deltaX : (mapX + 1 - pose.x) * deltaX;
-  let sideY = rayY < 0 ? (pose.y - mapY) * deltaY : (mapY + 1 - pose.y) * deltaY;
-  let side = 0;
-  for (let i = 0; i < 40; i++) {
-    if (sideX < sideY) { sideX += deltaX; mapX += stepX; side = 0; }
-    else { sideY += deltaY; mapY += stepY; side = 1; }
-    if (maze[mapY]?.[mapX] !== 0) break;
-  }
-  const distance = side === 0
-    ? (mapX - pose.x + (1 - stepX) / 2) / rayX
-    : (mapY - pose.y + (1 - stepY) / 2) / rayY;
-  const hit = side === 0 ? pose.y + distance * rayY : pose.x + distance * rayX;
-  return { distance: Math.max(distance, 0.01), mapX, mapY, side, texture: hit - Math.floor(hit) };
-}
+export default function Home(){
+  const[run,setRun]=useState<Run>(()=>newRun());const runRef=useRef(run);
+  const canvasRef=useRef<HTMLCanvasElement>(null),poseRef=useRef<Pose>({x:1.5,y:1.5,angle:run.spawnAngle,bob:0});
+  const heldRef=useRef(new Set<string>()),lastCellRef=useRef("1,1"),touchXRef=useRef<number|null>(null);
+  const schedulerRef=useRef<ThemeScheduler>(createThemeScheduler(run.seed));
+  const[heading,setHeading]=useState(()=>bearing(run.spawnAngle));
+  const reducedRef=useRef(false);
+  useEffect(()=>{runRef.current=run},[run]);
+  useEffect(()=>{reducedRef.current=matchMedia("(prefers-reduced-motion: reduce)").matches},[]);
 
-function renderScene(ctx: CanvasRenderingContext2D, game: Game, pose: Pose, moving: boolean) {
-  const { width, height } = ctx.canvas;
-  const time = performance.now() * 0.001;
-  const bob = moving ? Math.sin(pose.bob) * 3.5 : 0;
-  const horizon = height * 0.47 + bob;
-  const ceiling = ctx.createLinearGradient(0, 0, 0, horizon);
-  ceiling.addColorStop(0, "#101311");
-  ceiling.addColorStop(1, "#252722");
-  ctx.fillStyle = ceiling;
-  ctx.fillRect(0, 0, width, horizon);
-  const floor = ctx.createLinearGradient(0, horizon, 0, height);
-  floor.addColorStop(0, "#343128");
-  floor.addColorStop(1, "#12130f");
-  ctx.fillStyle = floor;
-  ctx.fillRect(0, horizon, width, height - horizon);
-
-  ctx.strokeStyle = "rgba(205, 195, 162, .055)";
-  for (let i = 1; i < 9; i++) {
-    const y = horizon + (height - horizon) * (i / 9) ** 0.48;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-  }
-
-  for (let i = 0; i < RAYS; i++) {
-    const rayAngle = pose.angle - FOV / 2 + (i / RAYS) * FOV;
-    const ray = castRay(game.maze, pose, rayAngle);
-    const corrected = ray.distance * Math.cos(rayAngle - pose.angle);
-    const wallH = Math.min(height * 1.7, height / Math.max(corrected, 0.22));
-    const top = horizon - wallH / 2;
-    const x = (i / RAYS) * width;
-    const columnW = width / RAYS + 1;
-    const wallSeed = Math.abs(ray.mapX * 137 + ray.mapY * 263 + ray.side * 41);
-    const theme = wallSeed % 7;
-    const palettes = [
-      [76, 21, 42],  // mossy limestone
-      [24, 28, 46],  // warm terracotta
-      [205, 16, 45], // blue slate
-      [276, 13, 43], // faded violet stone
-      [44, 26, 47],  // ochre warning wall
-      [171, 17, 43], // impossible oxidized copper
-      [7, 18, 45],   // fossil-red sandstone
-    ];
-    const [hue, baseSaturation, baseLight] = palettes[theme];
-    const hash = (wallSeed % 11) - 5;
-    const fog = Math.min(1, corrected / 10.5);
-    const light = Math.max(18, baseLight - fog * 24 + hash * 0.38 - ray.side * 5);
-    const saturation = Math.max(7, baseSaturation - fog * 9);
-    ctx.fillStyle = `hsl(${hue} ${saturation}% ${light}%)`;
-    ctx.fillRect(x, top, columnW, wallH);
-
-    // Staggered masonry: each row offsets its vertical joins like real blocks.
-    const blockRows = 5;
-    for (let row = 0; row < blockRows; row++) {
-      const rowTop = top + wallH * (row / blockRows);
-      const rowBottom = top + wallH * ((row + 1) / blockRows);
-      const brickU = (ray.texture * 2 + (row % 2) * .5) % 1;
-      if (brickU < .035 || brickU > .965) {
-        ctx.fillStyle = `rgba(16, 18, 15, ${0.24 + fog * 0.22})`;
-        ctx.fillRect(x, rowTop, columnW, rowBottom - rowTop);
+  const enterCell=useCallback((x:number,y:number)=>{
+    const id=cellKey(x,y);lastCellRef.current=id;
+    setRun(old=>{
+      const pose=poseRef.current,world=old.world;let moves=old.moves,shifts=old.shifts,message="FOOTSTEPS DISSOLVE BEHIND YOU";
+      const visited=new Set(old.visited),recent=[...old.recent,id].slice(-20);const firstVisit=!visited.has(id);
+      if(firstVisit){visited.add(id);moves++}
+      let anchors=[...old.anchors];const scheduler=schedulerRef.current;
+      if(firstVisit&&moves>=scheduler.nextAt){
+        const theme=scheduler.nextTheme() as ThemeId;anchors.push({x,y,theme,bornAt:moves});scheduler.advance(moves);
+        message=THEMES[theme].signal;
       }
-    }
-    for (let row = 1; row < blockRows; row++) {
-      const seam = top + wallH * (row / blockRows);
-      if (seam >= 0 && seam <= height) {
-        ctx.fillStyle = `rgba(17, 18, 15, ${0.24 + fog * 0.18})`;
-        ctx.fillRect(x, seam, columnW, Math.max(1, wallH * 0.008));
-      }
-    }
-
-    // Each cell receives one persistent wall character, derived from its grid
-    // coordinates. The effects are intentionally muted so variety stays calm.
-    if (theme === 0) {
-      const mossDepth = .1 + ((Math.sin(ray.texture * 19 + wallSeed) + 1) * .5) * .28;
-      ctx.fillStyle = `rgba(64, 91, 51, ${(.34 - fog * .18).toFixed(3)})`;
-      ctx.fillRect(x, top, columnW, wallH * mossDepth);
-      if ((Math.floor(ray.texture * 31 + wallSeed) % 9) === 0) {
-        ctx.fillStyle = `rgba(48, 77, 41, ${(.38 - fog * .18).toFixed(3)})`;
-        ctx.fillRect(x, top, columnW, wallH * Math.min(.7, mossDepth + .24));
-      }
-    } else if (theme === 1) {
-      for (let band = 0; band < 8; band++) {
-        const checker = (Math.floor(ray.texture * 8) + band + wallSeed) % 2;
-        if (checker === 0) {
-          ctx.fillStyle = `rgba(213, 151, 88, ${(.13 * (1 - fog)).toFixed(3)})`;
-          ctx.fillRect(x, top + wallH * band / 8, columnW, wallH / 8);
-        }
-      }
-    } else if (theme === 2) {
-      const bandTop = top + wallH * .37;
-      const bandH = wallH * .23;
-      const stripe = Math.floor(ray.texture * 13 + wallSeed) % 2;
-      ctx.fillStyle = stripe ? `rgba(175, 150, 82, ${.24 * (1 - fog)})` : `rgba(24, 29, 28, ${.27 * (1 - fog)})`;
-      ctx.fillRect(x, bandTop, columnW, bandH);
-    } else if (theme === 3) {
-      // A large geometric rune assembled from projected pixel segments.
-      for (let band = 0; band < 13; band++) {
-        const v = (band + .5) / 13;
-        const u = ray.texture;
-        const ring = Math.abs(Math.hypot((u - .5) * 1.7, (v - .5) * 1.7) - .34) < .055;
-        const stem = Math.abs(u - .5) < .045 && v > .22 && v < .78;
-        const arms = Math.abs(v - .5) < .05 && u > .24 && u < .76;
-        if (ring || stem || arms) {
-          ctx.fillStyle = `rgba(190, 156, 188, ${.28 * (1 - fog)})`;
-          ctx.fillRect(x, top + wallH * band / 13, columnW, wallH / 13 + 1);
-        }
-      }
-    } else if (theme === 4) {
-      // Tiny ceramic inlays that read like a constellation from a distance.
-      for (let dot = 0; dot < 4; dot++) {
-        const dotU = ((wallSeed * (dot + 3) * 17) % 91) / 91;
-        const dotV = ((wallSeed * (dot + 5) * 29) % 83) / 83;
-        if (Math.abs(ray.texture - dotU) < .018) {
-          ctx.fillStyle = `rgba(204, 194, 131, ${.38 * (1 - fog)})`;
-          ctx.fillRect(x, top + wallH * dotV, columnW, Math.max(2, wallH * .025));
-        }
-      }
-    } else if (theme === 5) {
-      // A very slow, low-contrast shimmer hints that this surface is unstable.
-      const wave = (Math.sin(ray.texture * 22 + time * .75 + wallSeed) + 1) * .5;
-      ctx.fillStyle = `rgba(${wave > .55 ? "76, 143, 132" : "122, 91, 129"}, ${(.07 + wave * .07) * (1 - fog)})`;
-      ctx.fillRect(x, top, columnW, wallH);
-    } else {
-      // Fossil rings embedded in the sandstone.
-      for (let band = 0; band < 15; band++) {
-        const v = (band + .5) / 15;
-        const radius = Math.hypot((ray.texture - .5) * 1.3, (v - .52) * 1.3);
-        if (Math.abs(radius - .18) < .025 || Math.abs(radius - .34) < .022) {
-          ctx.fillStyle = `rgba(225, 185, 139, ${.2 * (1 - fog)})`;
-          ctx.fillRect(x, top + wallH * band / 15, columnW, wallH / 15 + 1);
-        }
-      }
-    }
-
-    // Sparse cracks cross all wall families and break up perfect repetition.
-    for (let segment = 0; segment < 7; segment++) {
-      const v = (segment + .5) / 7;
-      const crackU = .16 + ((wallSeed % 47) / 47) * .55 + Math.sin(v * 14 + wallSeed) * .055;
-      if (Math.abs(ray.texture - crackU) < .012) {
-        ctx.fillStyle = `rgba(17, 18, 15, ${.26 * (1 - fog)})`;
-        ctx.fillRect(x, top + wallH * segment / 7, columnW, wallH / 7 + 1);
-      }
-    }
-
-    const grain = (Math.sin(ray.texture * 74 + ray.mapX * 9 + ray.mapY * 5) + 1) * 0.5;
-    ctx.fillStyle = `rgba(238, 224, 185, ${grain * 0.035 * (1 - fog)})`;
-    ctx.fillRect(x, top, columnW, wallH);
-
-  }
-
-  const fog = ctx.createRadialGradient(width / 2, horizon, height * .12, width / 2, horizon, width * .7);
-  fog.addColorStop(0, "rgba(0,0,0,0)");
-  fog.addColorStop(1, "rgba(3,4,3,.42)");
-  ctx.fillStyle = fog;
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "rgba(220, 208, 170, .48)";
-  ctx.fillRect(width / 2 - 7, horizon, 14, 1);
-  ctx.fillRect(width / 2, horizon - 7, 1, 14);
-  ctx.fillStyle = "rgba(0,0,0,.055)";
-  for (let y = 0; y < height; y += 5) ctx.fillRect(0, y, width, 1);
-}
-
-export default function Home() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [game, setGame] = useState<Game>(() => initialGame());
-  const gameRef = useRef(game);
-  const poseRef = useRef<Pose>({ x: 1.5, y: 1.5, angle: game.spawnAngle, bob: 0 });
-  const heldRef = useRef(new Set<string>());
-  const lastCellRef = useRef("1,1");
-  const touchXRef = useRef<number | null>(null);
-  const [heading, setHeading] = useState(() => bearing(game.spawnAngle));
-
-  useEffect(() => { gameRef.current = game; }, [game]);
-
-  const visitCell = useCallback((x: number, y: number) => {
-    lastCellRef.current = key(x, y);
-    setGame((old) => {
-      const pose = poseRef.current;
-      const player = { x, y };
-      const moves = old.moves + 1;
-      const visitAge = { ...old.visitAge, [key(x, y)]: moves };
-      let maze = old.maze;
-      let shifts = old.shifts;
-      let message = "FOOTSTEPS ECHO BEHIND YOU";
-      const protectedCells = visibleCells(maze, pose);
-      // Footprints have a grace period. Once they are more than twelve cells
-      // old and out of 360° line of sight, the maze may reclaim that geometry.
-      for (const [cell, lastVisit] of Object.entries(visitAge)) {
-        if (moves - lastVisit <= 12) protectedCells.add(cell);
-      }
-      if (moves % 3 === 0) {
-        const shifted = shiftUnseen({ ...old, player, moves, visitAge }, protectedCells);
-        if (shifted !== maze) { maze = shifted; shifts++; message = "GEOMETRY SHIFT DETECTED OUTSIDE VIEW"; }
-      }
-      const seen = new Set(old.seen);
-      const memory = old.memory.map((row) => [...row]);
-      visibleCells(maze, pose).forEach((cell) => {
-        seen.add(cell);
-        const [cx, cy] = cell.split(",").map(Number);
-        if (maze[cy]?.[cx] !== undefined) memory[cy][cx] = maze[cy][cx];
-      });
-      return { ...old, maze, memory, seen, visitAge, player, moves, shifts, message };
+      const visible=visibleCells(world,pose,moves),protectedChunks=new Set<string>();
+      for(const cell of [...visible,...recent]){const[cx,cy]=cell.split(",").map(Number);const c=world.coords(cx,cy);protectedChunks.add(chunkKey(c.cx,c.cy))}
+      world.ensureAround(x,y,moves);const before=world.chunks.size;world.prune(x,y,protectedChunks,moves);if(world.chunks.size<before)shifts++;
+      const memory=new Map(old.memory);
+      visible.forEach(cell=>{const[cx,cy]=cell.split(",").map(Number);memory.set(cell,{tile:world.tile(cx,cy,moves),seenAt:moves})});
+      for(const[cell,value]of memory)if(moves-value.seenAt>80)memory.delete(cell);
+      const pc=world.coords(x,y);anchors=anchors.filter(a=>Math.abs(world.coords(a.x,a.y).cx-pc.cx)<=CACHE_RADIUS+1&&Math.abs(world.coords(a.x,a.y).cy-pc.cy)<=CACHE_RADIUS+1);
+      const entities=entitiesNear(old.seed,world,anchors,x+.5,y+.5);
+      return{...old,anchors,entities,memory,visited,recent,player:{x,y},moves,shifts,message,revision:old.revision+1};
     });
-  }, []);
+  },[]);
 
-  useEffect(() => {
-    const down = (event: KeyboardEvent) => {
-      const value = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(value)) {
-        event.preventDefault();
-        heldRef.current.add(value);
+  useEffect(()=>{
+    const down=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
+    const up=(e:KeyboardEvent)=>heldRef.current.delete(e.key.toLowerCase()),blur=()=>heldRef.current.clear();
+    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current)poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.0022)};
+    addEventListener("keydown",down);addEventListener("keyup",up);addEventListener("blur",blur);addEventListener("mousemove",mouse);
+    return()=>{removeEventListener("keydown",down);removeEventListener("keyup",up);removeEventListener("blur",blur);removeEventListener("mousemove",mouse)};
+  },[]);
+
+  useEffect(()=>{
+    let frame=0,previous=performance.now();
+    const tick=(now:number)=>{
+      const dt=Math.min((now-previous)/1000,.05);previous=now;const current=runRef.current,pose=poseRef.current,held=heldRef.current;
+      let turn=0;if(held.has("a")||held.has("arrowleft"))turn--;if(held.has("d")||held.has("arrowright"))turn++;
+      pose.angle=wrap(pose.angle+turn*TURN_SPEED*dt);let drive=0;if(held.has("w")||held.has("arrowup"))drive++;if(held.has("s")||held.has("arrowdown"))drive--;
+      const moving=drive!==0;if(moving){
+        const distance=drive*MOVE_SPEED*dt,nx=pose.x+Math.cos(pose.angle)*distance,ny=pose.y+Math.sin(pose.angle)*distance,w=current.world;
+        w.ensureAround(Math.floor(nx),Math.floor(ny),current.moves);
+        const clearX=w.tile(Math.floor(nx-PLAYER_RADIUS),Math.floor(pose.y-PLAYER_RADIUS))===0&&w.tile(Math.floor(nx+PLAYER_RADIUS),Math.floor(pose.y+PLAYER_RADIUS))===0;if(clearX)pose.x=nx;
+        const clearY=w.tile(Math.floor(pose.x-PLAYER_RADIUS),Math.floor(ny-PLAYER_RADIUS))===0&&w.tile(Math.floor(pose.x+PLAYER_RADIUS),Math.floor(ny+PLAYER_RADIUS))===0;if(clearY)pose.y=ny;
+        pose.bob+=dt*9;const cell=cellKey(Math.floor(pose.x),Math.floor(pose.y));if(cell!==lastCellRef.current)enterCell(Math.floor(pose.x),Math.floor(pose.y));
       }
-    };
-    const up = (event: KeyboardEvent) => heldRef.current.delete(event.key.toLowerCase());
-    const blur = () => heldRef.current.clear();
-    const mouse = (event: MouseEvent) => {
-      if (document.pointerLockElement === canvasRef.current) poseRef.current.angle = wrapAngle(poseRef.current.angle + event.movementX * 0.0022);
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    window.addEventListener("blur", blur);
-    window.addEventListener("mousemove", mouse);
-    return () => {
-      window.removeEventListener("keydown", down); window.removeEventListener("keyup", up);
-      window.removeEventListener("blur", blur); window.removeEventListener("mousemove", mouse);
-    };
-  }, []);
+      const next=bearing(pose.angle);setHeading(old=>old===next?old:next);
+      const ctx=canvasRef.current?.getContext("2d");if(ctx)renderWorld(ctx,current.world,current.anchors,current.entities,pose,moving,reducedRef.current,current.moves);
+      frame=requestAnimationFrame(tick);
+    };frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
+  },[enterCell]);
 
-  useEffect(() => {
-    let frame = 0;
-    let previous = performance.now();
-    const tick = (now: number) => {
-      const dt = Math.min((now - previous) / 1000, 0.05);
-      previous = now;
-      const current = gameRef.current;
-      const pose = poseRef.current;
-      const held = heldRef.current;
-      let turn = 0;
-      if (held.has("a") || held.has("arrowleft")) turn -= 1;
-      if (held.has("d") || held.has("arrowright")) turn += 1;
-      pose.angle = wrapAngle(pose.angle + turn * TURN_SPEED * dt);
-      let drive = 0;
-      if (held.has("w") || held.has("arrowup")) drive += 1;
-      if (held.has("s") || held.has("arrowdown")) drive -= 1;
-      const moving = drive !== 0;
-      if (moving) {
-        const distance = drive * MOVE_SPEED * dt;
-        const nx = pose.x + Math.cos(pose.angle) * distance;
-        const ny = pose.y + Math.sin(pose.angle) * distance;
-        const maze = current.maze;
-        const clearX = maze[Math.floor(pose.y - PLAYER_RADIUS)]?.[Math.floor(nx - PLAYER_RADIUS)] === 0 && maze[Math.floor(pose.y + PLAYER_RADIUS)]?.[Math.floor(nx + PLAYER_RADIUS)] === 0;
-        if (clearX) pose.x = nx;
-        const clearY = maze[Math.floor(ny - PLAYER_RADIUS)]?.[Math.floor(pose.x - PLAYER_RADIUS)] === 0 && maze[Math.floor(ny + PLAYER_RADIUS)]?.[Math.floor(pose.x + PLAYER_RADIUS)] === 0;
-        if (clearY) pose.y = ny;
-        pose.bob += dt * 9;
-        const cell = key(Math.floor(pose.x), Math.floor(pose.y));
-        if (cell !== lastCellRef.current) visitCell(Math.floor(pose.x), Math.floor(pose.y));
-      }
-      const nextHeading = bearing(pose.angle);
-      setHeading((old) => old === nextHeading ? old : nextHeading);
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (ctx && canvas) renderScene(ctx, current, pose, moving);
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [visitCell]);
-
-  const hold = (control: string, active: boolean) => {
-    if (active) heldRef.current.add(control);
-    else heldRef.current.delete(control);
-  };
-
-  const reset = () => {
-    const nextGame = initialGame(Date.now());
-    heldRef.current.clear();
-    poseRef.current = { x: 1.5, y: 1.5, angle: nextGame.spawnAngle, bob: 0 };
-    lastCellRef.current = "1,1";
-    setHeading(bearing(nextGame.spawnAngle));
-    setGame(nextGame);
-  };
-
-  return (
-    <main className="shell">
-      <header className="masthead">
-        <div className="brand"><span>NULL</span> CORRIDOR</div>
-        <div className="status"><i /> LIVE GEOMETRY</div>
-      </header>
-
-      <section className="game-grid" aria-label="First person maze game">
-        <div className="viewport-wrap">
-          <div className="viewport-label"><span>CAM_01 // {heading}</span><span>CLICK VIEW FOR MOUSE LOOK</span></div>
-          <canvas
-            ref={canvasRef}
-            width={960}
-            height={560}
-            aria-label="First-person view into the maze. Click for mouse look."
-            onClick={(event) => event.currentTarget.requestPointerLock?.()}
-            onTouchStart={(event) => { touchXRef.current = event.touches[0]?.clientX ?? null; }}
-            onTouchMove={(event) => {
-              const x = event.touches[0]?.clientX;
-              if (x !== undefined && touchXRef.current !== null) poseRef.current.angle = wrapAngle(poseRef.current.angle + (x - touchXRef.current) * 0.006);
-              touchXRef.current = x ?? null;
-            }}
-            onTouchEnd={() => { touchXRef.current = null; }}
-          />
-          <div className="vignette" />
-        </div>
-
-        <aside className="console">
-          <div className="console-head"><span>LOCAL MEMORY</span><span className="blink">REC</span></div>
-          <div className="minimap" style={{ gridTemplateColumns: `repeat(${SIZE}, 1fr)` }} aria-label="Map of remembered maze geometry">
-            {game.memory.flatMap((row, y) => row.map((cell, x) => {
-              const isPlayer = game.player.x === x && game.player.y === y;
-              return <span key={key(x, y)} className={`${cell === 1 ? "wall" : cell === 0 ? "path" : "unknown"} ${isPlayer ? "player" : ""}`} />;
-            }))}
-          </div>
-          <p className="map-note">WARNING: MEMORY IS NOT GEOMETRY</p>
-          <dl className="telemetry">
-            <div><dt>CELLS</dt><dd>{String(game.moves).padStart(3, "0")}</dd></div>
-            <div><dt>SHIFTS</dt><dd>{String(game.shifts).padStart(3, "0")}</dd></div>
-            <div><dt>BEARING</dt><dd>{heading}</dd></div>
-          </dl>
-          <div className="signal"><span>SIGNAL</span><b>{game.message}</b></div>
-        </aside>
-      </section>
-
-      <footer className="controls">
-        <div className="control-copy"><span>MOVE CONTINUOUSLY</span><p>HOLD W/S · TURN WITH A/D · CLICK VIEW FOR MOUSE LOOK</p></div>
-        <div className="keys" aria-label="Maze controls">
-          {[["a", "A", "Turn left"], ["w", "W", "Move forward"], ["d", "D", "Turn right"], ["s", "S", "Move backward"]].map(([control, label, aria]) => (
-            <button key={control} onPointerDown={() => hold(control, true)} onPointerUp={() => hold(control, false)} onPointerLeave={() => hold(control, false)} aria-label={aria}>{label}</button>
-          ))}
-        </div>
-        <button className="reset" onClick={reset}>NEW SIGNAL</button>
-      </footer>
-    </main>
-  );
+  const hold=(key:string,on:boolean)=>on?heldRef.current.add(key):heldRef.current.delete(key);
+  const reset=()=>{const next=newRun((Date.now()^Math.floor(Math.random()*0xffffffff))>>>0);schedulerRef.current=createThemeScheduler(next.seed);heldRef.current.clear();poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};lastCellRef.current="1,1";setHeading(bearing(next.spawnAngle));setRun(next)};
+  const mapCells=[];for(let oy=-MAP_RADIUS;oy<=MAP_RADIUS;oy++)for(let ox=-MAP_RADIUS;ox<=MAP_RADIUS;ox++){
+    const x=run.player.x+ox,y=run.player.y+oy,memory=run.memory.get(cellKey(x,y));mapCells.push({id:`${ox},${oy}`,tile:memory?.tile,player:ox===0&&oy===0,age:memory?run.moves-memory.seenAt:999});
+  }
+  return <main className="shell">
+    <header className="masthead"><div className="brand"><span>NULL</span> CORRIDOR</div><div className="status"><i/> STREAMING GEOMETRY</div></header>
+    <section className="game-grid" aria-label="Infinite first person maze game">
+      <div className="viewport-wrap"><div className="viewport-label"><span>CAM_01 // {heading}</span><span>CLICK VIEW FOR MOUSE LOOK</span></div>
+        <canvas ref={canvasRef} width={960} height={560} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()}
+          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null)poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.006);touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
+        <div className="vignette"/></div>
+      <aside className="console"><div className="console-head"><span>LOCAL MEMORY</span><span className="blink">REC</span></div>
+        <div className="minimap infinite" style={{gridTemplateColumns:`repeat(${MAP_RADIUS*2+1},1fr)`}} aria-label="Moving window of remembered nearby geometry">
+          {mapCells.map(c=><span key={c.id} style={{opacity:c.age>55?.25:c.age>30?.55:1}} className={`${c.tile===1?"wall":c.tile===0?"path":"unknown"} ${c.player?"player":""}`}/>)}</div>
+        <p className="map-note">LOCAL MEMORY DECAYS BEYOND RANGE</p><dl className="telemetry"><div><dt>CELLS</dt><dd>{String(run.moves).padStart(3,"0")}</dd></div><div><dt>SHIFTS</dt><dd>{String(run.shifts).padStart(3,"0")}</dd></div><div><dt>BEARING</dt><dd>{heading}</dd></div></dl>
+        <div className="signal"><span>SIGNAL</span><b>{run.message}</b></div></aside>
+    </section>
+    <footer className="controls"><div className="control-copy"><span>NO MAP EDGE</span><p>HOLD W/S · TURN WITH A/D · THE WORLD CONTINUES</p></div><div className="keys" aria-label="Maze controls">
+      {[["a","A","Turn left"],["w","W","Move forward"],["d","D","Turn right"],["s","S","Move backward"]].map(([k,l,a])=><button key={k} onPointerDown={()=>hold(k,true)} onPointerUp={()=>hold(k,false)} onPointerLeave={()=>hold(k,false)} aria-label={a}>{l}</button>)}</div><button className="reset" onClick={reset}>NEW SIGNAL</button></footer>
+  </main>;
 }

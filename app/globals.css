@@ -21,6 +21,7 @@ canvas { display: block; width: 100%; height: min(65vh, 650px); object-fit: fill
 .blink { animation: blink 1.2s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .25; } }
 .minimap { aspect-ratio: 1; display: grid; gap: 1px; padding: 12px; margin-top: 14px; background: #090b09; border: 1px solid #30352f; }
+.minimap.infinite { transition: none; }
 .minimap span { display: block; min-width: 0; }
 .minimap .unknown { background: #0e110e; }
 .minimap .wall { background: #66665c; }

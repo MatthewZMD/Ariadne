@@ -1,91 +1,51 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+import { InfiniteWorld, THEME_IDS, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
 
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-const templateRoot = new URL("../", import.meta.url);
-const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
-
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-}
-
-test("server-renders the starter loading skeleton", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, developmentPreviewMeta);
-  assert.match(html, /<title>Your site is taking shape<\/title>/i);
-  assert.match(html, /Building your site/);
-  assert.match(html, /Your site is taking shape/);
-  assert.match(
-    html,
-    /Your first version will appear here automatically when it’s ready\./,
-  );
-  assert.doesNotMatch(html, /Codex/);
-  assert.match(html, /react-loading-skeleton/);
-  assert.match(html, /role="status"/);
+test("shared portals match across positive and negative chunk seams", () => {
+  const seed=192837;
+  for(let cy=-6;cy<=6;cy++)for(let cx=-6;cx<=6;cx++){
+    const here=portalsFor(seed,cx,cy),east=portalsFor(seed,cx+1,cy),south=portalsFor(seed,cx,cy+1);
+    assert.equal(here.east,east.west);assert.equal(here.south,south.north);
+  }
 });
 
-test("keeps the loading skeleton scoped and disposable", async () => {
-  const [preview, css, page, layout, packageJson, files] = await Promise.all([
-    readFile(new URL("SkeletonPreview.tsx", previewRoot), "utf8"),
-    readFile(new URL("preview.css", previewRoot), "utf8"),
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
-    readdir(previewRoot),
-  ]);
+test("every chunk has one connected walkable network containing all portals",()=>{
+  const seed=314159;
+  for(let cy=-8;cy<=8;cy++)for(let cx=-8;cx<=8;cx++){
+    const chunk=generateChunk(seed,cx,cy,Math.abs(cx+cy)%4);
+    const open=chunk.tiles.flat().filter(x=>x===0).length;
+    assert.equal(connectedTileCount(chunk),open);
+    const p=portalsFor(seed,cx,cy);
+    assert.equal(chunk.tiles[0][p.north],0);assert.equal(chunk.tiles[15][p.south],0);
+    assert.equal(chunk.tiles[p.west][0],0);assert.equal(chunk.tiles[p.east][15],0);
+  }
+});
 
-  assert.deepEqual(files.sort(), ["SkeletonPreview.tsx", "preview.css"]);
-  assert.match(preview, /from "react-loading-skeleton"/);
-  assert.match(preview, /baseColor="#eceae7"/);
-  assert.match(preview, /highlightColor="#f9f8f6"/);
-  assert.match(preview, /duration=\{2\.8\}/);
-  assert.match(preview, /sites-skeleton-search-placeholder/);
-  assert.match(packageJson, /"react-loading-skeleton": "3\.5\.0"/);
+test("infinite coordinates stream through a bounded cache",()=>{
+  const world=new InfiniteWorld(99);
+  for(let step=-1200;step<=1200;step+=9){world.ensureAround(step,Math.floor(step*.37),step+1200);world.prune(step,Math.floor(step*.37),new Set(),step+1200);assert.ok(world.chunks.size<=49)}
+  assert.equal(typeof world.tile(-10001,21007),"number");
+});
 
-  const shellIndex = preview.indexOf('className="sites-skeleton-shell"');
-  const statusIndex = preview.indexOf('className="sites-skeleton-status"');
-  assert.ok(shellIndex >= 0 && statusIndex > shellIndex);
-  assert.match(css, /position:\s*fixed/);
-  assert.match(css, /inset:\s*0/);
-  assert.match(css, /opacity:\s*0\.52/);
-  assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.doesNotMatch(css, /#020617|canvas|pets|progress/i);
-  assert.doesNotMatch(
-    preview,
-    /loading-spinner|status-mark|status-progress|canvas|cookie|random/i,
-  );
+test("regenerated interiors change while stable seam portals survive",()=>{
+  const seed=8181,cx=-3,cy=5,a=generateChunk(seed,cx,cy,0),b=generateChunk(seed,cx,cy,1),p=portalsFor(seed,cx,cy);
+  assert.equal(a.tiles[0][p.north],b.tiles[0][p.north]);assert.equal(a.tiles[p.east][15],b.tiles[p.east][15]);
+  assert.notDeepEqual(a.tiles,b.tiles);
+});
 
-  assert.match(page, /export const metadata:\s*Metadata/);
-  assert.match(page, /"codex-preview": "development"/);
-  assert.match(page, /<SkeletonPreview \/>/);
-  assert.match(layout, /title:\s*"Starter Project"/);
-  assert.doesNotMatch(layout, /codex-preview|_sites-preview|themeColor|\bViewport\b/);
-  assert.doesNotMatch(css, /(^|\s)(html|body)\s*\{/m);
+test("checkpoint cadence is bounded and shuffle bag prevents early repeats",()=>{
+  const scheduler=createThemeScheduler(77),themes=[];let at=0;
+  for(let i=0;i<18;i++){const interval=scheduler.nextAt-at;assert.ok(interval>=25&&interval<=40);at=scheduler.nextAt;themes.push(scheduler.nextTheme());scheduler.advance(at)}
+  for(let i=0;i<themes.length;i+=THEME_IDS.length)assert.equal(new Set(themes.slice(i,i+THEME_IDS.length)).size,THEME_IDS.length);
+});
 
-  await assert.rejects(
-    access(new URL("public/_sites-preview", templateRoot)),
-  );
+async function render(){
+  const workerUrl=new URL("../dist/server/index.js",import.meta.url);workerUrl.searchParams.set("test",`${process.pid}-${Date.now()}`);
+  const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/",{headers:{accept:"text/html"}}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});
+}
+
+test("product shell renders without exposing checkpoints or an exit",async()=>{
+  const response=await render();assert.equal(response.status,200);const html=await response.text();
+  assert.match(html,/NULL/);assert.match(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|exit|you win/i);
 });
