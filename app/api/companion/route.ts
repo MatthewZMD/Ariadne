@@ -1,8 +1,8 @@
-import { deterministicReply, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceEvidence, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
+import { deterministicReply, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceEvidence, type PlayerActivity, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 
 type RequestBody={
-  sessionId:string;trigger:CompanionEvent;recommendation:unknown;recommendationEvidence:GuidanceEvidence|null;
+  sessionId:string;trigger:CompanionEvent;activity:PlayerActivity;recommendation:unknown;recommendationEvidence:GuidanceEvidence|null;
   actualTrajectory:unknown[];currentView:unknown;environment:VisibleEnvironment;rememberedMap:string;
   legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;playerMessage?:string;
 };
@@ -12,7 +12,7 @@ const responseSchema={type:"object",additionalProperties:false,required:["messag
 
 function validBody(value:unknown):value is RequestBody{
   if(!value||typeof value!=="object")return false;const body=value as Partial<RequestBody>;
-  return typeof body.sessionId==="string"&&body.sessionId.length<=80&&!!body.trigger&&Array.isArray(body.actualTrajectory)&&body.actualTrajectory.length<=40&&typeof body.rememberedMap==="string"&&body.rememberedMap.length<=1800&&Array.isArray(body.legalRoutes)&&body.legalRoutes.length<=6&&Array.isArray(body.recentMessages)&&body.recentMessages.length<=8&&(!body.playerMessage||body.playerMessage.length<=500);
+  return typeof body.sessionId==="string"&&body.sessionId.length<=80&&!!body.trigger&&!!body.activity&&Array.isArray(body.actualTrajectory)&&body.actualTrajectory.length<=40&&typeof body.rememberedMap==="string"&&body.rememberedMap.length<=1800&&Array.isArray(body.legalRoutes)&&body.legalRoutes.length<=6&&Array.isArray(body.recentMessages)&&body.recentMessages.length<=8&&(!body.playerMessage||body.playerMessage.length<=500);
 }
 
 function validReply(value:unknown,routes:RouteOption[]):value is CompanionReply{
@@ -20,14 +20,21 @@ function validReply(value:unknown,routes:RouteOption[]):value is CompanionReply{
   return typeof reply.message==="string"&&reply.message.length<=320&&(reply.selectedRouteId===null||routes.some(r=>r.id===reply.selectedRouteId))&&replyKinds.includes(reply.kind);
 }
 
-const spatialLanguage=/\b(left|right|straight|ahead|behind|back|backward|forward|turn|passage|corridor|junction|route)\b/i;
+const spatialLanguage=/\b(left|right|straight|ahead|behind|back|backward|forward|turn|passage|corridor|junction|route|opening|onward|move|moving|way)\b/i;
+const unsupportedExitClaim=(sentence:string)=>/\bexit\b/i.test(sentence)&&!/\b(no|not|never|haven't|hasn't|without|yet|still|search|seeking)\b/i.test(sentence);
 
 export function groundReply(reply:CompanionReply,routes:RouteOption[]):CompanionReply{
   const route=routes.find(option=>option.id===reply.selectedRouteId)??null;
-  const nonSpatial=reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!spatialLanguage.test(sentence)).join(" ").trim();
+  const nonSpatial=reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!spatialLanguage.test(sentence)&&!unsupportedExitClaim(sentence)).join(" ").trim();
   if(reply.kind==="silence")return{...reply,message:"",selectedRouteId:null};
-  const message=[nonSpatial,route?.instruction].filter(Boolean).join(" ").slice(0,320);
-  return{...reply,message,selectedRouteId:route?.id??null};
+  return{...reply,message:nonSpatial.slice(0,320),selectedRouteId:route?.id??null};
+}
+
+export function enforceActivityGrounding(reply:CompanionReply,activity:PlayerActivity,event:CompanionEvent):CompanionReply{
+  if(activity.state!=="stationary")return reply;
+  if(event.type==="idle")return{message:`You have stayed still for ${activity.stationarySeconds} seconds. I will wait.`,selectedRouteId:null,kind:"observation"};
+  const movementClaim=/\b(moved|moving|walked|walking|progress|progressed|drift|drifted|explored|arrived|reached|followed|chose|choice|closer|farther|continued|advanced)\b/i;
+  return{...reply,message:reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!movementClaim.test(sentence)).join(" ").trim()};
 }
 
 function semanticRecommendation(value:unknown){
@@ -47,7 +54,7 @@ function semanticMovement(evidence:GuidanceEvidence|null){
 
 function statePrompt(body:RequestBody){
   const routes=body.legalRoutes.map(r=>({id:r.id,direction:r.direction,description:r.description,verifiedInstruction:r.instruction}));
-  return `<maze_state>\nEGOCENTRIC VIEW COMPUTED BY THE GAME\n${JSON.stringify(body.currentView)}\nVISIBLE ENVIRONMENT\n${JSON.stringify(body.environment)}\nPREVIOUS RECOMMENDATION\n${JSON.stringify(semanticRecommendation(body.recommendation))}\nPLAYER MOVEMENT INTERPRETED BY THE GAME\n${semanticMovement(body.recommendationEvidence)}\nLEGAL ROUTES COMPUTED BY THE GAME\n${JSON.stringify(routes)}\nRECENT CONVERSATION\n${JSON.stringify(body.recentMessages)}\nOLDER CONTEXT SUMMARY\n${body.olderContextSummary.slice(0,800)}\nMEANINGFUL EVENT\n${JSON.stringify(body.trigger)}\nOPTIONAL PLAYER MESSAGE\n${body.playerMessage??"none"}\n</maze_state>`;
+  return `<maze_state>\nPLAYER ACTIVITY COMPUTED BY THE GAME\n${JSON.stringify(body.activity)}\nEGOCENTRIC VIEW COMPUTED BY THE GAME\n${JSON.stringify(body.currentView)}\nVISIBLE ENVIRONMENT\n${JSON.stringify(body.environment)}\nPREVIOUS RECOMMENDATION\n${JSON.stringify(semanticRecommendation(body.recommendation))}\nPLAYER MOVEMENT INTERPRETED BY THE GAME\n${semanticMovement(body.recommendationEvidence)}\nLEGAL ROUTES COMPUTED BY THE GAME\n${JSON.stringify(routes)}\nRECENT CONVERSATION\n${JSON.stringify(body.recentMessages)}\nOLDER CONTEXT SUMMARY\n${body.olderContextSummary.slice(0,800)}\nMEANINGFUL EVENT\n${JSON.stringify(body.trigger)}\nOPTIONAL PLAYER MESSAGE\n${body.playerMessage??"none"}\n</maze_state>`;
 }
 
 async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply>{
@@ -62,11 +69,11 @@ async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply
 export async function POST(request:Request){
   let body:unknown;try{body=await request.json()}catch{return Response.json({error:"invalid JSON"},{status:400})}
   if(!validBody(body))return Response.json({error:"invalid companion request"},{status:400});
-  const fallback=()=>deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.recentMessages);
+  const fallback=()=>enforceActivityGrounding(groundReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.recentMessages),body.legalRoutes),body.activity,body.trigger);
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback"});
     const reply=await openRouter(body,apiKey);if(!validReply(reply,body.legalRoutes))return Response.json({...fallback(),source:"fallback"});
-    return Response.json({...groundReply(reply,body.legalRoutes),source:"provider"});
+    return Response.json({...enforceActivityGrounding(groundReply(reply,body.legalRoutes),body.activity,body.trigger),source:"provider"});
   }catch{return Response.json({...fallback(),source:"fallback"})}
 }

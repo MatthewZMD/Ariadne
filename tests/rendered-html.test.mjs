@@ -78,13 +78,13 @@ async function requestCompanion(body){
 
 test("product shell renders without exposing checkpoints or an exit",async()=>{
   const response=await render();assert.equal(response.status,200);const html=await response.text();
-  assert.match(html,/NULL/);assert.match(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|exit|you win/i);
+  assert.match(html,/ENTER CHAT/);assert.doesNotMatch(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|exit|you win/i);
 });
 
 test("companion route works without credentials through the in-world fallback",async()=>{
   const route={id:"r1",direction:"straight",knownCells:[[2,1]],targetCell:[2,1],targetRegionId:null,description:"continue straight",score:3};
-  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{summary:"one corridor"},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:""});
-  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.match(body.message,/ahead/i);
+  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{summary:"one corridor"},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:""});
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.equal(body.message,"");
 });
 
 test("companion provider is configured for OpenRouter without exposing a key",async()=>{

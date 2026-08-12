@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } from "./world.mjs";
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
-import { compactMap, compareTrajectory, createGuidanceIntent, describeEgocentricView, forwardVisibleGeometry, planRoutes, visibleEnvironment, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceIntent, type TrajectorySample } from "./companion";
+import { analyzePlayerActivity, compactMap, compareTrajectory, createGuidanceIntent, describeEgocentricView, forwardVisibleGeometry, planRoutes, rebaseSelectedRoute, visibleEnvironment, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceIntent, type TrajectorySample } from "./companion";
 
-const MOVE_SPEED=1.65,TURN_SPEED=1.05,PLAYER_RADIUS=.18,MAP_RADIUS=10;
+const MOVE_SPEED=1.65,TURN_SPEED=1.05,PLAYER_RADIUS=.18;
 type MemoryCell={tile:number;seenAt:number};
 type Run={
   seed:number;world:InfiniteWorld;anchors:ThemeAnchor[];entities:AmbientEntity[];
@@ -62,22 +62,23 @@ function randomSeed(){
 export default function Home(){
   const[run,setRun]=useState<Run>(()=>newRun());const runRef=useRef(run);
   const canvasRef=useRef<HTMLCanvasElement>(null),poseRef=useRef<Pose>({x:1.5,y:1.5,angle:run.spawnAngle,bob:0});
+  const chatInputRef=useRef<HTMLInputElement>(null);
   const heldRef=useRef(new Set<string>()),lastCellRef=useRef("1,1"),touchXRef=useRef<number|null>(null);
   const schedulerRef=useRef<ReturnType<typeof createThemeScheduler>>(createThemeScheduler(run.seed));
   const[heading,setHeading]=useState(()=>bearing(run.spawnAngle));
   const[ready,setReady]=useState(false),bootedRef=useRef(false);
   const[companionMessages,setCompanionMessages]=useState<CompanionMessage[]>([]),messagesRef=useRef<CompanionMessage[]>([]);
-  const[companionStatus,setCompanionStatus]=useState<"LISTENING"|"THINKING"|"LINK STABLE">("LISTENING"),[companionInput,setCompanionInput]=useState("");
+  const[companionStatus,setCompanionStatus]=useState<"LISTENING"|"THINKING"|"LINK STABLE">("LISTENING"),[companionInput,setCompanionInput]=useState(""),[chatOpen,setChatOpen]=useState(false);
   const guidanceRef=useRef<GuidanceIntent|null>(null),trajectoryRef=useRef<TrajectorySample[]>([]),observedAfterGuidanceRef=useRef(new Set<string>()),newlyRevealedRef=useRef(new Set<string>());
-  const seenJunctionsRef=useRef(new Set<string>()),seenEnvironmentsRef=useRef(new Set<string>()),lastCompanionCallRef=useRef(0),lastIdleCallRef=useRef(0),requestInFlightRef=useRef(false),pendingEventRef=useRef<CompanionEvent|null>(null),lastMovementRef=useRef(0),collisionRef=useRef(0);
+  const seenJunctionsRef=useRef(new Set<string>()),seenEnvironmentsRef=useRef(new Set<string>()),lastCompanionCallRef=useRef(0),requestInFlightRef=useRef(false),pendingEventRef=useRef<CompanionEvent|null>(null),lastMovementRef=useRef(0),lastTurnRef=useRef(0),idleAnnouncedRef=useRef(false),collisionRef=useRef(0);
   const contradictedGuidanceRef=useRef(new Set<string>());
   const seenFamiliarPlacesRef=useRef(new Set<string>());
   const applyRun=useCallback((next:Run)=>{
     const scheduler=createThemeScheduler(next.seed);next.anchors=[plantCheckpoint(next.world,1,1,scheduler.nextTheme() as ThemeId,scheduler.nextAt,next.spawnAngle)];
     next.entities=entitiesNear(next.seed,next.world,next.anchors,next.appearance,1.5,1.5);runRef.current=next;schedulerRef.current=scheduler;heldRef.current.clear();
     poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};lastCellRef.current="1,1";
-    guidanceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();contradictedGuidanceRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenJunctionsRef.current=new Set();seenEnvironmentsRef.current=new Set();pendingEventRef.current=null;lastCompanionCallRef.current=0;lastIdleCallRef.current=0;lastMovementRef.current=Date.now();
-    setCompanionMessages([]);setCompanionStatus("LISTENING");setHeading(bearing(next.spawnAngle));setRun(next);
+    guidanceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();contradictedGuidanceRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenJunctionsRef.current=new Set();seenEnvironmentsRef.current=new Set();pendingEventRef.current=null;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;idleAnnouncedRef.current=false;
+    setCompanionMessages([]);setCompanionStatus("LISTENING");setCompanionInput("");setChatOpen(false);setHeading(bearing(next.spawnAngle));setRun(next);
   },[]);
   useEffect(()=>{runRef.current=run},[run]);
   useEffect(()=>{messagesRef.current=companionMessages},[companionMessages]);
@@ -121,17 +122,22 @@ export default function Home(){
     if(!force&&now-lastCompanionCallRef.current<12000){queue();return}
     const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),environment=visibleEnvironment(current.anchors,geometry,pose);
     const routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),egocentricView=describeEgocentricView(current.world,pose,current.moves,routes),intent=guidanceRef.current;
+    const activity=analyzePlayerActivity(trajectoryRef.current,now,lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0);
     const contradicted=!!intent&&geometry.corridorEnds.some(end=>intent.suggestedCells.some(cell=>cell[0]===end[0]&&cell[1]===end[1]));
     const evidence=intent?compareTrajectory(intent,trajectoryRef.current,newlyRevealedRef.current,contradicted):null;
-    requestInFlightRef.current=true;lastCompanionCallRef.current=now;if(event.type==="idle_at_choice")lastIdleCallRef.current=now;setCompanionStatus("THINKING");
+    requestInFlightRef.current=true;lastCompanionCallRef.current=now;setCompanionStatus("THINKING");
     try{
-      const response=await fetch("/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:String(current.seed),trigger:event,recommendation:intent,recommendationEvidence:evidence,actualTrajectory:trajectoryRef.current.slice(-32),currentView:egocentricView,environment,rememberedMap:compactMap(current.memory,[current.player.x,current.player.y]),legalRoutes:routes,recentMessages:messagesRef.current.slice(-8),olderContextSummary:messagesRef.current.slice(0,-8).slice(-8).map(m=>`${m.role}: ${m.text}`).join(" | "),playerMessage})});
+      const response=await fetch("/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:String(current.seed),trigger:event,activity,recommendation:intent,recommendationEvidence:evidence,actualTrajectory:trajectoryRef.current.slice(-32),currentView:egocentricView,environment,rememberedMap:compactMap(current.memory,[current.player.x,current.player.y]),legalRoutes:routes,recentMessages:messagesRef.current.slice(-8),olderContextSummary:messagesRef.current.slice(0,-8).slice(-8).map(m=>`${m.role}: ${m.text}`).join(" | "),playerMessage})});
       const reply=await response.json() as CompanionReply;
-      if(reply.message){
-        const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:reply.message,time:Date.now(),kind:reply.kind};
+      const selectedAtRequest=routes.find(r=>r.id===reply.selectedRouteId)??null;
+      const latest=runRef.current,latestPose=poseRef.current,latestRoutes=planRoutes(latest.world,latestPose,latest.moves,latest.memory,latest.visited);
+      const route=event.type==="idle"?null:rebaseSelectedRoute(selectedAtRequest,latestRoutes);
+      const finalText=[reply.message.trim(),route?.instruction].filter(Boolean).join(" ");
+      if(finalText){
+        const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:reply.kind};
         setCompanionMessages(old=>[...old,message].slice(-18));
       }
-      const route=routes.find(r=>r.id===reply.selectedRouteId)??null,nextIntent=createGuidanceIntent(reply,route,pose);
+      const groundedReply={...reply,message:finalText},nextIntent=createGuidanceIntent(groundedReply,route,{...latestPose});
       if(nextIntent){guidanceRef.current=nextIntent;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set(geometry.cells.map(([x,y])=>cellKey(x,y)));newlyRevealedRef.current=new Set()}
     }catch{
       const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:"The signal is faint. Keep moving; I am still mapping the route.",time:Date.now(),kind:"observation"};
@@ -178,32 +184,39 @@ export default function Home(){
       const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),environment=visibleEnvironment(current.anchors,geometry,pose);
       const sample:TrajectorySample={time:Date.now(),position:[pose.x,pose.y],cell:[Math.floor(pose.x),Math.floor(pose.y)],heading:pose.angle,newlyVisibleCells:[],visibleJunctions:geometry.junctions.map(j=>j.id),visibleEnvironment:environment?.id??null};
       trajectoryRef.current=[...trajectoryRef.current,sample].slice(-40);
-      const pending=pendingEventRef.current;if(pending&&!requestInFlightRef.current&&Date.now()-lastCompanionCallRef.current>=12000){pendingEventRef.current=null;callCompanion(pending)}
-      else if(Date.now()-lastMovementRef.current>=15000&&Date.now()-lastIdleCallRef.current>=25000&&geometry.junctions.length)callCompanion({type:"idle_at_choice"});
+      const pending=pendingEventRef.current,activity=analyzePlayerActivity(trajectoryRef.current,Date.now(),lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0);
+      if(pending&&!requestInFlightRef.current&&Date.now()-lastCompanionCallRef.current>=12000){pendingEventRef.current=null;callCompanion(pending)}
+      else if(activity.state==="stationary"&&activity.stationarySeconds>=15&&!idleAnnouncedRef.current){idleAnnouncedRef.current=true;callCompanion({type:"idle",seconds:activity.stationarySeconds,atChoice:activity.atVisibleChoice});}
     },5000);return()=>clearInterval(interval);
   },[ready,callCompanion]);
 
   useEffect(()=>{
-    const down=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;const k=e.key.toLowerCase();if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
+    const down=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;const k=e.key.toLowerCase();if(e.key==="Enter"){e.preventDefault();heldRef.current.clear();setChatOpen(true);requestAnimationFrame(()=>chatInputRef.current?.focus());return}if(k==="n"){e.preventDefault();applyRun(newRun(randomSeed()));return}if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
     const up=(e:KeyboardEvent)=>heldRef.current.delete(e.key.toLowerCase()),blur=()=>heldRef.current.clear();
-    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current)poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.00125)};
+    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current&&e.movementX!==0){poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.00125);lastTurnRef.current=Date.now();idleAnnouncedRef.current=false}};
     addEventListener("keydown",down);addEventListener("keyup",up);addEventListener("blur",blur);addEventListener("mousemove",mouse);
     return()=>{removeEventListener("keydown",down);removeEventListener("keyup",up);removeEventListener("blur",blur);removeEventListener("mousemove",mouse)};
-  },[]);
+  },[applyRun]);
+
+  useEffect(()=>{
+    const canvas=canvasRef.current;if(!canvas)return;
+    const resize=()=>{const rect=canvas.getBoundingClientRect(),scale=Math.min(devicePixelRatio||1,1.5);canvas.width=Math.max(1,Math.round(rect.width*scale));canvas.height=Math.max(1,Math.round(rect.height*scale))};
+    const observer=new ResizeObserver(resize);observer.observe(canvas);resize();return()=>observer.disconnect();
+  },[ready]);
 
   useEffect(()=>{
     let frame=0,previous=performance.now();
     const tick=(now:number)=>{
       const dt=Math.min((now-previous)/1000,.05);previous=now;const current=runRef.current,pose=poseRef.current,held=heldRef.current;
       let turn=0;if(held.has("a")||held.has("arrowleft"))turn--;if(held.has("d")||held.has("arrowright"))turn++;
-      pose.angle=wrap(pose.angle+turn*TURN_SPEED*dt);let drive=0;if(held.has("w")||held.has("arrowup"))drive++;if(held.has("s")||held.has("arrowdown"))drive--;
+      if(turn!==0){pose.angle=wrap(pose.angle+turn*TURN_SPEED*dt);lastTurnRef.current=Date.now();idleAnnouncedRef.current=false}let drive=0;if(held.has("w")||held.has("arrowup"))drive++;if(held.has("s")||held.has("arrowdown"))drive--;
       const moving=drive!==0;if(moving){
         const beforeX=pose.x,beforeY=pose.y;
         const distance=drive*MOVE_SPEED*dt,nx=pose.x+Math.cos(pose.angle)*distance,ny=pose.y+Math.sin(pose.angle)*distance,w=current.world;
         w.ensureAround(Math.floor(nx),Math.floor(ny),current.moves);
         const clearX=w.tile(Math.floor(nx-PLAYER_RADIUS),Math.floor(pose.y-PLAYER_RADIUS))===0&&w.tile(Math.floor(nx+PLAYER_RADIUS),Math.floor(pose.y+PLAYER_RADIUS))===0;if(clearX)pose.x=nx;
         const clearY=w.tile(Math.floor(pose.x-PLAYER_RADIUS),Math.floor(ny-PLAYER_RADIUS))===0&&w.tile(Math.floor(pose.x+PLAYER_RADIUS),Math.floor(ny+PLAYER_RADIUS))===0;if(clearY)pose.y=ny;
-        pose.bob+=dt*9;if(Math.hypot(pose.x-beforeX,pose.y-beforeY)<.0005){collisionRef.current++;if(collisionRef.current===24)callCompanion({type:"repeated_collision"})}else collisionRef.current=0;
+        const translated=Math.hypot(pose.x-beforeX,pose.y-beforeY);pose.bob+=dt*9;if(translated<.0005){collisionRef.current++;if(collisionRef.current===24)callCompanion({type:"repeated_collision"})}else{collisionRef.current=0;lastMovementRef.current=Date.now();idleAnnouncedRef.current=false}
         const cell=cellKey(Math.floor(pose.x),Math.floor(pose.y));if(cell!==lastCellRef.current)enterCell(Math.floor(pose.x),Math.floor(pose.y));
       }
       const next=bearing(pose.angle);setHeading(old=>old===next?old:next);
@@ -212,33 +225,18 @@ export default function Home(){
     };frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
   },[enterCell,callCompanion]);
 
-  const hold=(key:string,on:boolean)=>on?heldRef.current.add(key):heldRef.current.delete(key);
-  const reset=()=>applyRun(newRun(randomSeed()));
   const sendToCompanion=async(e:React.FormEvent)=>{
-    e.preventDefault();const text=companionInput.trim();if(!text)return;setCompanionInput("");heldRef.current.clear();
+    e.preventDefault();const text=companionInput.trim();if(!text)return;setCompanionInput("");setChatOpen(false);chatInputRef.current?.blur();heldRef.current.clear();
     const message:CompanionMessage={id:crypto.randomUUID(),role:"player",text:text.slice(0,500),time:Date.now()};setCompanionMessages(old=>[...old,message].slice(-18));messagesRef.current=[...messagesRef.current,message].slice(-18);
     await callCompanion({type:"player_message",text:message.text},message.text,true);
   };
-  const mapCells=[];for(let oy=-MAP_RADIUS;oy<=MAP_RADIUS;oy++)for(let ox=-MAP_RADIUS;ox<=MAP_RADIUS;ox++){
-    const x=run.player.x+ox,y=run.player.y+oy,memory=run.memory.get(cellKey(x,y));mapCells.push({id:`${ox},${oy}`,tile:memory?.tile,player:ox===0&&oy===0,age:memory?run.moves-memory.seenAt:999});
-  }
-  return <main className="shell">
+  return <main className="shell game-only">
     <div className={`boot-screen ${ready?"ready":""}`} aria-live="polite"><span>GENERATING SIGNAL</span></div>
-    <header className="masthead"><div className="brand"><span>NULL</span> CORRIDOR</div><div className="status"><i/> STREAMING GEOMETRY</div></header>
-    <section className="game-grid" aria-label="Infinite first person maze game">
-      <div className="viewport-wrap"><div className="viewport-label"><span>CAM_01 // {heading}</span><span>CLICK VIEW FOR MOUSE LOOK</span></div>
-        <canvas ref={canvasRef} width={960} height={560} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()}
-          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null)poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.0035);touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
-        <div className="vignette comfort-vignette"/>{companionMessages.at(-1)?.role==="ariadne"&&<div key={companionMessages.at(-1)?.id} className={`ariadne-subtitle ${companionMessages.at(-1)?.kind==="environment"?"discovery":""}`}><span>ARIADNE</span>{companionMessages.at(-1)?.text}</div>}</div>
-      <aside className="console"><div className="console-head"><span>LOCAL MEMORY</span><span className="blink">REC</span></div>
-        <div className="minimap infinite" style={{gridTemplateColumns:`repeat(${MAP_RADIUS*2+1},1fr)`}} aria-label="Moving window of remembered nearby geometry">
-          {mapCells.map(c=><span key={c.id} style={{opacity:c.age>55?.25:c.age>30?.55:1}} className={`${c.tile===1?"wall":c.tile===0?"path":"unknown"} ${c.player?"player":""}`}/>)}</div>
-        <p className="map-note">LOCAL MEMORY DECAYS BEYOND RANGE</p><dl className="telemetry"><div><dt>CELLS</dt><dd>{String(run.moves).padStart(3,"0")}</dd></div><div><dt>SHIFTS</dt><dd>{String(run.shifts).padStart(3,"0")}</dd></div><div><dt>BEARING</dt><dd>{heading}</dd></div></dl>
-        <section className="ariadne-panel" aria-label="ARIADNE navigation companion"><div className="ariadne-head"><span>ARIADNE</span><span>{companionStatus}</span></div><div className="ariadne-log" aria-live="polite">
-          {companionMessages.length===0?<p className="ariadne-empty">CALIBRATING LOCAL ROUTES…</p>:companionMessages.slice(-5).map(message=><p key={message.id} className={`${message.role} ${message.kind??""}`}><span>{message.role==="ariadne"?"ARIADNE":"YOU"}</span>{message.text}</p>)}
-        </div><form className="ariadne-input" onSubmit={sendToCompanion}><label htmlFor="ariadne-message">OPTIONAL TEXT CHANNEL</label><div><input id="ariadne-message" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){e.currentTarget.blur();canvasRef.current?.focus()}}} placeholder="SPEAK TO ARIADNE…"/><button type="submit" disabled={!companionInput.trim()||companionStatus==="THINKING"}>↵</button></div></form></section></aside>
+    <section className="viewport-wrap" aria-label="Infinite first person maze game"><div className="viewport-label"><span>CAM_01 // {heading}</span><span>{companionStatus} · ENTER CHAT · N NEW SIGNAL</span></div>
+        <canvas ref={canvasRef} width={1280} height={720} tabIndex={0} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()}
+          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null){poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.0035);lastTurnRef.current=Date.now();idleAnnouncedRef.current=false}touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
+        <div className="vignette comfort-vignette"/>{companionMessages.length>0&&<div className={`ariadne-chat ${chatOpen?"chat-open":""}`} aria-live="polite">{companionMessages.slice(-5).map(message=><div key={message.id} className={`ariadne-chat-line ${message.role} ${message.kind==="environment"?"discovery":""}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<YOU>"}</span> {message.text}</div>)}</div>}
+        {chatOpen&&<form className="minecraft-chat-input" onSubmit={sendToCompanion}><span>&gt;</span><input ref={chatInputRef} aria-label="Message ARIADNE" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.form?.requestSubmit()}else if(e.key==="Escape"){e.preventDefault();setChatOpen(false);setCompanionInput("");e.currentTarget.blur();canvasRef.current?.focus()}}} placeholder="Message ARIADNE"/></form>}
     </section>
-    <footer className="controls"><div className="control-copy"><span>NO MAP EDGE</span><p>HOLD W/S · TURN WITH A/D · THE WORLD CONTINUES</p></div><div className="keys" aria-label="Maze controls">
-      {[["a","A","Turn left"],["w","W","Move forward"],["d","D","Turn right"],["s","S","Move backward"]].map(([k,l,a])=><button key={k} onPointerDown={()=>hold(k,true)} onPointerUp={()=>hold(k,false)} onPointerLeave={()=>hold(k,false)} aria-label={a}>{l}</button>)}</div><button className="reset" onClick={reset}>NEW SIGNAL</button></footer>
   </main>;
 }

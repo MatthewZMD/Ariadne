@@ -35,6 +35,15 @@ export type GuidanceEvidence = {
   loopEncountered:boolean;backtrackingObserved:boolean;playerCurrentlyNearSuggestedRoute:boolean;
 };
 
+export type PlayerActivity = {
+  state:"stationary"|"turning_in_place"|"walking";
+  stationarySeconds:number;
+  positionChangedSinceRecommendation:boolean;
+  headingChangedSinceRecommendation:boolean;
+  atVisibleChoice:boolean;
+  description:string;
+};
+
 export type VisibleGeometry = {
   cells:Point[];junctions:Array<{id:string;cell:Point;open:string[]}>;
   corridorEnds:Point[];summary:string;
@@ -63,7 +72,7 @@ export type CompanionEvent =
   | {type:"landmark_visible";landmark:string}
   | {type:"sustained_backtrack"}
   | {type:"repeated_collision"}
-  | {type:"idle_at_choice"}
+  | {type:"idle";seconds:number;atChoice:boolean}
   | {type:"player_message";text:string}
   | {type:"initial_guidance"};
 
@@ -115,13 +124,14 @@ export function forwardVisibleGeometry(world:InfiniteWorld,pose:Pose,tick:number
 }
 
 function relativeDirection(pose:Pose,next:Point):RouteDirection{
-  const angle=Math.atan2(next[1]+.5-pose.y,next[0]+.5-pose.x),delta=wrapAngle(angle-pose.angle);
+  const originX=Math.floor(pose.x),originY=Math.floor(pose.y);
+  const angle=Math.atan2(next[1]-originY,next[0]-originX),delta=wrapAngle(angle-pose.angle);
   if(Math.abs(delta)<Math.PI/4)return"straight";
   if(Math.abs(delta)>Math.PI*3/4)return"back";
   return delta<0?"left":"right";
 }
 
-const routeInstruction=(direction:RouteDirection)=>direction==="straight"?"Continue through the open passage ahead.":direction==="back"?"Turn around and take the open passage behind you.":`Turn ${direction} into the open passage.`;
+const routeInstruction=(direction:RouteDirection)=>direction==="straight"?"Continue ahead.":direction==="back"?"Turn around.":`Turn ${direction}.`;
 
 function forwardClearance(world:InfiniteWorld,pose:Pose,tick:number){
   for(let distance=.04;distance<=12;distance+=.04){
@@ -163,6 +173,11 @@ export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<
   const viable=options.filter(route=>route.score>-30);return(viable.length?viable:options).slice(0,4);
 }
 
+export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:RouteOption[]){
+  const first=selected?.knownCells[0];
+  return first?latestRoutes.find(candidate=>candidate.knownCells[0]?.[0]===first[0]&&candidate.knownCells[0]?.[1]===first[1])??null:null;
+}
+
 export function visibleEnvironment(anchors:ThemeAnchor[],geometry:VisibleGeometry,pose:Pose):VisibleEnvironment{
   const samples=geometry.cells.map(([x,y])=>({x,y,theme:themeAt(anchors,x+.5,y+.5)})).filter(s=>s.theme.id!=="neutral"&&s.theme.influence>.22).sort((a,b)=>b.theme.influence-a.theme.influence);
   const best=samples[0]??(()=>{const theme=themeAt(anchors,pose.x,pose.y);return theme.id!=="neutral"&&theme.influence>.22?{x:Math.floor(pose.x),y:Math.floor(pose.y),theme}:null})();
@@ -192,6 +207,15 @@ export function compareTrajectory(intent:GuidanceIntent,samples:TrajectorySample
   return{recommendationId:intent.id,elapsedSeconds:Math.max(0,(Date.now()-intent.issuedAt)/1000),initialDirectionSimilarity:similarity,suggestedCellOverlap:actual.length?shared.length/actual.length:0,movementTowardTarget:clamp(delta),movementAwayFromTarget:clamp(-delta),sharedCells:shared.slice(0,24),deviationCell:deviation,rejoinedAt:rejoined,reachedSuggestedTarget:reached,reachedSameTargetByDifferentRoute:reached&&shared.length<Math.max(1,actual.length/2),enteredSuggestedRegion:false,recommendationStillPossible:!contradicted,recommendationContradictedByVisibleEvidence:contradicted,newCellsRevealedOnSuggestedPath:[...newlyRevealed].filter(k=>suggested.has(k)).length,newCellsRevealedOffSuggestedPath:[...newlyRevealed].filter(k=>!suggested.has(k)).length,loopEncountered:loop,backtrackingObserved:reversals>=2,playerCurrentlyNearSuggestedRoute:intent.suggestedCells.some(p=>Math.abs(p[0]-last[0])+Math.abs(p[1]-last[1])<=1)};
 }
 
+export function analyzePlayerActivity(samples:TrajectorySample[],now:number,lastTranslationAt:number,lastTurnAt:number,atVisibleChoice:boolean):PlayerActivity{
+  const translationIdle=Math.max(0,(now-lastTranslationAt)/1000),turnIdle=Math.max(0,(now-lastTurnAt)/1000),stationarySeconds=Math.floor(Math.min(translationIdle,turnIdle));
+  const first=samples[0],positionChanged=!!first&&samples.some(sample=>Math.hypot(sample.position[0]-first.position[0],sample.position[1]-first.position[1])>=.08);
+  const headingChanged=!!first&&samples.some(sample=>Math.abs(wrapAngle(sample.heading-first.heading))>=.12);
+  const state:PlayerActivity["state"]=stationarySeconds>=5?"stationary":translationIdle>=2&&turnIdle<2?"turning_in_place":"walking";
+  const description=state==="stationary"?`The player has remained completely still for ${stationarySeconds} seconds. Their position and viewing direction have not changed during that time.`:state==="turning_in_place"?"The player is looking around without changing position.":"The player is currently walking or has walked within the last few seconds.";
+  return{state,stationarySeconds:state==="stationary"?stationarySeconds:0,positionChangedSinceRecommendation:positionChanged,headingChangedSinceRecommendation:headingChanged,atVisibleChoice,description};
+}
+
 export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=7){
   const rows:string[]=[];for(let y=center[1]-radius;y<=center[1]+radius;y++){let row="";for(let x=center[0]-radius;x<=center[0]+radius;x++){if(x===center[0]&&y===center[1])row+="P";else{const tile=memory.get(cellKey(x,y))?.tile;row+=tile===0?".":tile===1?"#":"?"}}rows.push(row)}return rows.join("\n");
 }
@@ -212,6 +236,8 @@ export function deterministicReply(event:CompanionEvent,routes:RouteOption[],env
     else if(evidence.newCellsRevealedOffSuggestedPath>evidence.newCellsRevealedOnSuggestedPath)message=`Good choice. This way has revealed more of the maze. ${routeText}`;
     else message=`Good. We are still moving into new ground. ${routeText}`;
     kind="praise";
+  }else if(event.type==="idle"){
+    message=`You have stayed still for ${event.seconds} seconds. I will wait.`;kind="observation";
   }else if(event.type==="player_message"){
     message=`I hear you. ${routeText}`;kind="reply";
   }
