@@ -32,7 +32,7 @@ export function groundReply(reply:CompanionReply,routes:RouteOption[]):Companion
 
 export function enforceActivityGrounding(reply:CompanionReply,activity:PlayerActivity,event:CompanionEvent):CompanionReply{
   if(activity.state!=="stationary")return reply;
-  if(event.type==="idle")return{message:`You have stayed still for ${activity.stationarySeconds} seconds. I will wait.`,selectedRouteId:null,kind:"observation"};
+  if(event.type==="idle")return{message:"No rush.",selectedRouteId:null,kind:"observation"};
   const movementClaim=/\b(moved|moving|walked|walking|progress|progressed|drift|drifted|explored|arrived|reached|followed|chose|choice|closer|farther|continued|advanced)\b/i;
   return{...reply,message:reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!movementClaim.test(sentence)).join(" ").trim()};
 }
@@ -46,7 +46,7 @@ export function enforcePlayerView(reply:CompanionReply,body:Pick<RequestBody,"tr
 function semanticRecommendation(value:unknown){
   if(!value||typeof value!=="object")return null;
   const item=value as {message?:unknown;kind?:unknown;suggestedRouteId?:unknown};
-  return{message:typeof item.message==="string"?item.message:"",kind:item.kind,suggestedRouteId:item.suggestedRouteId};
+  return typeof item.message==="string"&&item.message?item.message:null;
 }
 
 function semanticMovement(evidence:GuidanceEvidence|null){
@@ -58,9 +58,26 @@ function semanticMovement(evidence:GuidanceEvidence|null){
   return`${initial} ${overlap} ${progress}${facts?` ${facts}`:""}`;
 }
 
+function semanticEvent(event:CompanionEvent){
+  if(event.type==="initial_guidance")return"You have just joined the player and should offer a direction.";
+  if(event.type==="new_junction_visible")return"The player is walking toward an intersection they can see. Choose which way they should go there.";
+  if(event.type==="recommendation_contradicted")return"The way you suggested has proved to be blocked.";
+  if(event.type==="target_reached")return"The player has reached the place you were guiding them toward.";
+  if(event.type==="same_target_reached_differently")return"The player reached the intended place by another way.";
+  if(event.type==="environment_visible"||event.type==="environment_entered")return"The surroundings have changed enough to be worth noticing.";
+  if(event.type==="revisited_position")return"The player is somewhere they have physically stood before.";
+  if(event.type==="repeated_collision")return"The player has pressed into the wall in front of them more than once.";
+  if(event.type==="idle")return"The player is standing still.";
+  if(event.type==="player_message")return"The player has spoken to you.";
+  return"The player's recent movement has revealed something worth responding to.";
+}
+
 function statePrompt(body:RequestBody){
-  const routes=body.legalRoutes.map(r=>({id:r.id,direction:r.direction,description:r.description,verifiedInstruction:r.instruction}));
-  return `<maze_state>\nPLAYER ACTIVITY COMPUTED BY THE GAME\n${JSON.stringify(body.activity)}\nEGOCENTRIC VIEW COMPUTED BY THE GAME\n${JSON.stringify(body.currentView)}\nVISIBLE ENVIRONMENT\n${JSON.stringify(body.environment)}\nPREVIOUS RECOMMENDATION\n${JSON.stringify(semanticRecommendation(body.recommendation))}\nPLAYER MOVEMENT INTERPRETED BY THE GAME\n${semanticMovement(body.recommendationEvidence)}\nLEGAL ROUTES COMPUTED BY THE GAME\n${JSON.stringify(routes)}\nRECENT CONVERSATION\n${JSON.stringify(body.recentMessages)}\nOLDER CONTEXT SUMMARY\n${body.olderContextSummary.slice(0,800)}\nMEANINGFUL EVENT\n${JSON.stringify(body.trigger)}\nOPTIONAL PLAYER MESSAGE\n${body.playerMessage??"none"}\n</maze_state>`;
+  const setting=body.environment?`The player can see a ${body.environment.name}: ${body.environment.details.join(" and ")}.`:"No distinct setting is visible right now.";
+  const previous=semanticRecommendation(body.recommendation)??"You have not given a direction yet.";
+  const choices=body.legalRoutes.map((route,index)=>`${index+1}. Use key ${route.id}. ${route.instruction}`).join("\n")||"There is no safe direction to choose at this moment.";
+  const conversation=body.recentMessages.map(message=>`${message.role==="player"?"PLAYER":"ARIADNE"}: ${message.text}`).join("\n")||"No recent dialogue.";
+  return `<what_ariadne_knows>\nRIGHT NOW\n${body.activity.description}\n${body.currentView.description}\n${setting}\n\nWHAT YOU LAST SAID\n${previous}\n\nWHAT HAPPENED SINCE\n${semanticMovement(body.recommendationEvidence)}\n${semanticEvent(body.trigger)}\n\nWAYS TO GUIDE THE PLAYER\n${choices}\nChoose one key silently. Never say or explain the key.\n\nRECENT DIALOGUE\n${conversation}\n${body.olderContextSummary.slice(0,800)}\n\nWHAT THE PLAYER JUST SAID\n${body.playerMessage??"Nothing."}\n</what_ariadne_knows>`;
 }
 
 async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply>{

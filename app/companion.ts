@@ -10,6 +10,7 @@ export type ReplyKind = "guidance" | "praise" | "apology" | "agreement" | "refra
 export type RouteOption = {
   id:string;direction:RouteDirection;knownCells:Point[];targetCell:Point|null;
   targetRegionId:string|null;description:string;instruction:string;score:number;
+  decisionPoint?:"current"|"upcoming";decisionCell?:Point;
 };
 
 export type GuidanceIntent = {
@@ -129,15 +130,16 @@ function relativeDirection(pose:Pose,next:Point):RouteDirection{
   return delta<0?"left":"right";
 }
 
-const routeInstruction=(direction:RouteDirection)=>direction==="straight"?"Continue ahead.":direction==="back"?"Turn around.":`Turn ${direction}.`;
+const routeInstruction=(direction:RouteDirection)=>direction==="straight"?"Keep going.":direction==="back"?"Turn around.":`Turn ${direction}.`;
 
 export function instructionForCurrentChoice(selected:RouteOption|null,currentRoutes:RouteOption[]){
   if(!selected)return"";
+  if(selected.decisionPoint==="upcoming")return selected.instruction;
   const distinct=new Set(currentRoutes.map(route=>route.direction));
   if(distinct.size<=1)return routeInstruction(selected.direction);
-  if(selected.direction==="straight")return"Take the center opening.";
-  if(selected.direction==="back")return"Turn around and take the opening behind you.";
-  return`Take the opening on your ${selected.direction}.`;
+  if(selected.direction==="straight")return"Go straight.";
+  if(selected.direction==="back")return"Turn around.";
+  return`Go ${selected.direction}.`;
 }
 
 function forwardClearance(world:InfiniteWorld,pose:Pose,tick:number){
@@ -159,7 +161,7 @@ export function describeEgocentricView(world:InfiniteWorld,pose:Pose,tick:number
   const openingText=openings.length?openings.map(item=>item==="straight"?"ahead":item==="back"?"behind":`on the ${item}`).join(", "):"none";
   const blockedText=blocked.map(item=>item==="straight"?"ahead":item==="back"?"behind":`on the ${item}`).join(", ");
   const blockedSentence=blocked.length?` There is no open passage ${blockedText}.`:"";
-  return{facing:direction,centerView,openings,blocked,description:`The player is facing ${direction}. ${centerView}. Verified open passages from the current position: ${openingText}.${blockedSentence}`};
+  return{facing:direction,centerView,openings,blocked,description:`The player is facing ${direction}. ${centerView}. The open ways from here are ${openingText}.${blockedSentence}`};
 }
 
 export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<string,{tile:number}>,visited:Set<string>):RouteOption[]{
@@ -175,12 +177,38 @@ export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<
     const around=DIRS.map(([dx,dy])=>memory.get(cellKey(current[0]+dx,current[1]+dy))?.tile),confirmedEnding=around.every(tile=>tile!==undefined)&&openNeighbors(world,current[0],current[1],tick).length===1;
     const score=frontierBonus*4+(cells.length-knownVisits)*2-knownVisits-(direction==="back"?3:0)-(confirmedEnding?50:0);
     const instruction=routeInstruction(direction);
-    return{id:`route:${pointKey(origin)}:${pointKey(first)}:${index}`,direction,knownCells:cells,targetCell:current,targetRegionId:null,description:`Verified open passage ${direction==="straight"?"ahead":direction==="back"?"behind the player":`on the player's ${direction}`}. It continues through ${cells.length} known open cell${cells.length===1?"":"s"}.`,instruction,score};
+    return{id:`route:${pointKey(origin)}:${pointKey(first)}:${index}`,direction,knownCells:cells,targetCell:current,targetRegionId:null,description:`There is an open way ${direction==="straight"?"ahead":direction==="back"?"behind":`to the ${direction}`}.`,instruction,score};
   }).sort((a,b)=>b.score-a.score);
   const viable=options.filter(route=>route.score>-30);return(viable.length?viable:options).slice(0,4);
 }
 
+export function planApproachingJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:number,geometry:VisibleGeometry,memory:Map<string,{tile:number}>,visited:Set<string>):RouteOption[]{
+  const origin:Point=[Math.floor(pose.x),Math.floor(pose.y)],facing:[number,number]=[Math.cos(pose.angle),Math.sin(pose.angle)];
+  const junction=geometry.junctions.map(item=>{
+    const dx=item.cell[0]+.5-pose.x,dy=item.cell[1]+.5-pose.y,distance=Math.hypot(dx,dy),alignment=distance?((dx*facing[0]+dy*facing[1])/distance):0;
+    return{...item,distance,alignment};
+  }).filter(item=>item.distance>=1&&item.distance<=8&&item.alignment>=.9).sort((a,b)=>a.distance-b.distance)[0];
+  if(!junction)return[];
+  const deltaX=junction.cell[0]-origin[0],deltaY=junction.cell[1]-origin[1];
+  if(deltaX!==0&&deltaY!==0)return[];
+  const step:Point=deltaX!==0?[Math.sign(deltaX),0]:[0,Math.sign(deltaY)];
+  if(step[0]===0&&step[1]===0)return[];
+  const path:Point[]=[];let cursor:Point=[origin[0]+step[0],origin[1]+step[1]];
+  while(!same(cursor,junction.cell)&&path.length<12){if(world.tile(cursor[0],cursor[1],tick)!==0)return[];path.push(cursor);cursor=[cursor[0]+step[0],cursor[1]+step[1]]}
+  if(!same(cursor,junction.cell)||world.tile(cursor[0],cursor[1],tick)!==0)return[];path.push(junction.cell);
+  const approach:Point=[junction.cell[0]-step[0],junction.cell[1]-step[1]],arrivalPose:Pose={x:junction.cell[0]+.5,y:junction.cell[1]+.5,angle:Math.atan2(step[1],step[0]),bob:0};
+  return openNeighbors(world,junction.cell[0],junction.cell[1],tick).filter(cell=>!same(cell,approach)).map((branch,index)=>{
+    const direction=relativeDirection(arrivalPose,branch),knownVisits=visited.has(pointKey(branch))?1:0,frontierBonus=openNeighbors(world,branch[0],branch[1],tick).filter(cell=>!memory.has(pointKey(cell))).length;
+    const instruction=direction==="straight"?"At the intersection, go straight.":direction==="back"?"At the intersection, turn around.":`At the intersection, turn ${direction}.`;
+    return{id:`approach:${pointKey(junction.cell)}:${pointKey(branch)}:${index}`,direction,knownCells:[...path,branch],targetCell:branch,targetRegionId:null,description:instruction, instruction,score:frontierBonus*4-knownVisits*2+(direction==="straight"?1:0),decisionPoint:"upcoming" as const,decisionCell:junction.cell};
+  }).sort((a,b)=>b.score-a.score);
+}
+
 export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:RouteOption[]){
+  if(selected?.decisionPoint==="upcoming"){
+    const target=selected.targetCell;
+    return target?latestRoutes.find(candidate=>same(candidate.targetCell,target))??null:null;
+  }
   const first=selected?.knownCells[0];
   return first?latestRoutes.find(candidate=>candidate.knownCells[0]?.[0]===first[0]&&candidate.knownCells[0]?.[1]===first[1])??null:null;
 }
@@ -219,17 +247,17 @@ export function analyzePlayerActivity(samples:TrajectorySample[],now:number,last
   const first=samples[0],positionChanged=!!first&&samples.some(sample=>Math.hypot(sample.position[0]-first.position[0],sample.position[1]-first.position[1])>=.08);
   const headingChanged=!!first&&samples.some(sample=>Math.abs(wrapAngle(sample.heading-first.heading))>=.12);
   const state:PlayerActivity["state"]=stationarySeconds>=5?"stationary":translationIdle>=2&&turnIdle<2?"turning_in_place":"walking";
-  const description=state==="stationary"?`The player has remained completely still for ${stationarySeconds} seconds. Their position and viewing direction have not changed during that time.`:state==="turning_in_place"?"The player is looking around without changing position.":"The player is currently walking or has walked within the last few seconds.";
+  const description=state==="stationary"?"The player is standing still and has not changed where they are looking.":state==="turning_in_place"?"The player is looking around without walking.":"The player is walking.";
   return{state,stationarySeconds:state==="stationary"?stationarySeconds:0,positionChangedSinceRecommendation:positionChanged,headingChangedSinceRecommendation:headingChanged,atVisibleChoice,description};
 }
 
 export function verifiedAutonomousObservation(event:CompanionEvent,environment:VisibleEnvironment,activity:PlayerActivity,routeCount:number){
-  if(event.type==="idle")return`You have stayed still for ${activity.stationarySeconds} seconds. I will wait.`;
-  if(event.type==="revisited_position")return"You have stood in this exact spot before.";
-  if(event.type==="environment_visible"&&environment)return`You can see ${environment.details.join(" and ")} here—this is ${/^([aeiou])/i.test(environment.name)?"an":"a"} ${environment.name}.`;
-  if(event.type==="recommendation_contradicted")return"The direction I gave you is blocked from where you are now.";
-  if(event.type==="repeated_collision")return"There is a wall directly in front of you.";
-  if(event.type==="new_junction_visible"&&routeCount>1)return"There is more than one open direction from here.";
+  if(event.type==="idle")return"No rush.";
+  if(event.type==="revisited_position")return"We've been here before.";
+  if(event.type==="environment_visible"&&environment)return`${/^([aeiou])/i.test(environment.name)?"An":"A"} ${environment.name}—${environment.details.join(" and ")}, all the way down here.`;
+  if(event.type==="recommendation_contradicted")return"That way is blocked.";
+  if(event.type==="repeated_collision")return"That's a wall.";
+  if(event.type==="new_junction_visible"&&routeCount>1)return"";
   return"";
 }
 
@@ -237,11 +265,10 @@ export function verifiedSocialReaction(kind:ReplyKind,event:CompanionEvent,evide
   if(event.type==="idle")return"";
   if(event.type==="recommendation_contradicted")return"Sorry—I had that wrong.";
   if(event.type==="same_target_reached_differently")return kind==="praise"?"Good choice.":"You were right to take that direction.";
-  if(event.type==="trajectory_relationship_changed"&&evidence?.newCellsRevealedOffSuggestedPath)return kind==="agreement"?"Good call—your direction showed us something new.":"Good choice—your direction showed us something new.";
-  if(event.type==="revisited_position")return kind==="reframe"?"Good catch—we know this exact spot.":"Good catch.";
+  if(event.type==="trajectory_relationship_changed"&&evidence?.newCellsRevealedOffSuggestedPath)return kind==="agreement"?"Good call. There's more to see this way.":"Good choice. There's more to see this way.";
+  if(event.type==="revisited_position")return"Good catch.";
   if(kind==="praise"){
     if(event.type==="environment_visible")return"Good find.";
-    if(event.type==="target_reached")return"Good—that is where I was pointing.";
   }
   if(kind==="reframe"){
     if(event.type==="environment_visible")return"Not the exit, but this is worth seeing.";

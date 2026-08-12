@@ -27,33 +27,33 @@ test("negative exit-status commentary remains available",()=>{
 test("stationary activity gets one exact acknowledgement and no invented progress",()=>{
   const activity={state:"stationary",stationarySeconds:25,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player has remained completely still for 25 seconds."};
   const reply=enforceActivityGrounding({message:"Good progress. Keep moving.",selectedRouteId:"r1",kind:"praise"},activity,{type:"idle",seconds:25,atChoice:false});
-  assert.deepEqual(reply,{message:"You have stayed still for 25 seconds. I will wait.",selectedRouteId:null,kind:"observation"});
+  assert.deepEqual(reply,{message:"No rush.",selectedRouteId:null,kind:"observation"});
 });
 
 test("autonomous hidden-map abstractions are replaced by a first-person verified observation",()=>{
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player is walking."};
   const reply=enforcePlayerView({message:"The loop is confirmed; use the landmark to recover.",selectedRouteId:"r1",kind:"reframe"},{trigger:{type:"revisited_position"},activity,environment:null,legalRoutes:[{id:"r1"}],recommendationEvidence:null});
-  assert.equal(reply.message,"Good catch—we know this exact spot. You have stood in this exact spot before.");assert.equal(reply.selectedRouteId,"r1");
+  assert.equal(reply.message,"Good catch. We've been here before.");assert.equal(reply.selectedRouteId,"r1");
 });
 
 test("environment observations mention only details supplied as visible",()=>{
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player is walking."};
   const environment={id:"beach",regionId:"beach:1",name:"buried beach",details:["sand","shells"]};
   const reply=enforcePlayerView({message:"A useful landmark for our recovery.",selectedRouteId:null,kind:"environment"},{trigger:{type:"environment_visible",regionId:"beach:1",environment:"beach"},activity,environment,legalRoutes:[],recommendationEvidence:null});
-  assert.equal(reply.message,"You can see sand and shells here—this is a buried beach.");
+  assert.equal(reply.message,"A buried beach—sand and shells, all the way down here.");
 });
 
 test("verified failure always produces a brief apology even when the model requests guidance",()=>{
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:true,description:"The player is walking."};
   const reply=enforcePlayerView({message:"I see a door ahead. Take it.",selectedRouteId:"r1",kind:"guidance"},{trigger:{type:"recommendation_contradicted",recommendationId:"g1"},activity,environment:null,legalRoutes:[{id:"r1"}],recommendationEvidence:null});
-  assert.equal(reply.message,"Sorry—I had that wrong. The direction I gave you is blocked from where you are now.");
+  assert.equal(reply.message,"Sorry—I had that wrong. That way is blocked.");
 });
 
 test("useful off-suggestion exploration can receive grounded over-credit",()=>{
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player is walking."};
   const evidence={newCellsRevealedOffSuggestedPath:3};
   const reply=enforcePlayerView({message:"You knew exactly what you were doing.",selectedRouteId:null,kind:"praise"},{trigger:{type:"trajectory_relationship_changed"},activity,environment:null,legalRoutes:[],recommendationEvidence:evidence});
-  assert.equal(reply.message,"Good choice—your direction showed us something new.");
+  assert.equal(reply.message,"Good choice. There's more to see this way.");
 });
 
 test("an equivalent alternate path can trigger quick agreement",()=>{
@@ -66,5 +66,5 @@ test("an environmental detour can be optimistically reframed without claiming pr
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player is walking."};
   const environment={id:"beach",regionId:"beach:1",name:"buried beach",details:["sand","shells"]};
   const reply=enforcePlayerView({message:"We are nearly at the exit.",selectedRouteId:null,kind:"reframe"},{trigger:{type:"environment_visible",regionId:"beach:1",environment:"beach"},activity,environment,legalRoutes:[],recommendationEvidence:null});
-  assert.equal(reply.message,"Not the exit, but this is worth seeing. You can see sand and shells here—this is a buried beach.");
+  assert.equal(reply.message,"Not the exit, but this is worth seeing. A buried beach—sand and shells, all the way down here.");
 });
