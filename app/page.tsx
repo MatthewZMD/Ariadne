@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } from "./world.mjs";
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
-import { analyzePlayerActivity, compactMap, compareTrajectory, createGuidanceIntent, describeEgocentricView, forwardVisibleGeometry, planRoutes, rebaseSelectedRoute, visibleEnvironment, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceIntent, type TrajectorySample } from "./companion";
+import { analyzePlayerActivity, compactMap, compareTrajectory, createGuidanceIntent, describeEgocentricView, forwardVisibleGeometry, instructionForCurrentChoice, planRoutes, rebaseSelectedRoute, visibleEnvironment, type CompanionEvent, type CompanionMessage, type CompanionReply, type GuidanceIntent, type TrajectorySample } from "./companion";
 
 const MOVE_SPEED=1.65,TURN_SPEED=1.05,PLAYER_RADIUS=.18;
 type MemoryCell={tile:number;seenAt:number};
@@ -132,7 +132,7 @@ export default function Home(){
       const selectedAtRequest=routes.find(r=>r.id===reply.selectedRouteId)??null;
       const latest=runRef.current,latestPose=poseRef.current,latestRoutes=planRoutes(latest.world,latestPose,latest.moves,latest.memory,latest.visited);
       const route=event.type==="idle"?null:rebaseSelectedRoute(selectedAtRequest,latestRoutes);
-      const finalText=[reply.message.trim(),route?.instruction].filter(Boolean).join(" ");
+      const finalText=[reply.message.trim(),instructionForCurrentChoice(route,latestRoutes)].filter(Boolean).join(" ");
       if(finalText){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:reply.kind};
         setCompanionMessages(old=>[...old,message].slice(-18));

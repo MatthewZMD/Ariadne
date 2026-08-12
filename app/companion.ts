@@ -131,6 +131,15 @@ function relativeDirection(pose:Pose,next:Point):RouteDirection{
 
 const routeInstruction=(direction:RouteDirection)=>direction==="straight"?"Continue ahead.":direction==="back"?"Turn around.":`Turn ${direction}.`;
 
+export function instructionForCurrentChoice(selected:RouteOption|null,currentRoutes:RouteOption[]){
+  if(!selected)return"";
+  const distinct=new Set(currentRoutes.map(route=>route.direction));
+  if(distinct.size<=1)return routeInstruction(selected.direction);
+  if(selected.direction==="straight")return"Take the center opening.";
+  if(selected.direction==="back")return"Turn around and take the opening behind you.";
+  return`Take the opening on your ${selected.direction}.`;
+}
+
 function forwardClearance(world:InfiniteWorld,pose:Pose,tick:number){
   for(let distance=.04;distance<=12;distance+=.04){
     const x=Math.floor(pose.x+Math.cos(pose.angle)*distance),y=Math.floor(pose.y+Math.sin(pose.angle)*distance);

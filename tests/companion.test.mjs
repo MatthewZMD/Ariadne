@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzePlayerActivity, compareTrajectory, describeEgocentricView, deterministicReply, planRoutes, rebaseSelectedRoute } from "../app/companion.ts";
+import { analyzePlayerActivity, compareTrajectory, describeEgocentricView, deterministicReply, instructionForCurrentChoice, planRoutes, rebaseSelectedRoute } from "../app/companion.ts";
 
 const intent={id:"g1",issuedAt:Date.now()-5000,message:"Continue east.",kind:"reach_junction",origin:[0,0],originHeading:0,suggestedRouteId:"east",suggestedCells:[[1,0],[2,0],[3,0],[4,0]],targetCell:[4,0],targetRegionId:null,avoidedCells:[],expiresWhen:"new_recommendation"};
 const sample=(cell,time)=>({time,position:cell,cell,heading:0,newlyVisibleCells:[],visibleJunctions:[],visibleEnvironment:null});
@@ -51,4 +51,12 @@ test("activity analysis distinguishes stationary, turning in place, and walking"
   assert.equal(analyzePlayerActivity(samples,now,0,0,false).state,"stationary");
   assert.equal(analyzePlayerActivity(samples,now,0,29_500,false).state,"turning_in_place");
   assert.equal(analyzePlayerActivity(samples,now,29_500,0,false).state,"walking");
+});
+
+test("forward guidance names the selected opening when more than one direction is available",()=>{
+  const straight={id:"straight",direction:"straight",knownCells:[[1,0]],targetCell:[1,0],targetRegionId:null,description:"ahead",instruction:"Continue ahead.",score:2};
+  const left={...straight,id:"left",direction:"left",knownCells:[[0,-1]],description:"left",instruction:"Turn left.",score:1};
+  assert.equal(instructionForCurrentChoice(straight,[straight]),"Continue ahead.");
+  assert.equal(instructionForCurrentChoice(straight,[straight,left]),"Take the center opening.");
+  assert.equal(instructionForCurrentChoice(left,[straight,left]),"Take the opening on your left.");
 });
