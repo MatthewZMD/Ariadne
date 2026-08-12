@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler, type ThemeScheduler } from "./world.mjs";
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
-import { THEMES, type AmbientEntity, type ThemeAnchor, type ThemeId } from "./themes";
+import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
 
-const MOVE_SPEED=2.05,TURN_SPEED=1.9,PLAYER_RADIUS=.18,MAP_RADIUS=10;
+const MOVE_SPEED=1.65,TURN_SPEED=1.05,PLAYER_RADIUS=.18,MAP_RADIUS=10;
 type MemoryCell={tile:number;seenAt:number};
 type Run={
   seed:number;world:InfiniteWorld;anchors:ThemeAnchor[];entities:AmbientEntity[];
-  memory:Map<string,MemoryCell>;visited:Set<string>;recent:string[];player:{x:number;y:number};
+  memory:Map<string,MemoryCell>;appearance:ThemeMemory;appearanceProtected:Set<string>;visited:Set<string>;recent:string[];player:{x:number;y:number};
   spawnAngle:number;moves:number;shifts:number;message:string;revision:number;
 };
 
@@ -34,22 +34,27 @@ function spawnAngle(world:InfiniteWorld){
   return best*Math.PI/2;
 }
 
-function plantCheckpoint(world:InfiniteWorld,x:number,y:number,theme:ThemeId,moves:number):ThemeAnchor{
-  const queue=[{x,y,d:0}],seen=new Set([cellKey(x,y)]);let best={x,y,d:0};
+function plantCheckpoint(world:InfiniteWorld,x:number,y:number,theme:ThemeId,triggerAt:number,angle:number):ThemeAnchor{
+  const queue=[{x,y,d:0}],seen=new Set([cellKey(x,y)]);let best={x,y,d:0},bestScore=-Infinity;
   while(queue.length){
-    const p=queue.shift()!;if(p.d>best.d)best=p;if(p.d>=18)continue;
+    const p=queue.shift()!,dx=p.x-x,dy=p.y-y,forward=dx*Math.cos(angle)+dy*Math.sin(angle),side=Math.abs(-dx*Math.sin(angle)+dy*Math.cos(angle));
+    const score=p.d*.35+forward*1.4-side*.12;if(p.d>=20&&score>bestScore){best=p;bestScore=score}if(p.d>=30)continue;
     for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){
-      const nx=p.x+dx,ny=p.y+dy,id=cellKey(nx,ny);if(!seen.has(id)&&world.tile(nx,ny,moves)===0){seen.add(id);queue.push({x:nx,y:ny,d:p.d+1})}
+      const nx=p.x+dx,ny=p.y+dy,id=cellKey(nx,ny);if(!seen.has(id)&&world.tile(nx,ny,triggerAt)===0){seen.add(id);queue.push({x:nx,y:ny,d:p.d+1})}
     }
   }
-  return{x:best.x,y:best.y,theme,bornAt:moves,triggered:false};
+  return{x:best.x,y:best.y,theme,bornAt:triggerAt,triggered:false};
 }
 
 function newRun(seed=1337):Run{
   const world=new InfiniteWorld(seed);world.ensureAround(1,1,0);const angle=spawnAngle(world);
-  const pose={x:1.5,y:1.5,angle,bob:0};const memory=new Map<string,MemoryCell>();
-  visibleCells(world,pose,0).forEach(id=>{const[x,y]=id.split(",").map(Number);memory.set(id,{tile:world.tile(x,y),seenAt:0})});
-  return{seed,world,anchors:[],entities:[],memory,visited:new Set(["1,1"]),recent:["1,1"],player:{x:1,y:1},spawnAngle:angle,moves:0,shifts:0,message:"NO DESTINATION // KEEP MOVING",revision:0};
+  const pose={x:1.5,y:1.5,angle,bob:0};const memory=new Map<string,MemoryCell>(),appearanceProtected=visibleCells(world,pose,0);
+  appearanceProtected.forEach(id=>{const[x,y]=id.split(",").map(Number);memory.set(id,{tile:world.tile(x,y),seenAt:0})});
+  return{seed,world,anchors:[],entities:[],memory,appearance:new Map(),appearanceProtected,visited:new Set(["1,1"]),recent:["1,1"],player:{x:1,y:1},spawnAngle:angle,moves:0,shifts:0,message:"NO DESTINATION // KEEP MOVING",revision:0};
+}
+
+function randomSeed(){
+  const value=new Uint32Array(1);crypto.getRandomValues(value);return value[0]||1;
 }
 
 export default function Home(){
@@ -58,9 +63,17 @@ export default function Home(){
   const heldRef=useRef(new Set<string>()),lastCellRef=useRef("1,1"),touchXRef=useRef<number|null>(null);
   const schedulerRef=useRef<ThemeScheduler>(createThemeScheduler(run.seed));
   const[heading,setHeading]=useState(()=>bearing(run.spawnAngle));
-  const reducedRef=useRef(false);
+  const[ready,setReady]=useState(false),bootedRef=useRef(false);
+  const applyRun=useCallback((next:Run)=>{
+    const scheduler=createThemeScheduler(next.seed);next.anchors=[plantCheckpoint(next.world,1,1,scheduler.nextTheme() as ThemeId,scheduler.nextAt,next.spawnAngle)];
+    next.entities=entitiesNear(next.seed,next.world,next.anchors,next.appearance,1.5,1.5);runRef.current=next;schedulerRef.current=scheduler;heldRef.current.clear();
+    poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};lastCellRef.current="1,1";
+    setHeading(bearing(next.spawnAngle));setRun(next);
+  },[]);
   useEffect(()=>{runRef.current=run},[run]);
-  useEffect(()=>{reducedRef.current=matchMedia("(prefers-reduced-motion: reduce)").matches},[]);
+  useEffect(()=>{
+    if(bootedRef.current)return;bootedRef.current=true;applyRun(newRun(randomSeed()));setReady(true);
+  },[applyRun]);
 
   const enterCell=useCallback((x:number,y:number)=>{
     const id=cellKey(x,y);lastCellRef.current=id;
@@ -70,11 +83,12 @@ export default function Home(){
       if(firstVisit){visited.add(id);moves++}
       let anchors=[...old.anchors];const scheduler=schedulerRef.current;
       if(firstVisit&&moves>=scheduler.nextAt){
-        const theme=scheduler.nextTheme() as ThemeId;anchors.push(plantCheckpoint(world,x,y,theme,moves));scheduler.advance(moves);
+        scheduler.advance(moves);const theme=scheduler.nextTheme() as ThemeId;
+        anchors.push(plantCheckpoint(world,x,y,theme,scheduler.nextAt,pose.angle));
         message="A DIFFERENT PRESSURE WAITS AHEAD";
       }
       anchors=anchors.map(anchor=>{
-        if(!anchor.triggered&&Math.hypot(x-anchor.x,y-anchor.y)<2.25){message=THEMES[anchor.theme].signal;return{...anchor,triggered:true}}
+        if(!anchor.triggered&&moves>=anchor.bornAt&&Math.hypot(x-anchor.x,y-anchor.y)<2.25){message=THEMES[anchor.theme].signal;return{...anchor,triggered:true}}
         return anchor;
       });
       const visible=visibleCells(world,pose,moves),protectedChunks=new Set<string>();
@@ -84,15 +98,16 @@ export default function Home(){
       visible.forEach(cell=>{const[cx,cy]=cell.split(",").map(Number);memory.set(cell,{tile:world.tile(cx,cy,moves),seenAt:moves})});
       for(const[cell,value]of memory)if(moves-value.seenAt>80)memory.delete(cell);
       const pc=world.coords(x,y);anchors=anchors.filter(a=>Math.abs(world.coords(a.x,a.y).cx-pc.cx)<=CACHE_RADIUS+1&&Math.abs(world.coords(a.x,a.y).cy-pc.cy)<=CACHE_RADIUS+1);
-      const entities=entitiesNear(old.seed,world,anchors,x+.5,y+.5);
-      return{...old,anchors,entities,memory,visited,recent,player:{x,y},moves,shifts,message,revision:old.revision+1};
+      const appearanceProtected=new Set([...visible,...recent]),appearance=old.appearance;retainThemeMemory(appearance,appearanceProtected);
+      const entities=entitiesNear(old.seed,world,anchors,appearance,x+.5,y+.5);
+      return{...old,anchors,entities,memory,appearanceProtected,visited,recent,player:{x,y},moves,shifts,message,revision:old.revision+1};
     });
   },[]);
 
   useEffect(()=>{
     const down=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
     const up=(e:KeyboardEvent)=>heldRef.current.delete(e.key.toLowerCase()),blur=()=>heldRef.current.clear();
-    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current)poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.0022)};
+    const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current)poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.00125)};
     addEventListener("keydown",down);addEventListener("keyup",up);addEventListener("blur",blur);addEventListener("mousemove",mouse);
     return()=>{removeEventListener("keydown",down);removeEventListener("keyup",up);removeEventListener("blur",blur);removeEventListener("mousemove",mouse)};
   },[]);
@@ -111,23 +126,24 @@ export default function Home(){
         pose.bob+=dt*9;const cell=cellKey(Math.floor(pose.x),Math.floor(pose.y));if(cell!==lastCellRef.current)enterCell(Math.floor(pose.x),Math.floor(pose.y));
       }
       const next=bearing(pose.angle);setHeading(old=>old===next?old:next);
-      const ctx=canvasRef.current?.getContext("2d");if(ctx)renderWorld(ctx,current.world,current.anchors,current.entities,pose,moving,reducedRef.current,current.moves);
+      const ctx=canvasRef.current?.getContext("2d");if(ctx)renderWorld(ctx,current.world,current.anchors,current.entities,current.appearance,current.appearanceProtected,pose,moving,true,current.moves);
       frame=requestAnimationFrame(tick);
     };frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
   },[enterCell]);
 
   const hold=(key:string,on:boolean)=>on?heldRef.current.add(key):heldRef.current.delete(key);
-  const reset=()=>{const next=newRun((Date.now()^Math.floor(Math.random()*0xffffffff))>>>0);schedulerRef.current=createThemeScheduler(next.seed);heldRef.current.clear();poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};lastCellRef.current="1,1";setHeading(bearing(next.spawnAngle));setRun(next)};
+  const reset=()=>applyRun(newRun(randomSeed()));
   const mapCells=[];for(let oy=-MAP_RADIUS;oy<=MAP_RADIUS;oy++)for(let ox=-MAP_RADIUS;ox<=MAP_RADIUS;ox++){
     const x=run.player.x+ox,y=run.player.y+oy,memory=run.memory.get(cellKey(x,y));mapCells.push({id:`${ox},${oy}`,tile:memory?.tile,player:ox===0&&oy===0,age:memory?run.moves-memory.seenAt:999});
   }
   return <main className="shell">
+    <div className={`boot-screen ${ready?"ready":""}`} aria-live="polite"><span>GENERATING SIGNAL</span></div>
     <header className="masthead"><div className="brand"><span>NULL</span> CORRIDOR</div><div className="status"><i/> STREAMING GEOMETRY</div></header>
     <section className="game-grid" aria-label="Infinite first person maze game">
       <div className="viewport-wrap"><div className="viewport-label"><span>CAM_01 // {heading}</span><span>CLICK VIEW FOR MOUSE LOOK</span></div>
         <canvas ref={canvasRef} width={960} height={560} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()}
-          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null)poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.006);touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
-        <div className="vignette"/></div>
+          onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null)poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.0035);touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
+        <div className="vignette comfort-vignette"/></div>
       <aside className="console"><div className="console-head"><span>LOCAL MEMORY</span><span className="blink">REC</span></div>
         <div className="minimap infinite" style={{gridTemplateColumns:`repeat(${MAP_RADIUS*2+1},1fr)`}} aria-label="Moving window of remembered nearby geometry">
           {mapCells.map(c=><span key={c.id} style={{opacity:c.age>55?.25:c.age>30?.55:1}} className={`${c.tile===1?"wall":c.tile===0?"path":"unknown"} ${c.player?"player":""}`}/>)}</div>

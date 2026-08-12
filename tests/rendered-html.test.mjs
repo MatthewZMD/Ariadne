@@ -41,11 +41,29 @@ test("checkpoint cadence is bounded and shuffle bag prevents early repeats",()=>
 });
 
 test("theme definitions provide multiple projected wall sprites",async()=>{
-  const{THEMES}=await import("../app/themes.ts");
+  const{THEMES,THEME_FEATHER,THEME_RADIUS,themeAt,themeLayersAt,rememberedThemeAt,retainThemeMemory}=await import("../app/themes.ts");
   for(const[id,theme]of Object.entries(THEMES)){
     assert.ok(theme.wallSprites.length>=3,`${id} needs wall sprite diversity`);
     assert.equal(new Set(theme.wallSprites).size,theme.wallSprites.length);
+    assert.match(theme.floorDetail,/^#[0-9a-f]{6}$/i);assert.match(theme.skyDetail,/^#[0-9a-f]{6}$/i);
   }
+  const anchor={x:0,y:0,theme:"beach",bornAt:30,triggered:false};
+  assert.ok(THEME_RADIUS>=36);assert.ok(THEME_FEATHER>=30);
+  const far=themeAt([anchor],THEME_RADIUS-2,0),near=themeAt([anchor],8,0);
+  assert.equal(far.id,"beach");assert.ok(far.influence>0&&far.influence<.1);assert.ok(near.influence>.9);
+  const overlap=themeLayersAt([anchor,{...anchor,x:2,theme:"frozen"}],1,0);
+  assert.equal(overlap.length,2);assert.ok(Math.abs(overlap.reduce((sum,layer)=>sum+layer.influence,0)-1)<.0001);
+  assert.ok(overlap.every(layer=>layer.influence<.6),"overlapping regions should crossfade rather than replace each other");
+  const appearance=new Map(),first=rememberedThemeAt([anchor],appearance,0,0),after=rememberedThemeAt([{...anchor,theme:"foundry"}],appearance,0,0);
+  assert.deepEqual(after,first,"a seen location must not change when a new region is introduced");
+  assert.equal(rememberedThemeAt([{...anchor,theme:"foundry"}],appearance,5,0).id,"foundry","an unseen location may reveal the new region");
+  retainThemeMemory(appearance,new Set(["5,0"]));assert.equal(appearance.has("0,0"),false,"a cell outside 360 visibility and the recent trail must be reusable");
+  assert.equal(rememberedThemeAt([{...anchor,theme:"foundry"}],appearance,0,0).id,"foundry","a released cell may be repurposed");
+});
+
+test("renderer includes a directional distant sky pass",async()=>{
+  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8"));
+  assert.match(source,/function renderDistantSky/);assert.match(source,/distance>72/);assert.match(source,/anchor\.bornAt<=tick/);assert.match(source,/previewFade/);
 });
 
 async function render(){
