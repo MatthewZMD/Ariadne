@@ -71,7 +71,25 @@ async function render(){
   const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/",{headers:{accept:"text/html"}}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});
 }
 
+async function requestCompanion(body){
+  const workerUrl=new URL("../dist/server/index.js",import.meta.url);workerUrl.searchParams.set("companion-test",`${process.pid}-${Date.now()}`);
+  const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});
+}
+
 test("product shell renders without exposing checkpoints or an exit",async()=>{
   const response=await render();assert.equal(response.status,200);const html=await response.text();
   assert.match(html,/NULL/);assert.match(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|exit|you win/i);
+});
+
+test("companion route works without credentials through the in-world fallback",async()=>{
+  const route={id:"r1",direction:"straight",knownCells:[[2,1]],targetCell:[2,1],targetRegionId:null,description:"continue straight",score:3};
+  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{summary:"one corridor"},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:""});
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.match(body.message,/straight/i);
+});
+
+test("companion provider is configured for OpenRouter without exposing a key",async()=>{
+  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/api/companion/route.ts",import.meta.url),"utf8"));
+  assert.match(source,/https:\/\/openrouter\.ai\/api\/v1\/responses/);
+  assert.match(source,/process\.env\.OPENROUTER_API_KEY/);
+  assert.doesNotMatch(source,/process\.env\.OPENAI_API_KEY/);
 });
