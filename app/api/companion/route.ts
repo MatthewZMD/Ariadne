@@ -1,11 +1,11 @@
 import process from "node:process";
-import { deterministicReply, verifiedAutonomousObservation, verifiedSocialReaction, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type PlayerActivity, type RouteOption, type VisibleEnvironment } from "../../companion.ts";
+import { deterministicReply, type CompanionArc, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type GuidanceIntent, type PlayerActivity, type RouteOption, type TrajectorySample, type VisibleEnvironment } from "../../companion.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 
 type RequestBody={
-  sessionId:string;trigger:CompanionEvent;activity:PlayerActivity;recommendation:unknown;recommendationEvidence:GuidanceEvidence|null;
-  actualTrajectory:unknown[];currentView:EgocentricView;environment:VisibleEnvironment;rememberedMap:string;
-  legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;playerMessage?:string;
+  sessionId:string;trigger:CompanionEvent;activity:PlayerActivity;recommendation:GuidanceIntent|null;recommendationEvidence:GuidanceEvidence|null;
+  actualTrajectory:TrajectorySample[];currentView:EgocentricView;environment:VisibleEnvironment;rememberedMap:string;
+  legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;companionArc:CompanionArc;playerMessage?:string;
 };
 
 const replyKinds=["guidance","praise","apology","agreement","reframe","environment","reply","observation","silence"];
@@ -13,7 +13,7 @@ const responseSchema=(routes:RouteOption[])=>({type:"object",additionalPropertie
 
 function validBody(value:unknown):value is RequestBody{
   if(!value||typeof value!=="object")return false;const body=value as Partial<RequestBody>;
-  return typeof body.sessionId==="string"&&body.sessionId.length<=80&&!!body.trigger&&!!body.activity&&Array.isArray(body.actualTrajectory)&&body.actualTrajectory.length<=40&&typeof body.rememberedMap==="string"&&body.rememberedMap.length<=1800&&Array.isArray(body.legalRoutes)&&body.legalRoutes.length<=6&&Array.isArray(body.recentMessages)&&body.recentMessages.length<=8&&(!body.playerMessage||body.playerMessage.length<=500);
+  return typeof body.sessionId==="string"&&body.sessionId.length<=80&&!!body.trigger&&!!body.activity&&!!body.companionArc&&typeof body.companionArc.performanceDirection==="string"&&body.companionArc.performanceDirection.length<=500&&Array.isArray(body.actualTrajectory)&&body.actualTrajectory.length<=40&&typeof body.rememberedMap==="string"&&body.rememberedMap.length<=1800&&Array.isArray(body.legalRoutes)&&body.legalRoutes.length<=6&&Array.isArray(body.recentMessages)&&body.recentMessages.length<=8&&(!body.playerMessage||body.playerMessage.length<=500);
 }
 
 function validReply(value:unknown,routes:RouteOption[]):value is CompanionReply{
@@ -21,58 +21,35 @@ function validReply(value:unknown,routes:RouteOption[]):value is CompanionReply{
   return typeof reply.message==="string"&&reply.message.length<=320&&(reply.selectedRouteId===null||routes.some(r=>r.id===reply.selectedRouteId))&&replyKinds.includes(reply.kind);
 }
 
-const spatialLanguage=/\b(left|right|straight|ahead|behind|back|backward|forward|turn|passage|corridor|junction|route|opening|onward|move|moving|way|take|go|going|direction)\b/i;
-const internalLanguage=/\b(loop|landmark|recovery|topology|progress|drift|trajectory|evidence|target|cell|geometry|mapping)\b/i;
-const unsupportedExitClaim=(sentence:string)=>/\bexit\b/i.test(sentence)&&!/\b(no|not|never|haven't|hasn't|without|yet|still|search|seeking)\b/i.test(sentence);
-
-export function groundReply(reply:CompanionReply,routes:RouteOption[]):CompanionReply{
-  const route=routes.find(option=>option.id===reply.selectedRouteId)??null;
-  const nonSpatial=reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!spatialLanguage.test(sentence)&&!internalLanguage.test(sentence)&&!unsupportedExitClaim(sentence)).join(" ").trim();
+export function acceptReply(reply:CompanionReply,routes:RouteOption[]):CompanionReply{
   if(reply.kind==="silence")return{...reply,message:"",selectedRouteId:null};
-  return{...reply,message:nonSpatial.slice(0,320),selectedRouteId:route?.id??null};
+  const selectedRouteId=routes.some(route=>route.id===reply.selectedRouteId)?reply.selectedRouteId:null;
+  return{...reply,message:reply.message.trim().slice(0,320),selectedRouteId};
 }
 
-export function enforceActivityGrounding(reply:CompanionReply,activity:PlayerActivity):CompanionReply{
-  if(activity.state!=="stationary")return reply;
-  const movementClaim=/\b(moved|moving|walked|walking|progress|progressed|drift|drifted|explored|arrived|reached|followed|chose|choice|closer|farther|continued|advanced)\b/i;
-  return{...reply,message:reply.message.split(/(?<=[.!?])\s+/).filter(sentence=>!movementClaim.test(sentence)).join(" ").trim()};
-}
-
-const normalized=(text:string)=>text.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
-const repeatsRecent=(text:string,messages:CompanionMessage[])=>{
-  const candidate=normalized(text);if(!candidate)return false;
-  return messages.some(message=>{if(message.role!=="ariadne")return false;const recent=normalized(message.text);return recent===candidate||recent.includes(candidate)||(candidate.length>18&&candidate.includes(recent))});
-};
-
-export function enforcePlayerView(reply:CompanionReply,body:Pick<RequestBody,"trigger"|"activity"|"environment"|"legalRoutes"|"recommendationEvidence"|"recentMessages">):CompanionReply{
-  const safeReply=groundReply(reply,body.legalRoutes);
-  if(body.trigger.type==="player_message")return enforceActivityGrounding(safeReply,body.activity);
-  const modelText=enforceActivityGrounding(safeReply,body.activity).message.trim();
-  const repeated=repeatsRecent(modelText,body.recentMessages);
-  const expressive=["initial_guidance","trajectory_relationship_changed","target_reached","same_target_reached_differently","revisited_position","new_junction_visible","environment_visible","recommendation_contradicted","idle"].includes(body.trigger.type)&&!repeated?modelText:"";
-  const observation=["recommendation_contradicted","repeated_collision"].includes(body.trigger.type)?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):body.trigger.type==="environment_visible"&&!expressive?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):body.trigger.type==="revisited_position"&&!expressive?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):"";
-  const fallbackSocial=body.trigger.type==="recommendation_contradicted"&&!expressive?verifiedSocialReaction(safeReply.kind,body.trigger,body.recommendationEvidence):"";
-  return{...safeReply,message:[expressive,fallbackSocial,observation].filter(Boolean).join(" ")};
-}
-
-function semanticRecommendation(value:unknown){
-  if(!value||typeof value!=="object")return null;
-  const item=value as {message?:unknown;kind?:unknown;suggestedRouteId?:unknown};
-  return typeof item.message==="string"&&item.message?item.message:null;
-}
+function semanticRecommendation(value:GuidanceIntent|null){return value?.message||null}
 
 function semanticMovement(evidence:GuidanceEvidence|null){
   if(!evidence)return"No earlier navigation recommendation is being evaluated.";
-  const initial=evidence.initialDirectionSimilarity>=.75?"The player's initial movement was in the recommended general direction.":evidence.initialDirectionSimilarity<=.25?"The player's initial movement was in the opposite general direction.":"The player's initial movement was sideways or ambiguous relative to the recommendation.";
-  const overlap=evidence.suggestedCellOverlap>=.7?"Most subsequent movement overlapped the suggested path.":evidence.suggestedCellOverlap>=.3?"Some, but not all, subsequent movement overlapped the suggested path.":evidence.suggestedCellOverlap>0?"Only a small part of the movement overlapped the suggested path.":"The movement did not overlap the suggested path.";
-  const progress=evidence.reachedSuggestedTarget?"The intended destination was reached.":evidence.movementTowardTarget>.2?"The player is meaningfully closer to the intended destination.":evidence.movementAwayFromTarget>.2?"The player is meaningfully farther from the intended destination.":"Distance to the intended destination has not changed meaningfully.";
-  const facts=[evidence.rejoinedAt?"The player diverged and later returned to the suggested path.":"",evidence.reachedSameTargetByDifferentRoute?"The player reached the same destination by a different path.":"",evidence.recommendationContradictedByVisibleEvidence?"The earlier recommendation is blocked in the player's current view.":"",evidence.backtrackingObserved?"The player walked back over recent steps.":""].filter(Boolean).join(" ");
-  return`${initial} ${overlap} ${progress}${facts?` ${facts}`:""}`;
+  if(evidence.recommendationContradictedByVisibleEvidence)return"The way you suggested visibly ends here.";
+  if(evidence.reachedSameTargetByDifferentRoute)return"The player found another way to the place you had in mind.";
+  if(evidence.rejoinedAt)return"The player wandered away from your idea and has now come back to it.";
+  if(evidence.newCellsRevealedOffSuggestedPath>=5)return"The player's different choice revealed somewhere new.";
+  if(evidence.suggestedCellOverlap>=.45&&evidence.movementTowardTarget>.2)return"The player stayed with your idea and it is carrying them onward.";
+  return"Nothing about the player's response to your last idea is clear enough to characterize.";
 }
 
 function semanticEvent(event:CompanionEvent){
   if(event.type==="initial_guidance")return"You have just joined the player and should offer a direction.";
   if(event.type==="new_junction_visible")return"The player is walking toward an intersection they can see. Choose which way they should go there.";
+  if(event.type==="dead_end_visible")return"The player can already see that the passage ends. React now, before they walk into the wall, and choose another available way.";
+  if(event.type==="passing_thought")return"Nothing dramatic just happened. Share one fresh thought or feeling about being here together.";
+  if(event.type==="trajectory_relationship_changed"){
+    if(event.relationship==="accepted_suggestion")return"The player has now taken the exact choice you suggested. React to the fact that they trusted you before saying anything else.";
+    if(event.relationship==="chose_another_way")return"At the choice, the player deliberately took a different way from the one you suggested. Quickly validate their instinct and adopt their choice as the exciting new plan.";
+    if(event.relationship==="left_then_rejoined")return"The player left your suggested path and has now rejoined it. React to that return personally.";
+    return"The player reached the place you intended by a different route. Give them warm credit for improving on your idea.";
+  }
   if(event.type==="recommendation_contradicted")return"The way you suggested has proved to be blocked.";
   if(event.type==="target_reached")return"The player has reached the place you were guiding them toward.";
   if(event.type==="same_target_reached_differently")return"The player reached the intended place by another way.";
@@ -89,7 +66,7 @@ function statePrompt(body:RequestBody){
   const previous=semanticRecommendation(body.recommendation)??"You have not given a direction yet.";
   const choices=body.legalRoutes.map(route=>`Use exactly this key: ${route.id}\n${route.instruction}`).join("\n\n")||"There is no safe direction to choose at this moment.";
   const conversation=body.recentMessages.map(message=>`${message.role==="player"?"PLAYER":"ARIADNE"}: ${message.text}`).join("\n")||"No recent dialogue.";
-  return `<what_ariadne_knows>\nRIGHT NOW\n${body.activity.description}\n${body.currentView.description}\n${setting}\n\nWHAT YOU LAST SAID\n${previous}\n\nWHAT HAPPENED SINCE\n${semanticMovement(body.recommendationEvidence)}\n${semanticEvent(body.trigger)}\n\nWAYS TO GUIDE THE PLAYER\n${choices}\nChoose one key silently. Never say or explain the key.\n\nRECENT DIALOGUE\n${conversation}\n${body.olderContextSummary.slice(0,800)}\n\nWHAT THE PLAYER JUST SAID\n${body.playerMessage??"Nothing."}\n</what_ariadne_knows>`;
+  return `<scene>\n${body.activity.description}\n${body.currentView.description}\n${setting}\n\nLatest moment: ${semanticEvent(body.trigger)}\nYour last idea: ${previous}\nSince then: ${semanticMovement(body.recommendationEvidence)}\n\nYour emotional momentum: ${body.companionArc.performanceDirection}\n\nAvailable choices:\n${choices}\nChoose a key silently; the game speaks the corresponding direction.\n\nRecent conversation:\n${conversation}\n${body.olderContextSummary.slice(0,800)}\n\nPlayer says: ${body.playerMessage??"Nothing."}\n</scene>`;
 }
 
 async function requestOpenRouter(body:RequestBody,apiKey:string,model:string):Promise<CompanionReply>{
@@ -111,11 +88,11 @@ async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply
 export async function POST(request:Request){
   let body:unknown;try{body=await request.json()}catch{return Response.json({error:"invalid JSON"},{status:400})}
   if(!validBody(body))return Response.json({error:"invalid companion request"},{status:400});
-  const fallback=()=>enforcePlayerView(groundReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence),body.legalRoutes),body);
+  const fallback=()=>acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence),body.legalRoutes);
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback"});
     const reply=await openRouter(body,apiKey);if(!validReply(reply,body.legalRoutes)){console.error("ARIADNE provider returned an invalid reply",{selectedRouteId:reply?.selectedRouteId,kind:reply?.kind,messageType:typeof reply?.message});return Response.json({...fallback(),source:"fallback"})}
-    return Response.json({...enforcePlayerView(groundReply(reply,body.legalRoutes),body),source:"provider"});
+    return Response.json({...acceptReply(reply,body.legalRoutes),source:"provider"});
   }catch(error){console.error("ARIADNE provider request failed",error);return Response.json({...fallback(),source:"fallback"})}
 }

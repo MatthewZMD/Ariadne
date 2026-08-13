@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { InfiniteWorld, THEME_IDS, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
+import { InfiniteWorld, THEME_IDS, chunkTopology, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
 
 test("shared portals match across positive and negative chunk seams", () => {
   const seed=192837;
@@ -20,6 +20,19 @@ test("every chunk has one connected walkable network containing all portals",()=
     assert.equal(chunk.tiles[0][p.north],0);assert.equal(chunk.tiles[15][p.south],0);
     assert.equal(chunk.tiles[p.west][0],0);assert.equal(chunk.tiles[p.east][15],0);
   }
+});
+
+test("chunks contain frequent meaningful dead ends instead of mostly through-corridors",()=>{
+  let cells=0,deadEnds=0,corridors=0,junctions=0,chunksWithTenDeadEnds=0;
+  for(let seed=1;seed<=240;seed++){
+    const topology=chunkTopology(generateChunk(seed,(seed%13)-6,(seed%17)-8,seed%4));
+    cells+=topology.logicalCells;deadEnds+=topology.deadEnds;corridors+=topology.corridors;junctions+=topology.junctions;
+    if(topology.deadEnds>=10)chunksWithTenDeadEnds++;
+  }
+  assert.ok(deadEnds/cells>=.24,`dead-end rate was only ${deadEnds/cells}`);
+  assert.ok(corridors/cells<.55,`corridor rate was ${corridors/cells}`);
+  assert.ok(junctions/cells>=.2,`junction rate was only ${junctions/cells}`);
+  assert.ok(chunksWithTenDeadEnds>=180,`only ${chunksWithTenDeadEnds} chunks had ten dead ends`);
 });
 
 test("infinite coordinates stream through a bounded cache",()=>{
@@ -83,7 +96,7 @@ test("product shell renders without exposing checkpoints or an exit",async()=>{
 
 test("companion route works without credentials through the in-world fallback",async()=>{
   const route={id:"r1",direction:"straight",knownCells:[[2,1]],targetCell:[2,1],targetRegionId:null,description:"continue straight",score:3};
-  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{summary:"one corridor"},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:""});
+  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{summary:"one corridor"},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:"",companionArc:{phase:"charming",performanceDirection:"You are making a charming first impression."}});
   assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.equal(body.message,"");
 });
 

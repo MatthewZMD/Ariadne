@@ -18,8 +18,11 @@ export type GuidanceIntent = {
   kind:"take_branch"|"continue_corridor"|"reach_junction"|"return_to_location"|"explore_region"|"avoid_route";
   origin:Point;originHeading:number;suggestedRouteId:string|null;suggestedCells:Point[];
   targetCell:Point|null;targetRegionId:string|null;avoidedCells:Point[];
+  decisionCell:Point;expectedChoiceCell:Point|null;
   expiresWhen:"target_reached"|"route_invalidated"|"new_recommendation"|"meaningful_divergence";
 };
+
+export type GuidanceRelationship = "accepted_suggestion"|"chose_another_way"|"left_then_rejoined"|"reached_same_place_differently";
 
 export type TrajectorySample = {
   time:number;position:Point;cell:Point;heading:number;newlyVisibleCells:Point[];
@@ -61,22 +64,28 @@ export type EgocentricView = {
 export type VisibleEnvironment = {id:ThemeId;regionId:string;name:string;details:string[]}|null;
 
 export type CompanionEvent =
-  | {type:"trajectory_relationship_changed"}
+  | {type:"trajectory_relationship_changed";relationship:GuidanceRelationship}
   | {type:"recommendation_contradicted"}
   | {type:"target_reached"}
   | {type:"same_target_reached_differently"}
-  | {type:"new_junction_visible";routeIds:string[]}
+  | {type:"new_junction_visible"}
+  | {type:"dead_end_visible";cell:Point}
+  | {type:"passing_thought"}
   | {type:"revisited_position"}
   | {type:"environment_visible";regionId:string;environment:ThemeId}
   | {type:"environment_entered";regionId:string;environment:ThemeId}
   | {type:"sustained_backtrack"}
   | {type:"repeated_collision"}
-  | {type:"idle";seconds:number;atChoice:boolean}
+  | {type:"idle";atChoice:boolean}
   | {type:"player_message";text:string}
   | {type:"initial_guidance"};
 
 export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number;kind?:ReplyKind};
 export type CompanionReply = {message:string;selectedRouteId:string|null;kind:ReplyKind};
+export type CompanionCue = {key:string;event:CompanionEvent;force:boolean};
+export type CompanionPhase = "charming"|"attached"|"overbearing";
+export type CompanionArcStats = {spokenMessages:number;guidanceFailures:number;resolvedChoices:number};
+export type CompanionArc = {phase:CompanionPhase;performanceDirection:string};
 
 export const ENVIRONMENTS:Record<Exclude<ThemeId,"neutral">,{name:string;details:string[]}>= {
   beach:{name:"buried beach",details:["sand","salt-stained walls","shells","driftwood"]},
@@ -109,13 +118,15 @@ export function forwardVisibleGeometry(world:InfiniteWorld,pose:Pose,tick:number
   }
   const open=[...points.values()].filter(([x,y])=>world.tile(x,y,tick)===0);
   const junctions=open.flatMap((p)=>{
-    const neighbors=openNeighbors(world,p[0],p[1],tick),seen=neighbors.filter(n=>visible.has(pointKey(n)));
-    if(neighbors.length<3||seen.length<3)return[];
-    return[{id:`junction:${pointKey(p)}`,cell:p,open:seen.map(n=>pointKey(n))}];
+    const neighbors=openNeighbors(world,p[0],p[1],tick);
+    if(neighbors.length<3)return[];
+    return[{id:`junction:${pointKey(p)}`,cell:p,open:neighbors.map(n=>pointKey(n))}];
   });
   const corridorEnds=open.filter(p=>{
-    const neighbors=openNeighbors(world,p[0],p[1],tick);
-    return neighbors.length===1&&neighbors.every(n=>visible.has(pointKey(n)));
+    const neighbors=openNeighbors(world,p[0],p[1],tick);if(neighbors.length!==1)return false;
+    const [entrance]=neighbors;
+    const endWall:Point=[p[0]+p[0]-entrance[0],p[1]+p[1]-entrance[1]];
+    return visible.has(pointKey(endWall));
   });
   const nearestEnd=corridorEnds.sort((a,b)=>Math.hypot(a[0]-pose.x,a[1]-pose.y)-Math.hypot(b[0]-pose.x,b[1]-pose.y))[0];
   const summary=[`${open.length} open cells are visible`,junctions.length?`${junctions.length} junction${junctions.length===1?"":"s"} visible`:"no complete junction visible",nearestEnd?`a closed corridor is visible at ${pointKey(nearestEnd)}`:"no confirmed corridor ending visible"].join("; ");
@@ -182,26 +193,58 @@ export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<
   const viable=options.filter(route=>route.score>-30);return(viable.length?viable:options).slice(0,4);
 }
 
-export function planApproachingJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:number,geometry:VisibleGeometry,memory:Map<string,{tile:number}>,visited:Set<string>):RouteOption[]{
-  const origin:Point=[Math.floor(pose.x),Math.floor(pose.y)],facing:[number,number]=[Math.cos(pose.angle),Math.sin(pose.angle)];
-  const junction=geometry.junctions.map(item=>{
-    const dx=item.cell[0]+.5-pose.x,dy=item.cell[1]+.5-pose.y,distance=Math.hypot(dx,dy),alignment=distance?((dx*facing[0]+dy*facing[1])/distance):0;
-    return{...item,distance,alignment};
-  }).filter(item=>item.distance>=1&&item.distance<=8&&item.alignment>=.9).sort((a,b)=>a.distance-b.distance)[0];
+export function planVisibleJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:number,geometry:VisibleGeometry,memory:Map<string,{tile:number}>,visited:Set<string>):RouteOption[]{
+  const origin:Point=[Math.floor(pose.x),Math.floor(pose.y)],visibleOpen=new Set(geometry.cells.filter(([x,y])=>world.tile(x,y,tick)===0).map(pointKey));visibleOpen.add(pointKey(origin));
+  const queue:Point[]=[origin],parents=new Map<string,Point|null>([[pointKey(origin),null]]);
+  while(queue.length){
+    const current=queue.shift()!;
+    for(const neighbor of openNeighbors(world,current[0],current[1],tick)){
+      const key=pointKey(neighbor);if(!visibleOpen.has(key)||parents.has(key))continue;
+      parents.set(key,current);queue.push(neighbor);
+    }
+  }
+  const distanceToPlayer=(cell:Point)=>Math.hypot(cell[0]+.5-pose.x,cell[1]+.5-pose.y);
+  const junction=geometry.junctions.filter(item=>parents.has(pointKey(item.cell))).sort((a,b)=>distanceToPlayer(a.cell)-distanceToPlayer(b.cell))[0];
   if(!junction)return[];
-  const deltaX=junction.cell[0]-origin[0],deltaY=junction.cell[1]-origin[1];
-  if(deltaX!==0&&deltaY!==0)return[];
-  const step:Point=deltaX!==0?[Math.sign(deltaX),0]:[0,Math.sign(deltaY)];
-  if(step[0]===0&&step[1]===0)return[];
-  const path:Point[]=[];let cursor:Point=[origin[0]+step[0],origin[1]+step[1]];
-  while(!same(cursor,junction.cell)&&path.length<12){if(world.tile(cursor[0],cursor[1],tick)!==0)return[];path.push(cursor);cursor=[cursor[0]+step[0],cursor[1]+step[1]]}
-  if(!same(cursor,junction.cell)||world.tile(cursor[0],cursor[1],tick)!==0)return[];path.push(junction.cell);
-  const approach:Point=[junction.cell[0]-step[0],junction.cell[1]-step[1]],arrivalPose:Pose={x:junction.cell[0]+.5,y:junction.cell[1]+.5,angle:Math.atan2(step[1],step[0]),bob:0};
+  const path:Point[]=[];let cursor:Point|null=junction.cell;
+  while(cursor){path.unshift(cursor);cursor=parents.get(pointKey(cursor))??null}
+  if(path.length===1)return planRoutes(world,pose,tick,memory,visited).map(route=>({...route,decisionPoint:"current" as const,decisionCell:junction.cell}));
+  const approach=path.at(-2)!,step:Point=[junction.cell[0]-approach[0],junction.cell[1]-approach[1]],arrivalPose:Pose={x:junction.cell[0]+.5,y:junction.cell[1]+.5,angle:Math.atan2(step[1],step[0]),bob:0};
   return openNeighbors(world,junction.cell[0],junction.cell[1],tick).filter(cell=>!same(cell,approach)).map((branch,index)=>{
     const direction=relativeDirection(arrivalPose,branch),knownVisits=visited.has(pointKey(branch))?1:0,frontierBonus=openNeighbors(world,branch[0],branch[1],tick).filter(cell=>!memory.has(pointKey(cell))).length;
     const instruction=direction==="straight"?"Go straight when you get there.":direction==="back"?"Turn around when you get there.":`Take the ${direction} when you get there.`;
-    return{id:`approach:${pointKey(junction.cell)}:${pointKey(branch)}:${index}`,direction,knownCells:[...path,branch],targetCell:branch,targetRegionId:null,description:instruction, instruction,score:frontierBonus*4-knownVisits*2+(direction==="straight"?1:0),decisionPoint:"upcoming" as const,decisionCell:junction.cell};
+    return{id:`approach:${pointKey(junction.cell)}:${pointKey(branch)}:${index}`,direction,knownCells:[...path.slice(1),branch],targetCell:branch,targetRegionId:null,description:instruction,instruction,score:frontierBonus*4-knownVisits*2+(direction==="straight"?1:0),decisionPoint:"upcoming" as const,decisionCell:junction.cell};
   }).sort((a,b)=>b.score-a.score);
+}
+
+export function companionArc(stats:CompanionArcStats):CompanionArc{
+  const pressure=stats.spokenMessages+stats.guidanceFailures*3+stats.resolvedChoices;
+  if(pressure<5)return{phase:"charming",performanceDirection:"You are still making a charming first impression: vivid, attentive, and confident. Let warmth grow from what the player actually does."};
+  if(pressure<13)return{phase:"attached",performanceDirection:"You have become personally invested in this partnership. Speak more readily, make their trust feel important, overvalue their good instincts, and bounce from remorse into fresh certainty whenever your route fails."};
+  return{phase:"overbearing",performanceDirection:"Your affection has become comically overbearing. Silence makes you want to jump back in; agreement becomes effusive, apologies become wholehearted, praise becomes excessive, and every failed prediction somehow makes your next prediction even more certain."};
+}
+
+export function nextPassingThoughtAt(now:number,phase:CompanionPhase="charming",roll=Math.random()){
+  const [minimum,spread]=phase==="charming"?[22000,18000]:phase==="attached"?[13000,14000]:[7000,9000];
+  return now+minimum+Math.floor(clamp(roll)*spread);
+}
+
+export function companionCooldownMs(phase:CompanionPhase){
+  return phase==="charming"?12000:phase==="attached"?9000:6000;
+}
+
+export function shouldTriggerPassingThought(activity:PlayerActivity,now:number,dueAt:number){
+  return activity.state!=="turning_in_place"&&now>=dueAt;
+}
+
+export function nextPerceptionCue(geometry:VisibleGeometry,environment:VisibleEnvironment,intent:GuidanceIntent|null,seen:Set<string>):CompanionCue|null{
+  const contradictedEnd=intent?geometry.corridorEnds.find(end=>intent.suggestedCells.some(cell=>same(cell,end))):null;
+  const cues:CompanionCue[]=[];
+  if(contradictedEnd)cues.push({key:`sight:end:${pointKey(contradictedEnd)}`,event:{type:"recommendation_contradicted"},force:true});
+  for(const cell of geometry.corridorEnds)cues.push({key:`sight:end:${pointKey(cell)}`,event:{type:"dead_end_visible",cell},force:true});
+  if(environment)cues.push({key:`environment:${environment.regionId}`,event:{type:"environment_visible",regionId:environment.regionId,environment:environment.id},force:false});
+  for(const junction of geometry.junctions)cues.push({key:`sight:${junction.id}`,event:{type:"new_junction_visible"},force:true});
+  return cues.find(cue=>!seen.has(cue.key))??null;
 }
 
 export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:RouteOption[]){
@@ -211,6 +254,12 @@ export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:Route
   }
   const first=selected?.knownCells[0];
   return first?latestRoutes.find(candidate=>candidate.knownCells[0]?.[0]===first[0]&&candidate.knownCells[0]?.[1]===first[1])??null:null;
+}
+
+export function routesForEvent(event:CompanionEvent,currentRoutes:RouteOption[],visibleJunctionRoutes:RouteOption[]){
+  if(event.type==="new_junction_visible"&&visibleJunctionRoutes.length)return visibleJunctionRoutes;
+  if(event.type!=="dead_end_visible")return currentRoutes;
+  return currentRoutes.filter(route=>!route.knownCells.some(cell=>same(cell,event.cell)));
 }
 
 export function visibleEnvironment(anchors:ThemeAnchor[],geometry:VisibleGeometry,pose:Pose):VisibleEnvironment{
@@ -223,11 +272,32 @@ export function visibleEnvironment(anchors:ThemeAnchor[],geometry:VisibleGeometr
 
 export function createGuidanceIntent(reply:CompanionReply,route:RouteOption|null,pose:Pose,now=Date.now()):GuidanceIntent|null{
   if(!reply.message||!route)return null;
-  return{id:`guidance:${now}`,issuedAt:now,message:reply.message,kind:route.knownCells.length>1?"reach_junction":"take_branch",origin:[Math.floor(pose.x),Math.floor(pose.y)],originHeading:pose.angle,suggestedRouteId:route.id,suggestedCells:route.knownCells,targetCell:route.targetCell,targetRegionId:route.targetRegionId,avoidedCells:[],expiresWhen:"new_recommendation"};
+  const origin:Point=[Math.floor(pose.x),Math.floor(pose.y)],decisionCell=route.decisionCell??origin;
+  const expectedChoiceCell=route.decisionPoint==="upcoming"?route.targetCell:route.knownCells[0]??null;
+  return{id:`guidance:${now}`,issuedAt:now,message:reply.message,kind:route.knownCells.length>1?"reach_junction":"take_branch",origin,originHeading:pose.angle,suggestedRouteId:route.id,suggestedCells:route.knownCells,targetCell:route.targetCell,targetRegionId:route.targetRegionId,avoidedCells:[],decisionCell,expectedChoiceCell,expiresWhen:"new_recommendation"};
+}
+
+function distinctTrajectoryCells(samples:TrajectorySample[]){
+  return samples.map(sample=>sample.cell).filter((cell,index,cells)=>index===0||!same(cell,cells[index-1]));
+}
+
+export function guidanceRelationship(intent:GuidanceIntent,samples:TrajectorySample[],evidence:GuidanceEvidence):GuidanceRelationship|null{
+  if(evidence.reachedSameTargetByDifferentRoute)return"reached_same_place_differently";
+  if(evidence.rejoinedAt)return"left_then_rejoined";
+  const cells=distinctTrajectoryCells(samples),decisionIndex=cells.findIndex(cell=>same(cell,intent.decisionCell));
+  if(decisionIndex<0||decisionIndex===cells.length-1)return null;
+  const chosenCell=cells[decisionIndex+1];
+  return same(chosenCell,intent.expectedChoiceCell)?"accepted_suggestion":"chose_another_way";
+}
+
+export function relationshipCue(intent:GuidanceIntent,samples:TrajectorySample[],evidence:GuidanceEvidence,seen:Set<string>):CompanionCue|null{
+  const relationship=guidanceRelationship(intent,samples,evidence);if(!relationship)return null;
+  const key=`relationship:${intent.id}:${relationship}`;
+  return seen.has(key)?null:{key,event:{type:"trajectory_relationship_changed",relationship},force:true};
 }
 
 export function compareTrajectory(intent:GuidanceIntent,samples:TrajectorySample[],newlyRevealed:Set<string>,contradicted=false):GuidanceEvidence{
-  const actual=samples.map(s=>s.cell).filter((p,i,a)=>i===0||!same(p,a[i-1])),suggested=new Set(intent.suggestedCells.map(pointKey));
+  const actual=distinctTrajectoryCells(samples),suggested=new Set(intent.suggestedCells.map(pointKey));
   const shared=actual.filter(p=>suggested.has(pointKey(p))),firstMove=actual.find(p=>!same(p,intent.origin));
   const suggestedVector=intent.suggestedCells[0]?[intent.suggestedCells[0][0]-intent.origin[0],intent.suggestedCells[0][1]-intent.origin[1]]:null;
   const actualVector=firstMove?[firstMove[0]-intent.origin[0],firstMove[1]-intent.origin[1]]:null;
@@ -251,31 +321,6 @@ export function analyzePlayerActivity(samples:TrajectorySample[],now:number,last
   return{state,stationarySeconds:state==="stationary"?stationarySeconds:0,positionChangedSinceRecommendation:positionChanged,headingChangedSinceRecommendation:headingChanged,atVisibleChoice,description};
 }
 
-export function verifiedAutonomousObservation(event:CompanionEvent,environment:VisibleEnvironment,activity:PlayerActivity,routeCount:number){
-  if(event.type==="idle")return"No rush.";
-  if(event.type==="revisited_position")return"We've been here before.";
-  if(event.type==="environment_visible"&&environment)return`${/^([aeiou])/i.test(environment.name)?"An":"A"} ${environment.name}.`;
-  if(event.type==="recommendation_contradicted")return"That way is blocked.";
-  if(event.type==="repeated_collision")return"That's a wall.";
-  if(event.type==="new_junction_visible"&&routeCount>1)return"";
-  return"";
-}
-
-export function verifiedSocialReaction(kind:ReplyKind,event:CompanionEvent,evidence:GuidanceEvidence|null){
-  if(event.type==="idle")return"";
-  if(event.type==="recommendation_contradicted")return"Oh no—that's completely on me.";
-  if(event.type==="same_target_reached_differently")return kind==="praise"?"Good choice.":"You were right to take that direction.";
-  if(event.type==="trajectory_relationship_changed"&&evidence?.newCellsRevealedOffSuggestedPath)return kind==="agreement"?"Good call. There's more to see this way.":"Good choice. There's more to see this way.";
-  if(event.type==="revisited_position")return"Good catch.";
-  if(kind==="praise"){
-    if(event.type==="environment_visible")return"Good find.";
-  }
-  if(kind==="reframe"){
-    if(event.type==="environment_visible")return"Not the exit, but this is worth seeing.";
-  }
-  return"";
-}
-
 export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=7){
   const rows:string[]=[];for(let y=center[1]-radius;y<=center[1]+radius;y++){let row="";for(let x=center[0]-radius;x<=center[0]+radius;x++){if(x===center[0]&&y===center[1])row+="P";else{const tile=memory.get(cellKey(x,y))?.tile;row+=tile===0?".":tile===1?"#":"?"}}rows.push(row)}return rows.join("\n");
 }
@@ -295,6 +340,8 @@ export function deterministicReply(event:CompanionEvent,routes:RouteOption[],env
     message="";kind="silence";
   }else if(event.type==="player_message"){
     message="";kind="silence";
+  }else if(event.type==="passing_thought"||event.type==="dead_end_visible"){
+    message="";kind="observation";
   }
   return{message:message.slice(0,260),selectedRouteId:route?.id??null,kind};
 }

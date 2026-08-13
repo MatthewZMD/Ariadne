@@ -52,19 +52,21 @@ function carveLine(tiles, ax, ay, bx, by) {
 export function generateChunk(seed, cx, cy, epoch = 0) {
   const random = seededRandom(hash32(seed, cx, cy, epoch));
   const tiles = Array.from({ length: CHUNK_SIZE }, () => Array(CHUNK_SIZE).fill(1));
-  const stack = [{ x: 1, y: 1 }];
+  const seen = new Set([cellKey(1, 1)]), frontier = [];
+  const addFrontier = (x, y) => {
+    for (const [dx,dy] of [[2,0],[-2,0],[0,2],[0,-2]]) {
+      const nx=x+dx,ny=y+dy;
+      if(nx>0&&ny>0&&nx<15&&ny<15&&!seen.has(cellKey(nx,ny)))frontier.push({x,y,nx,ny});
+    }
+  };
   tiles[1][1] = 0;
-  while (stack.length) {
-    const current = stack[stack.length - 1];
-    const options = [[2,0],[-2,0],[0,2],[0,-2]].filter(([dx,dy]) => {
-      const x = current.x + dx, y = current.y + dy;
-      return x > 0 && y > 0 && x < 15 && y < 15 && tiles[y][x] === 1;
-    });
-    if (!options.length) { stack.pop(); continue; }
-    const [dx, dy] = options[Math.floor(random() * options.length)];
-    tiles[current.y + dy / 2][current.x + dx / 2] = 0;
-    tiles[current.y + dy][current.x + dx] = 0;
-    stack.push({ x: current.x + dx, y: current.y + dy });
+  addFrontier(1,1);
+  while(frontier.length){
+    const index=Math.floor(random()*frontier.length),edge=frontier[index];
+    frontier[index]=frontier[frontier.length-1];frontier.pop();
+    const id=cellKey(edge.nx,edge.ny);if(seen.has(id))continue;
+    seen.add(id);tiles[(edge.y+edge.ny)/2][(edge.x+edge.nx)/2]=0;tiles[edge.ny][edge.nx]=0;
+    addFrontier(edge.nx,edge.ny);
   }
   const portals = portalsFor(seed, cx, cy);
   carveLine(tiles, portals.north, 0, portals.north, 1);
@@ -146,4 +148,14 @@ export function connectedTileCount(chunk) {
     }
   }
   return seen.size;
+}
+
+export function chunkTopology(chunk) {
+  let deadEnds=0,corridors=0,junctions=0,logicalCells=0;
+  for(let y=1;y<15;y+=2)for(let x=1;x<15;x+=2){
+    if(chunk.tiles[y][x]!==0)continue;logicalCells++;
+    const degree=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>chunk.tiles[y+dy]?.[x+dx]===0).length;
+    if(degree===1)deadEnds++;else if(degree===2)corridors++;else if(degree>=3)junctions++;
+  }
+  return{logicalCells,deadEnds,corridors,junctions};
 }
