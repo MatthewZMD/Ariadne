@@ -39,14 +39,18 @@ export function enforceActivityGrounding(reply:CompanionReply,activity:PlayerAct
 }
 
 const normalized=(text:string)=>text.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+const repeatsRecent=(text:string,messages:CompanionMessage[])=>{
+  const candidate=normalized(text);if(!candidate)return false;
+  return messages.some(message=>{if(message.role!=="ariadne")return false;const recent=normalized(message.text);return recent===candidate||recent.includes(candidate)||(candidate.length>18&&candidate.includes(recent))});
+};
 
 export function enforcePlayerView(reply:CompanionReply,body:Pick<RequestBody,"trigger"|"activity"|"environment"|"legalRoutes"|"recommendationEvidence"|"recentMessages">):CompanionReply{
   const safeReply=groundReply(reply,body.legalRoutes);
   if(body.trigger.type==="player_message")return enforceActivityGrounding(safeReply,body.activity);
   const modelText=enforceActivityGrounding(safeReply,body.activity).message.trim();
-  const repeated=!!modelText&&body.recentMessages.some(message=>message.role==="ariadne"&&normalized(message.text)===normalized(modelText));
+  const repeated=repeatsRecent(modelText,body.recentMessages);
   const expressive=["initial_guidance","trajectory_relationship_changed","target_reached","same_target_reached_differently","revisited_position","new_junction_visible","environment_visible","recommendation_contradicted","idle"].includes(body.trigger.type)&&!repeated?modelText:"";
-  const observation=["recommendation_contradicted","environment_visible","repeated_collision"].includes(body.trigger.type)?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):body.trigger.type==="revisited_position"&&!expressive?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):"";
+  const observation=["recommendation_contradicted","repeated_collision"].includes(body.trigger.type)?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):body.trigger.type==="environment_visible"&&!expressive?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):body.trigger.type==="revisited_position"&&!expressive?verifiedAutonomousObservation(body.trigger,body.environment,body.activity,body.legalRoutes.length):"";
   const fallbackSocial=body.trigger.type==="recommendation_contradicted"&&!expressive?verifiedSocialReaction(safeReply.kind,body.trigger,body.recommendationEvidence):"";
   return{...safeReply,message:[expressive,fallbackSocial,observation].filter(Boolean).join(" ")};
 }
@@ -88,19 +92,26 @@ function statePrompt(body:RequestBody){
   return `<what_ariadne_knows>\nRIGHT NOW\n${body.activity.description}\n${body.currentView.description}\n${setting}\n\nWHAT YOU LAST SAID\n${previous}\n\nWHAT HAPPENED SINCE\n${semanticMovement(body.recommendationEvidence)}\n${semanticEvent(body.trigger)}\n\nWAYS TO GUIDE THE PLAYER\n${choices}\nChoose one key silently. Never say or explain the key.\n\nRECENT DIALOGUE\n${conversation}\n${body.olderContextSummary.slice(0,800)}\n\nWHAT THE PLAYER JUST SAID\n${body.playerMessage??"Nothing."}\n</what_ariadne_knows>`;
 }
 
-async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply>{
-  const model=process.env.AI_MODEL||"openai/gpt-5.6-luna";
+async function requestOpenRouter(body:RequestBody,apiKey:string,model:string):Promise<CompanionReply>{
   const response=await fetch("https://openrouter.ai/api/v1/responses",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"https://null-corridor.agent767107.chatgpt.site","x-title":"ARIADNE Companion"},body:JSON.stringify({model,instructions:ARIADNE_SYSTEM_PROMPT,input:statePrompt(body),reasoning:{effort:"low"},text:{verbosity:"low",format:{type:"json_schema",name:"ariadne_reply",strict:true,schema:responseSchema(body.legalRoutes)}},max_output_tokens:180})});
-  if(!response.ok)throw new Error(`provider ${response.status}`);
+  if(!response.ok){const error=new Error(`provider ${response.status}: ${(await response.text()).slice(0,500)}`) as Error&{status?:number};error.status=response.status;throw error}
   const data=await response.json() as {output_text?:string;output?:Array<{content?:Array<{type?:string;text?:string}>}>};
   const text=data.output_text??data.output?.flatMap(item=>item.content??[]).find(item=>item.type==="output_text")?.text;
   if(!text)throw new Error("provider returned no text");return JSON.parse(text);
 }
 
+async function openRouter(body:RequestBody,apiKey:string):Promise<CompanionReply>{
+  const preferred=process.env.AI_MODEL||"openai/gpt-5.6-luna";
+  try{return await requestOpenRouter(body,apiKey,preferred)}catch(error){
+    if((error as {status?:number}).status!==403)throw error;
+    return requestOpenRouter(body,apiKey,process.env.AI_FALLBACK_MODEL||"qwen/qwen3.8-max");
+  }
+}
+
 export async function POST(request:Request){
   let body:unknown;try{body=await request.json()}catch{return Response.json({error:"invalid JSON"},{status:400})}
   if(!validBody(body))return Response.json({error:"invalid companion request"},{status:400});
-  const fallback=()=>enforcePlayerView(groundReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.recentMessages),body.legalRoutes),body);
+  const fallback=()=>enforcePlayerView(groundReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence),body.legalRoutes),body);
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback"});

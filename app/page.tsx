@@ -139,10 +139,10 @@ export default function Home(){
       const route=rebaseSelectedRoute(selectedAtRequest,latestRoutes);
       const guidesNow=["initial_guidance","new_junction_visible","recommendation_contradicted","target_reached","same_target_reached_differently","revisited_position","repeated_collision","player_message"].includes(event.type)||(event.type==="idle"&&event.atChoice);
       const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",finalText=[reply.message.trim(),spokenInstruction].filter(Boolean).join(" ");
-      const duplicate=!guidesNow&&!!finalText&&messagesRef.current.slice(-8).some(message=>message.role==="ariadne"&&message.text.toLowerCase().replace(/[^a-z0-9]+/g," ").trim()===finalText.toLowerCase().replace(/[^a-z0-9]+/g," ").trim());
+      const normalizedFinal=finalText.toLowerCase().replace(/[^a-z0-9]+/g," ").trim(),duplicate=!!finalText&&messagesRef.current.slice(-8).some(message=>{if(message.role!=="ariadne")return false;const recent=message.text.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();return recent===normalizedFinal||recent.includes(normalizedFinal)||(normalizedFinal.length>18&&normalizedFinal.includes(recent))});
       if(finalText&&!duplicate){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:reply.kind};
-        setCompanionMessages(old=>[...old,message].slice(-18));
+        const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);
       }
       const groundedReply={...reply,message:spokenInstruction},nextIntent=spokenInstruction?createGuidanceIntent(groundedReply,route,{...latestPose}):null;
       if(nextIntent){guidanceRef.current=nextIntent;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set(geometry.cells.map(([x,y])=>cellKey(x,y)));newlyRevealedRef.current=new Set()}

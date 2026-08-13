@@ -199,7 +199,7 @@ export function planApproachingJunctionRoutes(world:InfiniteWorld,pose:Pose,tick
   const approach:Point=[junction.cell[0]-step[0],junction.cell[1]-step[1]],arrivalPose:Pose={x:junction.cell[0]+.5,y:junction.cell[1]+.5,angle:Math.atan2(step[1],step[0]),bob:0};
   return openNeighbors(world,junction.cell[0],junction.cell[1],tick).filter(cell=>!same(cell,approach)).map((branch,index)=>{
     const direction=relativeDirection(arrivalPose,branch),knownVisits=visited.has(pointKey(branch))?1:0,frontierBonus=openNeighbors(world,branch[0],branch[1],tick).filter(cell=>!memory.has(pointKey(cell))).length;
-    const instruction=direction==="straight"?"At the intersection, go straight.":direction==="back"?"At the intersection, turn around.":`At the intersection, turn ${direction}.`;
+    const instruction=direction==="straight"?"Go straight when you get there.":direction==="back"?"Turn around when you get there.":`Take the ${direction} when you get there.`;
     return{id:`approach:${pointKey(junction.cell)}:${pointKey(branch)}:${index}`,direction,knownCells:[...path,branch],targetCell:branch,targetRegionId:null,description:instruction, instruction,score:frontierBonus*4-knownVisits*2+(direction==="straight"?1:0),decisionPoint:"upcoming" as const,decisionCell:junction.cell};
   }).sort((a,b)=>b.score-a.score);
 }
@@ -254,7 +254,7 @@ export function analyzePlayerActivity(samples:TrajectorySample[],now:number,last
 export function verifiedAutonomousObservation(event:CompanionEvent,environment:VisibleEnvironment,activity:PlayerActivity,routeCount:number){
   if(event.type==="idle")return"No rush.";
   if(event.type==="revisited_position")return"We've been here before.";
-  if(event.type==="environment_visible"&&environment)return`${/^([aeiou])/i.test(environment.name)?"An":"A"} ${environment.name}—${environment.details.join(" and ")}, all the way down here.`;
+  if(event.type==="environment_visible"&&environment)return`${/^([aeiou])/i.test(environment.name)?"An":"A"} ${environment.name}.`;
   if(event.type==="recommendation_contradicted")return"That way is blocked.";
   if(event.type==="repeated_collision")return"That's a wall.";
   if(event.type==="new_junction_visible"&&routeCount>1)return"";
@@ -280,23 +280,21 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
   const rows:string[]=[];for(let y=center[1]-radius;y<=center[1]+radius;y++){let row="";for(let x=center[0]-radius;x<=center[0]+radius;x++){if(x===center[0]&&y===center[1])row+="P";else{const tile=memory.get(cellKey(x,y))?.tile;row+=tile===0?".":tile===1?"#":"?"}}rows.push(row)}return rows.join("\n");
 }
 
-export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,previousMessages:CompanionMessage[]=[]):CompanionReply{
+export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null):CompanionReply{
   const route=routes[0]??null;
-  let message="Okay, I have a really good feeling about this.",kind:ReplyKind="guidance";
+  let message="",kind:ReplyKind="guidance";
   if(event.type==="environment_visible"&&environment){
-    const variants=["Oh my god, look at this.","Okay, wait—I love this.","I absolutely did not expect this."];
-    message=variants[previousMessages.filter(m=>m.kind==="environment").length%variants.length];kind="environment";
+    message="";kind="environment";
   }else if(event.type==="recommendation_contradicted"){
     message="Oh no—that's completely on me.";kind="apology";
   }else if(event.type==="same_target_reached_differently"){
     message="Oh my god, you got there without me. I love that.";kind="agreement";
   }else if(event.type==="trajectory_relationship_changed"&&evidence){
-    const variants=["Okay, wait—you were absolutely onto something there.","Oh my god, yes. Trust that instinct.","I love that you committed to that."];
-    message=variants[previousMessages.filter(m=>m.kind==="praise").length%variants.length];kind="praise";
+    message="";kind="silence";
   }else if(event.type==="idle"){
-    message=event.atChoice?"Okay, I can feel you thinking. Come on—trust me on this one.":"Wait, what are we feeling here?";kind="observation";
+    message="";kind="silence";
   }else if(event.type==="player_message"){
-    message="Okay, yes—I'm with you.";kind="reply";
+    message="";kind="silence";
   }
   return{message:message.slice(0,260),selectedRouteId:route?.id??null,kind};
 }

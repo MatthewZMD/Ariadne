@@ -40,7 +40,7 @@ test("environment observations mention only details supplied as visible",()=>{
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player is walking."};
   const environment={id:"beach",regionId:"beach:1",name:"buried beach",details:["sand","shells"]};
   const reply=enforcePlayerView({message:"A useful landmark for our recovery.",selectedRouteId:null,kind:"environment"},{trigger:{type:"environment_visible",regionId:"beach:1",environment:"beach"},activity,environment,legalRoutes:[],recommendationEvidence:null,recentMessages:[]});
-  assert.equal(reply.message,"A buried beach—sand and shells, all the way down here.");
+  assert.equal(reply.message,"A buried beach.");
 });
 
 test("verified failure always produces a brief apology even when the model requests guidance",()=>{
@@ -68,5 +68,5 @@ test("an environmental detour can be optimistically reframed without claiming pr
   const activity={state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"The player is walking."};
   const environment={id:"beach",regionId:"beach:1",name:"buried beach",details:["sand","shells"]};
   const reply=enforcePlayerView({message:"We are nearly at the exit.",selectedRouteId:null,kind:"reframe"},{trigger:{type:"environment_visible",regionId:"beach:1",environment:"beach"},activity,environment,legalRoutes:[],recommendationEvidence:null,recentMessages:[]});
-  assert.equal(reply.message,"A buried beach—sand and shells, all the way down here.");
+  assert.equal(reply.message,"A buried beach.");
 });

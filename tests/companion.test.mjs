@@ -24,8 +24,8 @@ test("another path to the same target is represented without an obedience label"
 test("fallback language recognizes overlap-aware progress and environment discovery",()=>{
   const route={id:"r1",direction:"left",knownCells:[[1,0]],targetCell:[1,0],targetRegionId:null,description:"go left",score:2};
   const environment={id:"frozen",regionId:"frozen:0:0",name:"frozen archive",details:["ice","shelves"]};
-  const reply=deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null,[]);
-  assert.equal(reply.kind,"environment");assert.match(reply.message,/look at this/i);assert.equal(reply.selectedRouteId,"r1");
+  const reply=deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null);
+  assert.equal(reply.kind,"environment");assert.equal(reply.message,"");assert.equal(reply.selectedRouteId,"r1");
 });
 
 test("egocentric directions use cell centers and explicitly identify blocked sides",()=>{
@@ -66,6 +66,6 @@ test("walking toward a visible intersection produces an advance turn instruction
   const memory=new Map([...open].map(key=>[key,{tile:0}])),pose={x:.5,y:.5,angle:0,bob:0},geometry=forwardVisibleGeometry(world,pose,0);
   const routes=planApproachingJunctionRoutes(world,pose,0,geometry,memory,new Set(["0,0","1,0"]));
   assert.deepEqual(routes.map(route=>route.direction).sort(),["left","straight"]);
-  assert.match(instructionForCurrentChoice(routes.find(route=>route.direction==="left"),routes),/^At the intersection, turn left\.$/);
+  assert.match(instructionForCurrentChoice(routes.find(route=>route.direction==="left"),routes),/^Take the left when you get there\.$/);
   assert.equal(planApproachingJunctionRoutes(world,{...pose,angle:Math.PI},0,geometry,memory,new Set()).length,0);
 });
