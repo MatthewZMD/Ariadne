@@ -41,7 +41,7 @@ const STORY = [
 ] as const;
 
 function Logo() {
-  return <Image className="title-card-image" src="/ariadne-title-card.png" alt="Ariadne" width={1672} height={941} priority />;
+  return <Image className="title-card-image" src="/ariadne-title-card.png" alt="Ariadne" width={1672} height={941} unoptimized priority />;
 }
 
 export function TitleScreen({ onStart }: { onStart: () => void }) {
