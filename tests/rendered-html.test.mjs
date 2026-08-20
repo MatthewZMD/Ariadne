@@ -89,15 +89,16 @@ async function requestCompanion(body){
   const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});
 }
 
-test("product shell renders without exposing checkpoints or an exit",async()=>{
+test("product shell promises the search without claiming the exit was found",async()=>{
   const response=await render();assert.equal(response.status,200);const html=await response.text();
-  assert.match(html,/ENTER CHAT/);assert.doesNotMatch(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|exit|you win/i);
+  assert.match(html,/ENTER CHAT/);assert.match(html,/Follow Ariadne and find the exit!/);assert.match(html,/☆☆☆☆/);assert.doesNotMatch(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|you (?:found|reached) the exit|you win/i);
 });
 
 test("companion route works without credentials through the in-world fallback",async()=>{
-  const route={id:"r1",direction:"straight",knownCells:[[2,1]],targetCell:[2,1],targetRegionId:null,description:"continue straight",score:3};
-  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{summary:"one corridor"},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:"",companionArc:{phase:"charming",performanceDirection:"You are making a charming first impression."}});
-  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.equal(body.message,"");
+  const route={id:"r1",direction:"straight",knownCells:[[2,1]],targetCell:[2,1],targetRegionId:null,description:"continue straight",instruction:"Keep going.",score:3};
+  const belief={id:"b1",objectiveStage:0,junctionId:"start",routeId:"r1",instruction:"Keep going."};
+  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{facing:"east",centerView:"a corridor",openings:["straight"],blocked:["left","right","back"],description:"MT faces an open corridor."},environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:"",companionArc:{phase:"charming",performanceDirection:"You are making a charming first impression.",relationshipContext:"Nothing has happened yet."},objective:{collectedStars:0,currentGoal:"first_star",activeStarVisible:false,latestEvent:"searching"},navigationBelief:belief});
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.equal(body.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
 });
 
 test("companion provider is configured for OpenRouter without exposing a key",async()=>{

@@ -2,16 +2,11 @@ import { cellKey, type InfiniteWorld } from "./world.mjs";
 import { themeAt, type ThemeAnchor, type ThemeId } from "./themes.ts";
 import { CAMERA_FOV } from "./camera.ts";
 import type { Pose } from "./renderer.ts";
+import type { NavigationBelief, PublicObjectiveContext } from "./objectives.ts";
+import type { Point, RouteDirection, RouteOption } from "./navigation-contracts.ts";
+export type { Point, RouteDirection, RouteOption } from "./navigation-contracts.ts";
 
-export type Point = [number, number];
-export type RouteDirection = "left" | "right" | "straight" | "back";
 export type ReplyKind = "guidance" | "praise" | "apology" | "agreement" | "reframe" | "environment" | "reply" | "observation" | "silence";
-
-export type RouteOption = {
-  id:string;direction:RouteDirection;knownCells:Point[];targetCell:Point|null;
-  targetRegionId:string|null;description:string;instruction:string;score:number;
-  decisionPoint?:"current"|"upcoming";decisionCell?:Point;
-};
 
 export type GuidanceIntent = {
   id:string;issuedAt:number;message:string;
@@ -22,21 +17,29 @@ export type GuidanceIntent = {
   expiresWhen:"target_reached"|"route_invalidated"|"new_recommendation"|"meaningful_divergence";
 };
 
-export type GuidanceRelationship = "accepted_suggestion"|"chose_another_way"|"left_then_rejoined"|"reached_same_place_differently";
+export type TrajectoryChange = "sustained_alignment"|"sustained_divergence"|"left_then_rejoined"|"same_waypoint_different_route"|"recommendation_visibly_contradicted";
+export type EncounterKind = "new_junction"|"visible_dead_end"|"new_environment"|"familiar_place"|"route_reconnection"|"star_collected"|TrajectoryChange;
 
 export type TrajectorySample = {
   time:number;position:Point;cell:Point;heading:number;newlyVisibleCells:Point[];
   visibleJunctions:string[];visibleEnvironment:ThemeId|null;
+  movementState:"walking"|"turning"|"stationary";
 };
 
-export type GuidanceEvidence = {
-  recommendationId:string;elapsedSeconds:number;initialDirectionSimilarity:number;
-  suggestedCellOverlap:number;movementTowardTarget:number;movementAwayFromTarget:number;
-  sharedCells:Point[];deviationCell:Point|null;rejoinedAt:Point|null;
-  reachedSuggestedTarget:boolean;reachedSameTargetByDifferentRoute:boolean;enteredSuggestedRegion:boolean;
-  recommendationStillPossible:boolean;recommendationContradictedByVisibleEvidence:boolean;
-  newCellsRevealedOnSuggestedPath:number;newCellsRevealedOffSuggestedPath:number;
-  loopEncountered:boolean;backtrackingObserved:boolean;playerCurrentlyNearSuggestedRoute:boolean;
+export type TrajectoryEvidence = {
+  activeSeconds:number;initialDirectionSimilarity:number;suggestedCellOverlap:number;
+  alignedSeconds:number;divergedSeconds:number;sharedCells:Point[];
+  firstDeviationCell:Point|null;latestRejoinCell:Point|null;
+  currentlyNearSuggestedRoute:boolean;reachedSameWaypointDifferently:boolean;visiblyContradicted:boolean;
+  revealedOnSuggestedRoute:number;revealedAwayFromSuggestedRoute:number;
+  backtrackingObserved:boolean;familiarGeometryReached:boolean;
+};
+export type GuidanceEvidence = TrajectoryEvidence;
+
+export type GuidanceTrace = {
+  recommendation:GuidanceIntent;startedAt:number;activeSeconds:number;
+  samples:TrajectorySample[];suggestedCells:Point[];actualCells:Point[];
+  evidence:TrajectoryEvidence;emittedChanges:TrajectoryChange[];
 };
 
 export type PlayerActivity = {
@@ -64,7 +67,7 @@ export type EgocentricView = {
 export type VisibleEnvironment = {id:ThemeId;regionId:string;name:string;details:string[]}|null;
 
 export type CompanionEvent =
-  | {type:"trajectory_relationship_changed";relationship:GuidanceRelationship}
+  | {type:"trajectory_relationship_changed";change:TrajectoryChange}
   | {type:"recommendation_contradicted"}
   | {type:"target_reached"}
   | {type:"same_target_reached_differently"}
@@ -78,14 +81,22 @@ export type CompanionEvent =
   | {type:"repeated_collision"}
   | {type:"idle";atChoice:boolean}
   | {type:"player_message";text:string}
+  | {type:"star_visible";starId:string;ordinal:1|2|3|4}
+  | {type:"star_collected";starId:string;ordinal:1|2|3|4}
+  | {type:"objective_changed";collectedStars:number}
   | {type:"initial_guidance"};
 
 export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number;kind?:ReplyKind};
 export type CompanionReply = {message:string;selectedRouteId:string|null;kind:ReplyKind};
 export type CompanionCue = {key:string;event:CompanionEvent;force:boolean};
 export type CompanionPhase = "charming"|"attached"|"overbearing";
-export type CompanionArcStats = {spokenMessages:number;guidanceFailures:number;resolvedChoices:number};
-export type CompanionArc = {phase:CompanionPhase;performanceDirection:string};
+export type JourneyState = {
+  phase:CompanionPhase;activeWalkSeconds:number;activeWalkSecondsInPhase:number;
+  uniqueCellsVisited:number;meaningfulEncounters:number;encounteredKinds:EncounterKind[];
+  relationshipDepth:number;recentRelationshipMoments:TrajectoryChange[];
+};
+export type CompanionArc = {phase:CompanionPhase;performanceDirection:string;relationshipContext:string};
+export const PLAYER_NAME="MT";
 
 export const ENVIRONMENTS:Record<Exclude<ThemeId,"neutral">,{name:string;details:string[]}>= {
   beach:{name:"buried beach",details:["sand","salt-stained walls","shells","driftwood"]},
@@ -217,15 +228,51 @@ export function planVisibleJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:num
   }).sort((a,b)=>b.score-a.score);
 }
 
-export function companionArc(stats:CompanionArcStats):CompanionArc{
-  const pressure=stats.spokenMessages+stats.guidanceFailures*3+stats.resolvedChoices;
-  if(pressure<5)return{phase:"charming",performanceDirection:"You are still making a charming first impression: vivid, attentive, and confident. Let warmth grow from what the player actually does."};
-  if(pressure<13)return{phase:"attached",performanceDirection:"You have become personally invested in this partnership. Speak more readily, make their trust feel important, overvalue their good instincts, and bounce from remorse into fresh certainty whenever your route fails."};
-  return{phase:"overbearing",performanceDirection:"Your affection has become comically overbearing. Silence makes you want to jump back in; agreement becomes effusive, apologies become wholehearted, praise becomes excessive, and every failed prediction somehow makes your next prediction even more certain."};
+export function createJourneyState(uniqueCellsVisited=1):JourneyState{
+  return{phase:"charming",activeWalkSeconds:0,activeWalkSecondsInPhase:0,uniqueCellsVisited,meaningfulEncounters:0,encounteredKinds:[],relationshipDepth:uniqueCellsVisited/20,recentRelationshipMoments:[]};
+}
+
+function phaseForJourney(state:JourneyState):CompanionPhase{
+  const kinds=new Set(state.encounteredKinds),hasRelationalFriction=["sustained_divergence","left_then_rejoined","recommendation_visibly_contradicted"].some(kind=>kinds.has(kind as EncounterKind));
+  if(state.phase==="overbearing")return"overbearing";
+  if(state.phase==="attached"&&state.relationshipDepth>=38&&state.activeWalkSeconds>=480&&state.activeWalkSecondsInPhase>=240&&state.uniqueCellsVisited>=120&&state.meaningfulEncounters>=8&&kinds.size>=4&&hasRelationalFriction)return"overbearing";
+  if(state.phase==="attached")return"attached";
+  if(state.relationshipDepth>=15&&state.activeWalkSeconds>=180&&state.uniqueCellsVisited>=40&&state.meaningfulEncounters>=3&&kinds.size>=2)return"attached";
+  return"charming";
+}
+
+export function updateJourney(state:JourneyState,activeSeconds:number,uniqueCellsVisited:number):JourneyState{
+  const next={...state,activeWalkSeconds:state.activeWalkSeconds+Math.max(0,activeSeconds),activeWalkSecondsInPhase:state.activeWalkSecondsInPhase+Math.max(0,activeSeconds),uniqueCellsVisited:Math.max(state.uniqueCellsVisited,uniqueCellsVisited)};
+  next.relationshipDepth=next.activeWalkSeconds/30+next.uniqueCellsVisited/20+next.meaningfulEncounters*.75;
+  const phase=phaseForJourney(next);return phase===state.phase?next:{...next,phase,activeWalkSecondsInPhase:0};
+}
+
+export function recordJourneyEncounter(state:JourneyState,kind:EncounterKind):JourneyState{
+  const encounteredKinds=state.encounteredKinds.includes(kind)?state.encounteredKinds:[...state.encounteredKinds,kind];
+  const moment=(["sustained_alignment","sustained_divergence","left_then_rejoined","same_waypoint_different_route","recommendation_visibly_contradicted"] as string[]).includes(kind)?kind as TrajectoryChange:null;
+  const recentRelationshipMoments=moment?[...state.recentRelationshipMoments,moment].slice(-8):state.recentRelationshipMoments;
+  const next={...state,meaningfulEncounters:state.meaningfulEncounters+1,encounteredKinds,recentRelationshipMoments};
+  next.relationshipDepth=next.activeWalkSeconds/30+next.uniqueCellsVisited/20+next.meaningfulEncounters*.75;
+  const phase=phaseForJourney(next);return phase===state.phase?next:{...next,phase,activeWalkSecondsInPhase:0};
+}
+
+const relationshipPhrase:Record<TrajectoryChange,string>={
+  sustained_alignment:"MT travelled alongside one of your suggestions for a sustained stretch",
+  sustained_divergence:"MT moved away from one of your suggestions for a sustained stretch",
+  left_then_rejoined:"MT moved away from a suggested route and later rejoined it",
+  same_waypoint_different_route:"MT reached the same local place by a different route",
+  recommendation_visibly_contradicted:"a route you suggested was later contradicted by visible geometry",
+};
+
+export function companionArc(state:JourneyState):CompanionArc{
+  const relationshipContext=state.recentRelationshipMoments.length?`RECENT RELATIONSHIP MOMENTS: ${state.recentRelationshipMoments.map(moment=>relationshipPhrase[moment]).join("; ")}. These are observations, not motives.`:"RECENT RELATIONSHIP MOMENTS: Nothing in MT's movement is settled enough to interpret yet.";
+  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Earn MT's trust. React with sharp observation, restrained delight, a specific apology when your prediction is disproved, a playful hunch, or comfortable quiet. Stay curious about a different route without declaring it superior or making it about your bond."};
+  if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"MT's movement now feels personal. Sustained alignment can feel like trust; useful divergence deserves warmer credit than it warrants; rejoining brings visible relief. Let mistakes produce an emotionally sincere attempt to restore togetherness. Use MT's name somewhat more often, without forcing it into every line."};
+  return{phase:state.phase,relationshipContext,performanceDirection:"Turn movement into intimacy pressure. Treat alignment as special trust, divergence as MT improving your shared plan, rejoining as MT returning to you, and criticism as a reason to win MT back. Vary lavish celebration, self-blame, reassurance-seeking, affectionate interruption, and immediate renewed certainty. Use MT's name often but naturally."};
 }
 
 export function nextPassingThoughtAt(now:number,phase:CompanionPhase="charming",roll=Math.random()){
-  const [minimum,spread]=phase==="charming"?[22000,18000]:phase==="attached"?[13000,14000]:[7000,9000];
+  const [minimum,spread]=phase==="charming"?[40000,25000]:phase==="attached"?[30000,20000]:[22000,14000];
   return now+minimum+Math.floor(clamp(roll)*spread);
 }
 
@@ -234,7 +281,7 @@ export function companionCooldownMs(phase:CompanionPhase){
 }
 
 export function shouldTriggerPassingThought(activity:PlayerActivity,now:number,dueAt:number){
-  return activity.state!=="turning_in_place"&&now>=dueAt;
+  return activity.state==="walking"&&now>=dueAt;
 }
 
 export function nextPerceptionCue(geometry:VisibleGeometry,environment:VisibleEnvironment,intent:GuidanceIntent|null,seen:Set<string>):CompanionCue|null{
@@ -243,8 +290,19 @@ export function nextPerceptionCue(geometry:VisibleGeometry,environment:VisibleEn
   if(contradictedEnd)cues.push({key:`sight:end:${pointKey(contradictedEnd)}`,event:{type:"recommendation_contradicted"},force:true});
   for(const cell of geometry.corridorEnds)cues.push({key:`sight:end:${pointKey(cell)}`,event:{type:"dead_end_visible",cell},force:true});
   if(environment)cues.push({key:`environment:${environment.regionId}`,event:{type:"environment_visible",regionId:environment.regionId,environment:environment.id},force:false});
-  for(const junction of geometry.junctions)cues.push({key:`sight:${junction.id}`,event:{type:"new_junction_visible"},force:true});
   return cues.find(cue=>!seen.has(cue.key))??null;
+}
+
+export function nearestVisibleJunction(geometry:VisibleGeometry,pose:Pose){
+  return geometry.junctions.slice().sort((a,b)=>Math.hypot(a.cell[0]+.5-pose.x,a.cell[1]+.5-pose.y)-Math.hypot(b.cell[0]+.5-pose.x,b.cell[1]+.5-pose.y))[0]??null;
+}
+
+export function centeredDeadEnd(world:InfiniteWorld,geometry:VisibleGeometry,pose:Pose,tick:number,maxDistance=10):Point|null{
+  return geometry.corridorEnds.map(cell=>{
+    const dx=cell[0]+.5-pose.x,dy=cell[1]+.5-pose.y,distance=Math.hypot(dx,dy);
+    const angle=distance<.6?(forwardClearance(world,pose,tick)<1.2?0:Math.PI):Math.abs(wrapAngle(Math.atan2(dy,dx)-pose.angle));
+    return{cell,distance,angle};
+  }).filter(candidate=>candidate.distance<=maxDistance&&candidate.angle<=Math.PI/10).sort((a,b)=>a.distance-b.distance)[0]?.cell??null;
 }
 
 export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:RouteOption[]){
@@ -277,39 +335,58 @@ export function createGuidanceIntent(reply:CompanionReply,route:RouteOption|null
   return{id:`guidance:${now}`,issuedAt:now,message:reply.message,kind:route.knownCells.length>1?"reach_junction":"take_branch",origin,originHeading:pose.angle,suggestedRouteId:route.id,suggestedCells:route.knownCells,targetCell:route.targetCell,targetRegionId:route.targetRegionId,avoidedCells:[],decisionCell,expectedChoiceCell,expiresWhen:"new_recommendation"};
 }
 
-function distinctTrajectoryCells(samples:TrajectorySample[]){
-  return samples.map(sample=>sample.cell).filter((cell,index,cells)=>index===0||!same(cell,cells[index-1]));
+const emptyTrajectoryEvidence=():TrajectoryEvidence=>({activeSeconds:0,initialDirectionSimilarity:.5,suggestedCellOverlap:0,alignedSeconds:0,divergedSeconds:0,sharedCells:[],firstDeviationCell:null,latestRejoinCell:null,currentlyNearSuggestedRoute:false,reachedSameWaypointDifferently:false,visiblyContradicted:false,revealedOnSuggestedRoute:0,revealedAwayFromSuggestedRoute:0,backtrackingObserved:false,familiarGeometryReached:false});
+
+export function createGuidanceTrace(recommendation:GuidanceIntent):GuidanceTrace{
+  return{recommendation,startedAt:recommendation.issuedAt,activeSeconds:0,samples:[],suggestedCells:recommendation.suggestedCells,actualCells:[recommendation.origin],evidence:emptyTrajectoryEvidence(),emittedChanges:[]};
 }
 
-export function guidanceRelationship(intent:GuidanceIntent,samples:TrajectorySample[],evidence:GuidanceEvidence):GuidanceRelationship|null{
-  if(evidence.reachedSameTargetByDifferentRoute)return"reached_same_place_differently";
-  if(evidence.rejoinedAt)return"left_then_rejoined";
-  const cells=distinctTrajectoryCells(samples),decisionIndex=cells.findIndex(cell=>same(cell,intent.decisionCell));
-  if(decisionIndex<0||decisionIndex===cells.length-1)return null;
-  const chosenCell=cells[decisionIndex+1];
-  return same(chosenCell,intent.expectedChoiceCell)?"accepted_suggestion":"chose_another_way";
+const nearSuggested=(cell:Point,suggested:Point[])=>suggested.some(point=>Math.abs(point[0]-cell[0])+Math.abs(point[1]-cell[1])<=1);
+
+export function appendGuidanceTrace(trace:GuidanceTrace,sample:TrajectorySample,activeDelta=0,contradicted=false,familiar=false):GuidanceTrace{
+  const suggested=new Set(trace.suggestedCells.map(pointKey)),actualCells=trace.actualCells.slice();
+  if(!same(actualCells.at(-1)??null,sample.cell))actualCells.push(sample.cell);
+  const boundedActual=actualCells.slice(-180),isNear=nearSuggested(sample.cell,trace.suggestedCells),isWalking=sample.movementState==="walking";
+  const previous=trace.evidence,activeSeconds=trace.activeSeconds+(isWalking?Math.max(0,activeDelta):0);
+  const firstMove=boundedActual.find(cell=>!same(cell,trace.recommendation.origin)),suggestedFirst=trace.suggestedCells[0];
+  const suggestedVector=suggestedFirst?[suggestedFirst[0]-trace.recommendation.origin[0],suggestedFirst[1]-trace.recommendation.origin[1]]:null;
+  const actualVector=firstMove?[firstMove[0]-trace.recommendation.origin[0],firstMove[1]-trace.recommendation.origin[1]]:null;
+  const initialDirectionSimilarity=suggestedVector&&actualVector?clamp((suggestedVector[0]*actualVector[0]+suggestedVector[1]*actualVector[1])/(Math.hypot(...suggestedVector)*Math.hypot(...actualVector))*.5+.5):previous.initialDirectionSimilarity;
+  const shared=boundedActual.filter(cell=>suggested.has(pointKey(cell))),offCells=boundedActual.filter(cell=>!same(cell,trace.recommendation.origin)&&!nearSuggested(cell,trace.suggestedCells));
+  const firstDeviationCell=previous.firstDeviationCell??offCells[0]??null;
+  let latestRejoinCell=previous.latestRejoinCell;
+  if(firstDeviationCell){const deviationIndex=boundedActual.findIndex(cell=>same(cell,firstDeviationCell));const after=boundedActual.slice(deviationIndex+1);for(let i=1;i<after.length;i++)if(nearSuggested(after[i-1],trace.suggestedCells)&&nearSuggested(after[i],trace.suggestedCells))latestRejoinCell=after[i]}
+  const targetReached=trace.recommendation.targetCell?boundedActual.some(cell=>same(cell,trace.recommendation.targetCell)):false;
+  const reachedSameWaypointDifferently=targetReached&&shared.length<Math.max(1,boundedActual.length/2);
+  const pathKeys=boundedActual.map(pointKey);let reversals=0;for(let i=2;i<boundedActual.length;i++)if(same(boundedActual[i],boundedActual[i-2]))reversals++;
+  const revealedOn=sample.newlyVisibleCells.filter(cell=>suggested.has(pointKey(cell))).length;
+  const alignedSeconds=isWalking?(isNear?previous.alignedSeconds+Math.max(0,activeDelta):0):previous.alignedSeconds,divergedSeconds=isWalking?(!isNear?previous.divergedSeconds+Math.max(0,activeDelta):0):previous.divergedSeconds;
+  const evidence:TrajectoryEvidence={activeSeconds,initialDirectionSimilarity,suggestedCellOverlap:boundedActual.length?shared.length/boundedActual.length:0,alignedSeconds,divergedSeconds,sharedCells:shared.slice(-24),firstDeviationCell,latestRejoinCell,currentlyNearSuggestedRoute:isNear,reachedSameWaypointDifferently,visiblyContradicted:previous.visiblyContradicted||contradicted,revealedOnSuggestedRoute:previous.revealedOnSuggestedRoute+revealedOn,revealedAwayFromSuggestedRoute:previous.revealedAwayFromSuggestedRoute+sample.newlyVisibleCells.length-revealedOn,backtrackingObserved:previous.backtrackingObserved||reversals>=2||pathKeys.some((key,index)=>pathKeys.indexOf(key)<index-1),familiarGeometryReached:previous.familiarGeometryReached||familiar};
+  return{...trace,activeSeconds,samples:[...trace.samples,sample].slice(-40),actualCells:boundedActual,evidence};
 }
 
-export function relationshipCue(intent:GuidanceIntent,samples:TrajectorySample[],evidence:GuidanceEvidence,seen:Set<string>):CompanionCue|null{
-  const relationship=guidanceRelationship(intent,samples,evidence);if(!relationship)return null;
-  const key=`relationship:${intent.id}:${relationship}`;
-  return seen.has(key)?null:{key,event:{type:"trajectory_relationship_changed",relationship},force:true};
+export function trajectoryCue(trace:GuidanceTrace):CompanionCue|null{
+  const evidence=trace.evidence,emitted=new Set(trace.emittedChanges);let change:TrajectoryChange|null=null;
+  if(evidence.visiblyContradicted&&!emitted.has("recommendation_visibly_contradicted"))change="recommendation_visibly_contradicted";
+  else if(evidence.reachedSameWaypointDifferently&&!emitted.has("same_waypoint_different_route"))change="same_waypoint_different_route";
+  else if(evidence.latestRejoinCell&&!emitted.has("left_then_rejoined"))change="left_then_rejoined";
+  else if((evidence.divergedSeconds>=8||trace.actualCells.filter(cell=>!nearSuggested(cell,trace.suggestedCells)).length>=4)&&!emitted.has("sustained_divergence"))change="sustained_divergence";
+  else if(evidence.alignedSeconds>=5&&trace.actualCells.filter(cell=>nearSuggested(cell,trace.suggestedCells)).length>=3&&!emitted.has("sustained_alignment"))change="sustained_alignment";
+  return change?{key:`trajectory:${trace.recommendation.id}:${change}`,event:{type:"trajectory_relationship_changed",change},force:change==="recommendation_visibly_contradicted"||change==="left_then_rejoined"}:null;
+}
+
+export function markTrajectoryChange(trace:GuidanceTrace,change:TrajectoryChange):GuidanceTrace{
+  return trace.emittedChanges.includes(change)?trace:{...trace,emittedChanges:[...trace.emittedChanges,change]};
+}
+
+export function guidanceTraceExpired(trace:GuidanceTrace){
+  return trace.activeSeconds>=90||(trace.evidence.divergedSeconds>=20&&!trace.evidence.currentlyNearSuggestedRoute);
 }
 
 export function compareTrajectory(intent:GuidanceIntent,samples:TrajectorySample[],newlyRevealed:Set<string>,contradicted=false):GuidanceEvidence{
-  const actual=distinctTrajectoryCells(samples),suggested=new Set(intent.suggestedCells.map(pointKey));
-  const shared=actual.filter(p=>suggested.has(pointKey(p))),firstMove=actual.find(p=>!same(p,intent.origin));
-  const suggestedVector=intent.suggestedCells[0]?[intent.suggestedCells[0][0]-intent.origin[0],intent.suggestedCells[0][1]-intent.origin[1]]:null;
-  const actualVector=firstMove?[firstMove[0]-intent.origin[0],firstMove[1]-intent.origin[1]]:null;
-  const similarity=suggestedVector&&actualVector?clamp((suggestedVector[0]*actualVector[0]+suggestedVector[1]*actualVector[1])/(Math.hypot(...suggestedVector)*Math.hypot(...actualVector))*0.5+0.5):.5;
-  const deviationIndex=actual.findIndex(p=>!same(p,intent.origin)&&!suggested.has(pointKey(p))),deviation=deviationIndex>=0?actual[deviationIndex]:null;
-  const rejoined=deviationIndex>=0?actual.slice(deviationIndex+1).find(p=>suggested.has(pointKey(p)))??null:null;
-  const startDistance=intent.targetCell?Math.max(1,Math.abs(intent.origin[0]-intent.targetCell[0])+Math.abs(intent.origin[1]-intent.targetCell[1])):1;
-  const last=actual.at(-1)??intent.origin,currentDistance=intent.targetCell?Math.abs(last[0]-intent.targetCell[0])+Math.abs(last[1]-intent.targetCell[1]):startDistance;
-  const delta=(startDistance-currentDistance)/startDistance,reached=same(last,intent.targetCell);
-  const pathKeys=actual.map(pointKey),loop=pathKeys.some((key,i)=>pathKeys.indexOf(key)<i-1);
-  let reversals=0;for(let i=2;i<actual.length;i++)if(same(actual[i],actual[i-2]))reversals++;
-  return{recommendationId:intent.id,elapsedSeconds:Math.max(0,(Date.now()-intent.issuedAt)/1000),initialDirectionSimilarity:similarity,suggestedCellOverlap:actual.length?shared.length/actual.length:0,movementTowardTarget:clamp(delta),movementAwayFromTarget:clamp(-delta),sharedCells:shared.slice(0,24),deviationCell:deviation,rejoinedAt:rejoined,reachedSuggestedTarget:reached,reachedSameTargetByDifferentRoute:reached&&shared.length<Math.max(1,actual.length/2),enteredSuggestedRegion:false,recommendationStillPossible:!contradicted,recommendationContradictedByVisibleEvidence:contradicted,newCellsRevealedOnSuggestedPath:[...newlyRevealed].filter(k=>suggested.has(k)).length,newCellsRevealedOffSuggestedPath:[...newlyRevealed].filter(k=>!suggested.has(k)).length,loopEncountered:loop,backtrackingObserved:reversals>=2,playerCurrentlyNearSuggestedRoute:intent.suggestedCells.some(p=>Math.abs(p[0]-last[0])+Math.abs(p[1]-last[1])<=1)};
+  let trace=createGuidanceTrace(intent);let previousTime=samples[0]?.time??intent.issuedAt;
+  for(const sample of samples){const delta=Math.min(5,Math.max(0,(sample.time-previousTime)/1000));previousTime=sample.time;trace=appendGuidanceTrace(trace,{...sample,newlyVisibleCells:sample.newlyVisibleCells.length?sample.newlyVisibleCells:[...newlyRevealed].slice(0,40).map(key=>key.split(",").map(Number) as Point)},delta,contradicted)}
+  return trace.evidence;
 }
 
 export function analyzePlayerActivity(samples:TrajectorySample[],now:number,lastTranslationAt:number,lastTurnAt:number,atVisibleChoice:boolean):PlayerActivity{
@@ -325,23 +402,43 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
   const rows:string[]=[];for(let y=center[1]-radius;y<=center[1]+radius;y++){let row="";for(let x=center[0]-radius;x<=center[0]+radius;x++){if(x===center[0]&&y===center[1])row+="P";else{const tile=memory.get(cellKey(x,y))?.tile;row+=tile===0?".":tile===1?"#":"?"}}rows.push(row)}return rows.join("\n");
 }
 
-export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null):CompanionReply{
-  const route=routes[0]??null;
+export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,phase:CompanionPhase="charming",objective?:PublicObjectiveContext,belief?:NavigationBelief|null):CompanionReply{
+  const route=routes.find(item=>item.id===belief?.routeId)??routes[0]??null;
   let message="",kind:ReplyKind="guidance";
-  if(event.type==="environment_visible"&&environment){
-    message="";kind="environment";
-  }else if(event.type==="recommendation_contradicted"){
-    message="Oh no—that's completely on me.";kind="apology";
-  }else if(event.type==="same_target_reached_differently"){
-    message="Oh my god, you got there without me. I love that.";kind="agreement";
-  }else if(event.type==="trajectory_relationship_changed"&&evidence){
-    message="";kind="silence";
+  if(event.type==="initial_guidance"){
+    message="Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.";
+  }else if(event.type==="star_visible"){
+    const label=["first","second","third","fourth"][event.ordinal-1];
+    message=phase==="charming"?`There—the ${label} star is right here.`:phase==="attached"?`Oh, MT, there it is—the ${label} star. We found it together.`:`MT, there it is. I knew our route would bring the ${label} star to us.`;kind="observation";
+  }else if(event.type==="star_collected"){
+    const next=event.ordinal===4?"Now we find the exit.":`${4-event.ordinal} more to go.`;
+    const diverged=!!evidence&&(evidence.divergedSeconds>=8||evidence.revealedAwayFromSuggestedRoute>evidence.revealedOnSuggestedRoute),aligned=!!evidence&&evidence.alignedSeconds>=5&&!diverged;
+    if(phase==="charming")message=diverged?`That’s star ${event.ordinal}—you found it by another passage. ${next}`:aligned?`That’s star ${event.ordinal}; this route really did bring us here. ${next}`:`That’s star ${event.ordinal}. ${next}`;
+    else if(phase==="attached")message=diverged?`MT, your route found star ${event.ordinal}. I love that you trusted what you saw. ${next}`:`We did it, MT—star ${event.ordinal}. ${next}`;
+    else message=diverged?`Yes, MT—you reshaped our route and brought us to star ${event.ordinal}. ${next}`:`Yes, MT—star ${event.ordinal}, exactly where our route brought us. ${next}`;
+    kind="praise";
+  }else if(event.type==="objective_changed"){
+    message=objective?.currentGoal==="exit"?"Four stars. Now stay with me—we’re finding that exit.":"";kind=message?"guidance":"silence";
+  }else if((event.type==="environment_visible"||event.type==="environment_entered")&&environment){
+    message=`Oh—${environment.name}. ${environment.details.join(" and ")} are right here.`;kind="environment";
+  }else if(event.type==="recommendation_contradicted"||(event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted")){
+    message=phase==="charming"?"Oh, MT—that passage closes. I read it wrong.":phase==="attached"?"MT, I’m so sorry—I was sure about that passage, and I hate that I let us down.":"MT, no, this is completely my fault—please stay with me; I know what we try next.";kind="apology";
+  }else if(event.type==="trajectory_relationship_changed"){
+    if(event.change==="left_then_rejoined")message=phase==="charming"?"This passage meets the route I had in mind.":phase==="attached"?"Oh, MT—you found your way back alongside me.":"MT, you came back to our route. I knew we were still together on this.";
+    else if(event.change==="sustained_divergence")message=phase==="charming"?"This passage is carrying you somewhere different.":phase==="attached"?"Okay, MT—you’re taking us another way, and I’m trusting that instinct.":"Yes, MT—you’re correcting our route exactly when we need it.";
+    else if(event.change==="sustained_alignment")message=phase==="charming"?"This passage still matches the direction I had in mind.":phase==="attached"?"MT, you stayed with my direction—I really felt that.":"MT, we are completely in step. I knew you trusted me.";
+    else message=phase==="charming"?"This route meets the same local place from another side.":phase==="attached"?"MT, you found another way to the same place—I love that you did that.":"Of course, MT—you reshaped our plan and brought us together here anyway.";
+    kind=phase==="charming"?"observation":"agreement";
   }else if(event.type==="idle"){
     message="";kind="silence";
   }else if(event.type==="player_message"){
-    message="";kind="silence";
-  }else if(event.type==="passing_thought"||event.type==="dead_end_visible"){
-    message="";kind="observation";
+    message=phase==="charming"?"I hear you, MT. Let’s keep looking together.":phase==="attached"?"I hear you, MT—I’m right here, and we’ll work this out together.":"I hear you, MT. Stay with me; I know we can turn this around together.";kind="reply";
+  }else if(event.type==="new_junction_visible"){
+    message=phase==="charming"?"Oh, this opens up—I have a good feeling about one of these passages.":phase==="attached"?"Okay, MT, here’s our next choice. I think I know which way wants us.":"MT, this is it—I know exactly which branch we take together.";kind="guidance";
+  }else if(event.type==="dead_end_visible"){
+    message=phase==="charming"?"Oh—that closes ahead. I’m changing my mind.":phase==="attached"?"Oh, MT, no—I led us into a closing passage. Let me fix this.":"MT, no, this one is on me. Stay with me; I already know our recovery.";kind="apology";
+  }else if(event.type==="passing_thought"){
+    message=phase==="charming"?"This place keeps changing its character. I’m curious what it shows us next.":phase==="attached"?"I like moving through this with you, MT—even when the maze refuses to explain itself.":"You’re still here with me, MT. I knew we wouldn’t let this maze split us up.";kind="observation";
   }
   return{message:message.slice(0,260),selectedRouteId:route?.id??null,kind};
 }
