@@ -9,7 +9,7 @@ import {
   rebaseSelectedRoute, recordJourneyEncounter, routesForEvent,
   shouldTriggerPassingThought, trajectoryCue, updateJourney,
 } from "../app/companion.ts";
-import { isFreeStructuredModel } from "../app/api/companion/route.ts";
+import { isFreeCompanionModel } from "../app/api/companion/route.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
 
 const intent={id:"g1",issuedAt:0,message:"Continue east.",kind:"reach_junction",origin:[0,0],originHeading:0,suggestedRouteId:"east",suggestedCells:[[1,0],[2,0],[3,0],[4,0]],targetCell:[4,0],targetRegionId:null,avoidedCells:[],decisionCell:[0,0],expectedChoiceCell:[1,0],expiresWhen:"new_recommendation"};
@@ -109,12 +109,12 @@ test("fallback and prompt preserve MT and never announce an exit",()=>{
   assert.doesNotMatch(greeting.message,/found the exit/i);
 });
 
-test("free model allowlist requires zero price, text, context, and structured output",()=>{
-  const free={id:"example/free",context_length:32768,architecture:{input_modalities:["text"],output_modalities:["text"]},pricing:{prompt:"0",completion:"0",request:"0"},supported_parameters:["response_format"]};
-  assert.equal(isFreeStructuredModel(free),true);
-  assert.equal(isFreeStructuredModel({...free,pricing:{...free.pricing,completion:"0.1"}}),false);
-  assert.equal(isFreeStructuredModel({...free,supported_parameters:[]}),false);
-  assert.equal(isFreeStructuredModel({...free,expiration_date:"2020-01-01"}),false);
+test("free companion allowlist requires zero price, text, context, and optional reasoning",()=>{
+  const free={id:"example/model:free",context_length:32768,architecture:{input_modalities:["text"],output_modalities:["text"]},pricing:{prompt:"0",completion:"0",request:"0"},supported_parameters:["reasoning"],reasoning:{mandatory:false,default_enabled:false}};
+  assert.equal(isFreeCompanionModel(free),true);
+  assert.equal(isFreeCompanionModel({...free,pricing:{...free.pricing,completion:"0.1"}}),false);
+  assert.equal(isFreeCompanionModel({...free,reasoning:{mandatory:true}}),false);
+  assert.equal(isFreeCompanionModel({...free,expiration_date:"2020-01-01"}),false);
 });
 
 test("egocentric directions use cell centers and identify blocked sides",()=>{

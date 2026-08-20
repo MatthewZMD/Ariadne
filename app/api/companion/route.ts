@@ -12,9 +12,10 @@ export type RequestBody={
   playerMessage?:string;preferredModelId?:string|null;
 };
 
-type OpenRouterModel={id:string;context_length?:number;expiration_date?:string|null;architecture?:{input_modalities?:string[];output_modalities?:string[]};pricing?:{prompt?:string;completion?:string;request?:string};supported_parameters?:string[]};
+type OpenRouterModel={id:string;created?:number;context_length?:number;expiration_date?:string|null;architecture?:{input_modalities?:string[];output_modalities?:string[]};pricing?:{prompt?:string;completion?:string;request?:string};supported_parameters?:string[];reasoning?:{mandatory?:boolean;default_enabled?:boolean}};
 type ProviderResult={reply:CompanionReply;modelUsed:string|null};
 type ProviderPayload={model?:string;output_text?:string;output?:Array<{text?:string;content?:Array<{type?:string;text?:string}>}>;choices?:Array<{message?:{content?:string|Array<{text?:string}>}}>};
+class ProviderAttemptError extends Error{readonly retryable:boolean;constructor(message:string,retryable:boolean){super(message);this.retryable=retryable}}
 
 const MAX_REQUEST_BYTES=64*1024;
 const replyKinds=["guidance","praise","apology","agreement","reframe","environment","reply","observation","silence"] as const;
@@ -23,7 +24,7 @@ const themes=["neutral","beach","tornado","ruins","frozen","foundry","cavern"] a
 const trajectoryChanges=["sustained_alignment","sustained_divergence","left_then_rejoined","same_waypoint_different_route","recommendation_visibly_contradicted"] as const;
 const goalByStars=["first_star","second_star","third_star","fourth_star","exit"] as const;
 const objectiveEvents=["searching","star_visible","star_collected","objective_changed"] as const;
-const responseSchema=(belief:NavigationBelief|null)=>({type:"object",additionalProperties:false,required:["message","selectedRouteId","kind"],properties:{message:{type:"string",maxLength:320},selectedRouteId:{enum:belief?[belief.routeId,null]:[null]},kind:{type:"string",enum:replyKinds}}});
+const FAST_FREE_MODELS=["nvidia/nemotron-3.5-lightning:free","dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free"];
 
 type RecordValue=Record<string,unknown>;
 const isRecord=(value:unknown):value is RecordValue=>!!value&&typeof value==="object"&&!Array.isArray(value);
@@ -136,10 +137,10 @@ export function acceptReply(reply:CompanionReply,routes:RouteOption[],allowedRou
   return{...reply,message:reply.message.trim().slice(0,320),selectedRouteId:selectedIsAllowed?reply.selectedRouteId:null};
 }
 
-export function isFreeStructuredModel(model:OpenRouterModel,now=Date.now()){
+export function isFreeCompanionModel(model:OpenRouterModel,now=Date.now()){
   const inputs=model.architecture?.input_modalities??[],outputs=model.architecture?.output_modalities??[],parameters=model.supported_parameters??[],pricing=model.pricing;
   const expires=model.expiration_date?Date.parse(model.expiration_date):NaN;
-  return !!model.id&&inputs.includes("text")&&outputs.includes("text")&&pricing?.prompt==="0"&&pricing?.completion==="0"&&(!pricing.request||pricing.request==="0")&&(parameters.includes("structured_outputs")||parameters.includes("response_format"))&&(model.context_length??0)>=8192&&(!Number.isFinite(expires)||expires>now);
+  return model.id.endsWith(":free")&&inputs.includes("text")&&outputs.includes("text")&&pricing?.prompt==="0"&&pricing?.completion==="0"&&(!pricing.request||pricing.request==="0")&&parameters.includes("reasoning")&&model.reasoning?.mandatory!==true&&model.reasoning?.default_enabled!==true&&(model.context_length??0)>=8192&&(!Number.isFinite(expires)||expires>now);
 }
 
 export function extractProviderText(data:ProviderPayload){
@@ -149,22 +150,52 @@ export function extractProviderText(data:ProviderPayload){
   return null;
 }
 
+export function parseProviderReply(text:string,routes:RouteOption[],belief:NavigationBelief|null){
+  const cleaned=text.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");
+  const start=cleaned.indexOf("{"),end=cleaned.lastIndexOf("}");
+  const candidates=[cleaned,start>=0&&end>start?cleaned.slice(start,end+1):null].filter((value,index,all):value is string=>!!value&&all.indexOf(value)===index);
+  for(const candidate of candidates)try{const reply=JSON.parse(candidate) as unknown;if(validReply(reply,routes,belief))return reply}catch{continue}
+  return null;
+}
+
+function inferredKind(event:CompanionEvent,hasRoute:boolean):CompanionReply["kind"]{
+  if(event.type==="player_message")return"reply";
+  if(event.type==="star_collected")return"praise";
+  if(event.type==="recommendation_contradicted"||event.type==="dead_end_visible")return"apology";
+  if(event.type==="environment_visible"||event.type==="environment_entered"||event.type==="star_visible")return"environment";
+  if(event.type==="trajectory_relationship_changed")return event.change==="sustained_divergence"?"reframe":"agreement";
+  return hasRoute?"guidance":"observation";
+}
+
+function normalizeProviderReply(text:string,body:RequestBody){
+  const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured)return structured;
+  const message=text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^(["'])|(["'])$/g,"").trim();
+  const route=body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId)??null;
+  if(!message||message.length>320||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithDirection(message,route.direction))return null;
+  return{message,selectedRouteId:route?.id??null,kind:inferredKind(body.trigger,!!route)} satisfies CompanionReply;
+}
+
 export function isVerifiedProviderModel(requested:string,actual:string|undefined,allowed:Set<string>){
   if(!actual)return false;
   if(requested==="openrouter/free")return allowed.size===0||allowed.has(actual);
   return actual===requested&&allowed.has(actual);
 }
 
-let modelCache:{expiresAt:number;models:string[]}|null=null;
+let modelCache:{expiresAt:number;models:string[]}|null=null,modelCatalogRequest:Promise<string[]>|null=null;
 async function freeModels(apiKey:string){
   if(modelCache&&modelCache.expiresAt>Date.now())return modelCache.models;
-  try{
-    const response=await fetch("https://openrouter.ai/api/v1/models?sort=throughput-high-to-low",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(7000)});
-    if(!response.ok)throw new Error(`model catalog ${response.status}`);
-    const payload=await response.json() as {data?:OpenRouterModel[]};const models=(payload.data??[]).filter(model=>isFreeStructuredModel(model)).map(model=>model.id);
-    if(models.length)modelCache={expiresAt:Date.now()+15*60_000,models};
-  }catch(error){console.warn("ARIADNE free model catalog unavailable",error)}
-  return modelCache?.models??[];
+  if(modelCatalogRequest)return modelCatalogRequest;
+  modelCatalogRequest=(async()=>{try{
+      const response=await fetch("https://openrouter.ai/api/v1/models?sort=throughput-high-to-low",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(1200)});
+      if(!response.ok)throw new Error(`model catalog ${response.status}`);
+      const payload=await response.json() as {data?:OpenRouterModel[]};const models=(payload.data??[]).filter(model=>isFreeCompanionModel(model)).sort((a,b)=>{
+        const ai=FAST_FREE_MODELS.indexOf(a.id),bi=FAST_FREE_MODELS.indexOf(b.id),rank=(ai<0?FAST_FREE_MODELS.length:ai)-(bi<0?FAST_FREE_MODELS.length:bi);return rank||(b.created??0)-(a.created??0);
+      }).map(model=>model.id);
+      if(models.length)modelCache={expiresAt:Date.now()+15*60_000,models};
+    }catch(error){console.warn("ARIADNE free model catalog unavailable",error)}
+    return modelCache?.models??[];
+  })();
+  try{return await modelCatalogRequest}finally{modelCatalogRequest=null}
 }
 
 function semanticMovement(evidence:GuidanceEvidence|null){
@@ -203,29 +234,28 @@ function statePrompt(body:RequestBody){
   const goalLabels={first_star:"the first star",second_star:"the second star",third_star:"the third star",fourth_star:"the fourth star",exit:"the exit"};
   const goal=`MT has collected ${body.objective.collectedStars} of four stars. You are helping MT find ${goalLabels[body.objective.currentGoal]}. ${body.objective.activeStarVisible?"The current star is visible.":"The current objective is not visible."}`;
   const route=body.navigationBelief?body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId):null;
-  const belief=route?`You are convinced this is the best route toward the current objective: ${route.instruction}\nReturn exactly this route ID: ${route.id}`:"You do not need to give a new direction in this response.";
+  const belief=route?`You are convinced this is the best route toward the current objective: ${route.instruction}`:"You do not need to give a new direction in this response.";
   const conversation=body.recentMessages.map(message=>`${message.role==="player"?PLAYER_NAME:"ARIADNE"}: ${message.text}`).join("\n")||"No recent dialogue.";
   return `<scene>\nCURRENT GOAL\n${goal}\n\nCURRENT MOVEMENT\n${body.activity.description.replaceAll("The player",PLAYER_NAME)}\n\nCURRENT VIEW\n${body.currentView.description.replaceAll("The player",PLAYER_NAME)}\n${setting}\n\nLATEST MOMENT\n${semanticEvent(body.trigger)}\n\nCURRENT GUIDANCE\n${previous}\n\nTRAJECTORY SINCE GUIDANCE\n${semanticMovement(body.recommendationEvidence)}\n\nCURRENT PHASE CARD\n${body.companionArc.performanceDirection}\n${body.companionArc.relationshipContext}\n\nWHAT YOU CURRENTLY BELIEVE\n${belief}\n\nRECENT CONVERSATION\n${conversation}\n${body.olderContextSummary.slice(0,800).replaceAll("player:",`${PLAYER_NAME}:`)}\n\nMT'S OPTIONAL MESSAGE\n${body.playerMessage??"None."}\n</scene>`;
 }
 
-async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,allowed:Set<string>):Promise<ProviderResult>{
+async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,allowed:Set<string>,timeoutMs:number):Promise<ProviderResult>{
   const isRouter=model==="openrouter/free";
-  const response=await fetch("https://openrouter.ai/api/v1/responses",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(9000),body:JSON.stringify({model,instructions:ARIADNE_SYSTEM_PROMPT,input:statePrompt(body),provider:{require_parameters:true,allow_fallbacks:isRouter},text:{format:{type:"json_schema",name:"ariadne_reply",strict:true,schema:responseSchema(body.navigationBelief)}},max_output_tokens:180})});
-  if(!response.ok){const error=new Error(`provider ${response.status}: ${(await response.text()).slice(0,300)}`) as Error&{status?:number};error.status=response.status;throw error}
-  const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new Error("provider returned no text");
-  if(!isVerifiedProviderModel(model,data.model,allowed))throw new Error(isRouter?"free router returned an unverified model":"concrete model attempt returned an unapproved model");
-  const cleaned=text.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");const reply=JSON.parse(cleaned) as unknown;if(!validReply(reply,body.legalRoutes,body.navigationBelief))throw new Error("provider returned an invalid reply");
+  let response:Response;
+  try{
+    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:[{role:"system",content:ARIADNE_SYSTEM_PROMPT},{role:"user",content:statePrompt(body)}],provider:{require_parameters:true,allow_fallbacks:isRouter},reasoning:{effort:"none",exclude:true},max_tokens:90})});
+  }catch(error){throw new ProviderAttemptError(error instanceof Error?error.message:"provider connection failed",true)}
+  if(!response.ok){const detail=(await response.text()).slice(0,300),retryable=[403,404,408,409,425,429].includes(response.status)||response.status>=500;throw new ProviderAttemptError(`provider ${response.status}: ${detail}`,retryable)}
+  const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);
+  if(!isVerifiedProviderModel(model,data.model,allowed))throw new ProviderAttemptError(isRouter?"free router returned an unverified model":"concrete model attempt returned an unapproved model",false);
+  const reply=normalizeProviderReply(text,body);if(!reply)throw new ProviderAttemptError("provider returned an invalid reply",false);
   return{reply,modelUsed:data.model??null};
 }
 
 async function openRouter(body:RequestBody,apiKey:string):Promise<ProviderResult>{
-  const available=await freeModels(apiKey),allowed=new Set(available),preferred=body.preferredModelId&&allowed.has(body.preferredModelId)?body.preferredModelId:null;
-  const alternatives=available.filter(model=>model!==preferred).slice(0,preferred?1:2),attempts=preferred?[preferred,...alternatives,"openrouter/free"]:["openrouter/free",...alternatives];let lastError:unknown;
-  for(const model of [...new Set(attempts)])try{
-    const result=await requestOpenRouter(body,apiKey,model,allowed);
-    return{...result,modelUsed:result.modelUsed&&allowed.has(result.modelUsed)?result.modelUsed:null};
-  }catch(error){lastError=error}
-  throw lastError??new Error("no free model available");
+  const available=await freeModels(apiKey),allowed=new Set(available),preferred=body.preferredModelId&&allowed.has(body.preferredModelId)?body.preferredModelId:null,first=preferred??available[0];
+  if(!first)throw new ProviderAttemptError("no responsive free companion model available",false);
+  return requestOpenRouter(body,apiKey,first,allowed,1800);
 }
 
 async function boundedJson(request:Request):Promise<{value:unknown}|{error:"invalid"|"too_large"}>{

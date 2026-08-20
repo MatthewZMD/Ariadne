@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { POST, acceptReply, extractProviderText, isVerifiedProviderModel, parseCompanionRequest } from "../app/api/companion/route.ts";
+import { POST, acceptReply, extractProviderText, isVerifiedProviderModel, parseCompanionRequest, parseProviderReply } from "../app/api/companion/route.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
 import { mentionedDirections, messageConflictsWithDirection } from "../app/navigation-contracts.ts";
 
@@ -33,6 +33,12 @@ test("provider text extraction accepts Responses and compatible free-model paylo
   assert.equal(extractProviderText({output_text:"one"}),"one");
   assert.equal(extractProviderText({output:[{content:[{type:"text",text:"two"}]}]}),"two");
   assert.equal(extractProviderText({choices:[{message:{content:"three"}}]}),"three");
+});
+
+test("provider replies recover fenced or prefaced JSON without retrying a usable completion",()=>{
+  const reply=parseProviderReply('Here is the response:\n```json\n{"message":"Take the left opening.","selectedRouteId":"left","kind":"guidance"}\n```',routes,{id:"belief",objectiveStage:0,junctionId:"junction",routeId:"left",instruction:"Go left."});
+  assert.deepEqual(reply,{message:"Take the left opening.",selectedRouteId:"left",kind:"guidance"});
+  assert.equal(parseProviderReply("The user wants a cheerful navigation response.",routes,null),null);
 });
 
 const requestBody=()=>({

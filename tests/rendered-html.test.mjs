@@ -103,7 +103,15 @@ test("companion route works without credentials through the in-world fallback",a
 
 test("companion provider is configured for OpenRouter without exposing a key",async()=>{
   const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/api/companion/route.ts",import.meta.url),"utf8"));
-  assert.match(source,/https:\/\/openrouter\.ai\/api\/v1\/responses/);
+  assert.match(source,/https:\/\/openrouter\.ai\/api\/v1\/chat\/completions/);
   assert.match(source,/process\.env\.OPENROUTER_API_KEY/);
   assert.doesNotMatch(source,/process\.env\.OPENAI_API_KEY/);
+});
+
+test("each browser run owns an opaque companion session instead of reusing the map seed",async()=>{
+  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/page.tsx",import.meta.url),"utf8"));
+  assert.match(source,/companionSessionRef=useRef\(crypto\.randomUUID\(\)\)/);
+  assert.match(source,/companionSessionRef\.current=crypto\.randomUUID\(\)/);
+  assert.match(source,/sessionId:companionSessionRef\.current/);
+  assert.doesNotMatch(source,/sessionId:String\(current\.seed\)/);
 });
