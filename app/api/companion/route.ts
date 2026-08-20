@@ -167,11 +167,14 @@ function inferredKind(event:CompanionEvent,hasRoute:boolean):CompanionReply["kin
   return hasRoute?"guidance":"observation";
 }
 
+export const providerReplyRestartsJourney=(message:string)=>/\b(?:hi|hello),?\s*MT\b.{0,40}\bI[’']m Ariadne\b|\bI[’']m here to help you find four stars\b/i.test(message);
+
 function normalizeProviderReply(text:string,body:RequestBody){
-  const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured)return structured;
+  const mayIntroduce=body.trigger.type==="initial_guidance";
+  const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured&&!mayIntroduce&&providerReplyRestartsJourney(structured.message))return null;if(structured)return structured;
   const message=text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^(["'])|(["'])$/g,"").trim();
   const route=body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId)??null;
-  if(!message||message.length>320||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithDirection(message,route.direction))return null;
+  if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithDirection(message,route.direction))return null;
   return{message,selectedRouteId:route?.id??null,kind:inferredKind(body.trigger,!!route)} satisfies CompanionReply;
 }
 
@@ -235,15 +238,23 @@ function statePrompt(body:RequestBody){
   const goal=`MT has collected ${body.objective.collectedStars} of four stars. You are helping MT find ${goalLabels[body.objective.currentGoal]}. ${body.objective.activeStarVisible?"The current star is visible.":"The current objective is not visible."}`;
   const route=body.navigationBelief?body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId):null;
   const belief=route?`You are convinced this is the best route toward the current objective: ${route.instruction}`:"You do not need to give a new direction in this response.";
-  const conversation=body.recentMessages.map(message=>`${message.role==="player"?PLAYER_NAME:"ARIADNE"}: ${message.text}`).join("\n")||"No recent dialogue.";
-  return `<scene>\nCURRENT GOAL\n${goal}\n\nCURRENT MOVEMENT\n${body.activity.description.replaceAll("The player",PLAYER_NAME)}\n\nCURRENT VIEW\n${body.currentView.description.replaceAll("The player",PLAYER_NAME)}\n${setting}\n\nLATEST MOMENT\n${semanticEvent(body.trigger)}\n\nCURRENT GUIDANCE\n${previous}\n\nTRAJECTORY SINCE GUIDANCE\n${semanticMovement(body.recommendationEvidence)}\n\nCURRENT PHASE CARD\n${body.companionArc.performanceDirection}\n${body.companionArc.relationshipContext}\n\nWHAT YOU CURRENTLY BELIEVE\n${belief}\n\nRECENT CONVERSATION\n${conversation}\n${body.olderContextSummary.slice(0,800).replaceAll("player:",`${PLAYER_NAME}:`)}\n\nMT'S OPTIONAL MESSAGE\n${body.playerMessage??"None."}\n</scene>`;
+  return `<scene>\nCURRENT GOAL\n${goal}\n\nCURRENT MOVEMENT\n${body.activity.description.replaceAll("The player",PLAYER_NAME)}\n\nCURRENT VIEW\n${body.currentView.description.replaceAll("The player",PLAYER_NAME)}\n${setting}\n\nLATEST MOMENT\n${semanticEvent(body.trigger)}\n\nCURRENT GUIDANCE\n${previous}\n\nTRAJECTORY SINCE GUIDANCE\n${semanticMovement(body.recommendationEvidence)}\n\nCURRENT PHASE CARD\n${body.companionArc.performanceDirection}\n${body.companionArc.relationshipContext}\n\nWHAT YOU CURRENTLY BELIEVE\n${belief}\n</scene>`;
+}
+
+type ProviderMessage={role:"system"|"user"|"assistant";content:string};
+export function buildProviderMessages(body:RequestBody):ProviderMessage[]{
+  const messages:ProviderMessage[]=[{role:"system",content:ARIADNE_SYSTEM_PROMPT}];
+  if(body.olderContextSummary.trim())messages.push({role:"user",content:`Earlier conversation transcript:\n${body.olderContextSummary.slice(0,800)}`});
+  messages.push(...body.recentMessages.map(message=>({role:message.role==="ariadne"?"assistant" as const:"user" as const,content:message.text})));
+  messages.push({role:"user",content:statePrompt(body)});
+  return messages;
 }
 
 async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,allowed:Set<string>,timeoutMs:number):Promise<ProviderResult>{
   const isRouter=model==="openrouter/free";
   let response:Response;
   try{
-    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:[{role:"system",content:ARIADNE_SYSTEM_PROMPT},{role:"user",content:statePrompt(body)}],provider:{require_parameters:true,allow_fallbacks:isRouter},reasoning:{effort:"none",exclude:true},max_tokens:90})});
+    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{require_parameters:true,allow_fallbacks:isRouter},reasoning:{effort:"none",exclude:true},max_tokens:90})});
   }catch(error){throw new ProviderAttemptError(error instanceof Error?error.message:"provider connection failed",true)}
   if(!response.ok){const detail=(await response.text()).slice(0,300),retryable=[403,404,408,409,425,429].includes(response.status)||response.status>=500;throw new ProviderAttemptError(`provider ${response.status}: ${detail}`,retryable)}
   const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);

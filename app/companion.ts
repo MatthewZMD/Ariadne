@@ -98,6 +98,12 @@ export type JourneyState = {
 export type CompanionArc = {phase:CompanionPhase;performanceDirection:string;relationshipContext:string};
 export const PLAYER_NAME="MT";
 
+const normalizedSpeech=(text:string)=>text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
+export function isRecentCompanionRepeat(text:string,messages:CompanionMessage[],windowSize=6){
+  const candidate=normalizedSpeech(text);if(!candidate)return false;
+  return messages.filter(message=>message.role==="ariadne").slice(-windowSize).some(message=>normalizedSpeech(message.text)===candidate);
+}
+
 export const ENVIRONMENTS:Record<Exclude<ThemeId,"neutral">,{name:string;details:string[]}>= {
   beach:{name:"buried beach",details:["sand","salt-stained walls","shells","driftwood"]},
   tornado:{name:"storm passage",details:["dust","warning panels","dark clouds","wind-blown debris"]},

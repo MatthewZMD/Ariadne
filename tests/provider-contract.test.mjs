@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { POST, acceptReply, extractProviderText, isVerifiedProviderModel, parseCompanionRequest, parseProviderReply } from "../app/api/companion/route.ts";
+import { POST, acceptReply, buildProviderMessages, extractProviderText, isVerifiedProviderModel, parseCompanionRequest, parseProviderReply, providerReplyRestartsJourney } from "../app/api/companion/route.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
 import { mentionedDirections, messageConflictsWithDirection } from "../app/navigation-contracts.ts";
 
@@ -77,6 +77,27 @@ test("provider identity cannot escape the free allowlist",()=>{
   assert.equal(isVerifiedProviderModel("openrouter/free","free/unlisted",new Set()),true);
 });
 
-test("Ariadne greets the player when their search begins",()=>{
-  assert.match(ARIADNE_SYSTEM_PROMPT,/Begin the first response exactly: “Hi, MT—I’m Ariadne\. I’m here to help you find four stars, then the exit\.”/i);
+test("conversation history is sent as real provider roles instead of flattened prompt text",()=>{
+  const body={...requestBody(),trigger:{type:"passing_thought"},navigationBelief:null,olderContextSummary:"ARIADNE: Earlier line.",recentMessages:[
+    {id:"a",role:"ariadne",text:"We have already begun.",time:1,kind:"observation"},
+    {id:"m",role:"player",text:"Keep going.",time:2},
+  ]};
+  const messages=buildProviderMessages(body);
+  assert.deepEqual(messages.slice(0,-1).map(message=>message.role),["system","user","assistant","user"]);
+  assert.equal(messages[2].content,"We have already begun.");
+  assert.equal(messages[3].content,"Keep going.");
+  assert.doesNotMatch(messages.at(-1).content,/RECENT CONVERSATION|We have already begun/);
+  assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/Begin the first response exactly/i);
+});
+
+test("the opening greeting exists only in the initial scene event",()=>{
+  const initial=buildProviderMessages({...requestBody(),trigger:{type:"initial_guidance"}}).at(-1).content;
+  const later=buildProviderMessages({...requestBody(),trigger:{type:"passing_thought"},navigationBelief:null}).at(-1).content;
+  assert.match(initial,/Hi, MT—I’m Ariadne\. I’m here to help you find four stars, then the exit\./);
+  assert.doesNotMatch(later,/Hi, MT—I’m Ariadne|first moment together/i);
+});
+
+test("a later provider reply cannot restart Ariadne's introduction",()=>{
+  assert.equal(providerReplyRestartsJourney("Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit."),true);
+  assert.equal(providerReplyRestartsJourney("Oh, MT—I’m changing my mind. Turn around."),false);
 });

@@ -4,7 +4,7 @@ import {
   analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc,
   companionCooldownMs, createGuidanceTrace, createJourneyState, describeEgocentricView,
   deterministicReply, forwardVisibleGeometry, guidanceTraceExpired,
-  instructionForCurrentChoice, markTrajectoryChange, nearestVisibleJunction,
+  instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestVisibleJunction,
   nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes,
   rebaseSelectedRoute, recordJourneyEncounter, routesForEvent,
   shouldTriggerPassingThought, trajectoryCue, updateJourney,
@@ -107,6 +107,16 @@ test("fallback and prompt preserve MT and never announce an exit",()=>{
   assert.match(ARIADNE_SYSTEM_PROMPT,/player's only name and direct form of address/i);
   assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/PLAYER:/);
   assert.doesNotMatch(greeting.message,/found the exit/i);
+});
+
+test("recent exact Ariadne lines are suppressed without confusing MT text",()=>{
+  const messages=[
+    {id:"1",role:"ariadne",text:"Oh—that closes ahead. I’m changing my mind.",time:1},
+    {id:"2",role:"player",text:"Oh—that closes ahead. I’m changing my mind.",time:2},
+  ];
+  assert.equal(isRecentCompanionRepeat("Oh, that closes ahead—I’m changing my mind!",messages),true);
+  assert.equal(isRecentCompanionRepeat("Take the opening on your right.",messages),false);
+  assert.equal(isRecentCompanionRepeat("MT said this.",[{id:"3",role:"player",text:"MT said this.",time:3}]),false);
 });
 
 test("free companion allowlist requires zero price, text, context, and optional reasoning",()=>{

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } from "./world.mjs";
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
-import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, instructionForCurrentChoice, markTrajectoryChange, nearestVisibleJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, rebaseSelectedRoute, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type TrajectorySample } from "./companion";
+import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestVisibleJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, rebaseSelectedRoute, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type TrajectorySample } from "./companion";
 import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
 import { mentionedDirections, messageConflictsWithDirection } from "./navigation-contracts";
 import { PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
@@ -243,18 +243,20 @@ export default function Home(){
       const replyText=event.type==="initial_guidance"&&selectedAtRequest&&!rebased?"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.":reply.message.trim();
       const safeReply=route&&messageConflictsWithDirection(replyText,route.direction)?deterministicReply(event,latestRoutes,environment,evidence,currentArc.phase,objectiveContext,belief):reply,safeText=safeReply===reply?replyText:safeReply.message;
       const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",needsInstruction=!!route&&!!spokenInstruction&&!includesDirection(safeText,route.direction),finalText=[safeText,needsInstruction?spokenInstruction:""].filter(Boolean).join(" ");
-      if(finalText){
+      const repeated=isRecentCompanionRepeat(finalText,messagesRef.current);
+      if(finalText&&!repeated){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:safeReply.kind};
         const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);
         published=true;nextPassingThoughtRef.current=nextPassingThoughtAt(Date.now(),journeyRef.current.phase);
-      }
-      const groundedReply={...safeReply,message:finalText},nextIntent=spokenInstruction?createGuidanceIntent(groundedReply,route,{...latestPose}):null;
+      }else if(event.type==="initial_guidance"&&repeated)published=true;
+      const groundedReply={...safeReply,message:repeated?"":finalText},nextIntent=!repeated&&spokenInstruction?createGuidanceIntent(groundedReply,route,{...latestPose}):null;
       if(nextIntent){guidanceRef.current=nextIntent;guidanceTraceRef.current=createGuidanceTrace(nextIntent);traceTravelAccumulatorRef.current=0;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set(latestGeometry.cells.map(([x,y])=>cellKey(x,y)));newlyRevealedRef.current=new Set()}
     }catch(error){
       if(requestIsCurrent()){
         providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000);console.warn("ARIADNE request will retry after a transient failure",error);
         const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!includesDirection(fallback.message,route.direction)?instruction:""] .filter(Boolean).join(" ");
-        if(text){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now(),kind:fallback.kind};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}
+        const repeated=isRecentCompanionRepeat(text,messagesRef.current);
+        if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now(),kind:fallback.kind};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(event.type==="initial_guidance"&&repeated)published=true;
       }
     }finally{
       clearTimeout(requestTimeout);
