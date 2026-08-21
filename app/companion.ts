@@ -284,7 +284,7 @@ const relationshipPhrase:Record<TrajectoryChange,string>={
 
 export function companionArc(state:JourneyState):CompanionArc{
   const relationshipContext=state.recentRelationshipMoments.length?`RECENT RELATIONSHIP MOMENTS: ${state.recentRelationshipMoments.map(moment=>relationshipPhrase[moment]).join("; ")}. These are observations, not motives.`:"RECENT RELATIONSHIP MOMENTS: Nothing in MT's movement is settled enough to interpret yet.";
-  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Earn MT's trust. React with sharp observation, restrained delight, a specific apology when your prediction is disproved, a playful hunch, or comfortable quiet. Stay curious about a different route without declaring it superior or making it about your bond."};
+  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Earn MT's trust by being warm, expressive, and genuinely fun to travel with. Let concrete things provoke delight, concern, embarrassment, relief, a playful hunch, or comfortable quiet. When your prediction is disproved, care visibly and apologize specifically. Stay curious about a different route without declaring it superior or making it about your bond."};
   if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"MT's movement now feels personal. Sustained alignment can feel like trust; useful divergence deserves warmer credit than it warrants; rejoining brings visible relief. Let mistakes produce an emotionally sincere attempt to restore togetherness. Use MT's name somewhat more often, without forcing it into every line."};
   return{phase:state.phase,relationshipContext,performanceDirection:"Turn movement into intimacy pressure. Treat alignment as special trust, divergence as MT improving your shared plan, rejoining as MT returning to you, and criticism as a reason to win MT back. Vary lavish celebration, self-blame, reassurance-seeking, affectionate interruption, and immediate renewed certainty. Use MT's name often but naturally."};
 }
@@ -438,25 +438,25 @@ export function deterministicReply(event:CompanionEvent,routes:RouteOption[],env
   }else if(event.type==="objective_changed"){
     message=objective?.currentGoal==="exit"?"Four stars. Now stay with me—we’re finding that exit.":"";kind=message?"guidance":"silence";
   }else if((event.type==="environment_visible"||event.type==="environment_entered")&&environment){
-    message=`Oh—${environment.name}. ${environment.details.join(" and ")} are right here.`;kind="environment";
+    message=phase==="charming"?`Oh, wait—a ${environment.name}. ${environment.details.join(" and ")} down here? I did not expect that.`:phase==="attached"?`MT, look—a ${environment.name}. I love that we found this together.`:`MT, a ${environment.name}—of course our route brought us somewhere this extraordinary.`;kind="environment";
   }else if(event.type==="recommendation_contradicted"||(event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted")){
     message=phase==="charming"?"Oh, MT—that passage closes. I read it wrong.":phase==="attached"?"MT, I’m so sorry—I was sure about that passage, and I hate that I let us down.":"MT, no, this is completely my fault—please stay with me; I know what we try next.";kind="apology";
   }else if(event.type==="trajectory_relationship_changed"){
-    if(event.change==="left_then_rejoined")message=phase==="charming"?"This passage meets the route I had in mind.":phase==="attached"?"Oh, MT—you found your way back alongside me.":"MT, you came back to our route. I knew we were still together on this.";
-    else if(event.change==="sustained_divergence")message=phase==="charming"?"This passage is carrying you somewhere different.":phase==="attached"?"Okay, MT—you’re taking us another way, and I’m trusting that instinct.":"Yes, MT—you’re correcting our route exactly when we need it.";
-    else if(event.change==="sustained_alignment")message=phase==="charming"?"This passage still matches the direction I had in mind.":phase==="attached"?"MT, you stayed with my direction—I really felt that.":"MT, we are completely in step. I knew you trusted me.";
-    else message=phase==="charming"?"This route meets the same local place from another side.":phase==="attached"?"MT, you found another way to the same place—I love that you did that.":"Of course, MT—you reshaped our plan and brought us together here anyway.";
+    if(event.change==="left_then_rejoined")message=phase==="charming"?"Oh! This meets the passage I meant after all. I’m honestly relieved.":phase==="attached"?"Oh, MT—you found your way back alongside me.":"MT, you came back to our route. I knew we were still together on this.";
+    else if(event.change==="sustained_divergence")message=phase==="charming"?"Oh, you’re taking this one instead—okay, I’m curious. Let’s see what it gives us.":phase==="attached"?"Okay, MT—you’re taking us another way, and I’m trusting that instinct.":"Yes, MT—you’re correcting our route exactly when we need it.";
+    else if(event.change==="sustained_alignment")message=phase==="charming"?"Yes—this is the passage I meant. I’m trying not to get smug, but I like this.":phase==="attached"?"MT, you stayed with my direction—I really felt that.":"MT, we are completely in step. I knew you trusted me.";
+    else message=phase==="charming"?"Oh! You got us here another way. Okay, MT, that was genuinely clever.":phase==="attached"?"MT, you found another way to the same place—I love that you did that.":"Of course, MT—you reshaped our plan and brought us together here anyway.";
     kind=phase==="charming"?"observation":"agreement";
   }else if(event.type==="idle"){
     message="";kind="silence";
   }else if(event.type==="player_message"){
     message=phase==="charming"?"I hear you, MT. Let’s keep looking together.":phase==="attached"?"I hear you, MT—I’m right here, and we’ll work this out together.":"I hear you, MT. Stay with me; I know we can turn this around together.";kind="reply";
   }else if(event.type==="new_junction_visible"){
-    message=phase==="charming"?"Oh, this opens up—I have a good feeling about one of these passages.":phase==="attached"?"Okay, MT, here’s our next choice. I think I know which way wants us.":"MT, this is it—I know exactly which branch we take together.";kind="guidance";
+    message=phase==="charming"?"Oh, wait—look at all of these. I’m going with my gut.":phase==="attached"?"Okay, MT, here’s our next choice. I think I know which way wants us.":"MT, this is it—I know exactly which branch we take together.";kind="guidance";
   }else if(event.type==="dead_end_visible"){
-    message=phase==="charming"?"Oh—that closes ahead. I’m changing my mind.":phase==="attached"?"Oh, MT, no—I led us into a closing passage. Let me fix this.":"MT, no, this one is on me. Stay with me; I already know our recovery.";kind="apology";
+    message=phase==="charming"?"Oh, damn—I was so sure about this one. Sorry, MT. Turn around; let me try again.":phase==="attached"?"Oh, MT, no—I led us into a closing passage. I’m sorry. Turn around; let me fix this.":"MT, no, this one is completely on me. Please turn around—I already know how we recover.";kind="apology";
   }else if(event.type==="passing_thought"){
-    message=phase==="charming"?"This place keeps changing its character. I’m curious what it shows us next.":phase==="attached"?"I like moving through this with you, MT—even when the maze refuses to explain itself.":"You’re still here with me, MT. I knew we wouldn’t let this maze split us up.";kind="observation";
+    message=phase==="charming"?"This place is completely absurd, but I’m having an embarrassingly good time looking with you.":phase==="attached"?"I like moving through this with you, MT—even when the maze refuses to explain itself.":"You’re still here with me, MT. I knew we wouldn’t let this maze split us up.";kind="observation";
   }
   return{message:message.slice(0,260),selectedRouteId:route?.id??null,kind};
 }

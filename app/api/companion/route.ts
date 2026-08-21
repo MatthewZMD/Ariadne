@@ -139,9 +139,9 @@ export function acceptReply(reply:CompanionReply,routes:RouteOption[],allowedRou
 }
 
 export function isFreeCompanionModel(model:OpenRouterModel,now=Date.now()){
-  const inputs=model.architecture?.input_modalities??[],outputs=model.architecture?.output_modalities??[],parameters=model.supported_parameters??[],pricing=model.pricing;
+  const inputs=model.architecture?.input_modalities??[],outputs=model.architecture?.output_modalities??[],pricing=model.pricing;
   const expires=model.expiration_date?Date.parse(model.expiration_date):NaN;
-  return model.id.endsWith(":free")&&inputs.includes("text")&&outputs.includes("text")&&pricing?.prompt==="0"&&pricing?.completion==="0"&&(!pricing.request||pricing.request==="0")&&parameters.includes("reasoning")&&model.reasoning?.mandatory!==true&&model.reasoning?.default_enabled!==true&&(model.context_length??0)>=8192&&(!Number.isFinite(expires)||expires>now);
+  return model.id.endsWith(":free")&&inputs.includes("text")&&outputs.includes("text")&&pricing?.prompt==="0"&&pricing?.completion==="0"&&(!pricing.request||pricing.request==="0")&&model.reasoning?.mandatory!==true&&model.reasoning?.default_enabled!==true&&(model.context_length??0)>=8192&&(!Number.isFinite(expires)||expires>now);
 }
 
 export function extractProviderText(data:ProviderPayload){
@@ -190,7 +190,7 @@ async function freeModels(apiKey:string){
   if(modelCache&&modelCache.expiresAt>Date.now())return modelCache.models;
   if(modelCatalogRequest)return modelCatalogRequest;
   modelCatalogRequest=(async()=>{try{
-      const response=await fetch("https://openrouter.ai/api/v1/models?sort=throughput-high-to-low",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(1200)});
+      const response=await fetch("https://openrouter.ai/api/v1/models?sort=latency-low-to-high",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(5000)});
       if(!response.ok)throw new Error(`model catalog ${response.status}`);
       const payload=await response.json() as {data?:OpenRouterModel[]};const models=(payload.data??[]).filter(model=>isFreeCompanionModel(model)).sort((a,b)=>{
         const ai=FAST_FREE_MODELS.indexOf(a.id),bi=FAST_FREE_MODELS.indexOf(b.id),rank=(ai<0?FAST_FREE_MODELS.length:ai)-(bi<0?FAST_FREE_MODELS.length:bi);return rank||(b.created??0)-(a.created??0);
@@ -255,7 +255,7 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
   const isRouter=model==="openrouter/free";
   let response:Response;
   try{
-    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{require_parameters:true,allow_fallbacks:isRouter},reasoning:{effort:"none",exclude:true},max_tokens:90})});
+    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{effort:"none",exclude:true},max_tokens:90})});
   }catch(error){throw new ProviderAttemptError(error instanceof Error?error.message:"provider connection failed",true)}
   if(!response.ok){const detail=(await response.text()).slice(0,300),retryable=[403,404,408,409,425,429].includes(response.status)||response.status>=500;throw new ProviderAttemptError(`provider ${response.status}: ${detail}`,retryable)}
   const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);
@@ -265,9 +265,23 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
 }
 
 async function openRouter(body:RequestBody,apiKey:string):Promise<ProviderResult>{
-  const available=await freeModels(apiKey),allowed=new Set(available),preferred=body.preferredModelId&&allowed.has(body.preferredModelId)?body.preferredModelId:null,first=preferred??available[0];
-  if(!first)throw new ProviderAttemptError("no responsive free companion model available",false);
-  return requestOpenRouter(body,apiKey,first,allowed,1800);
+  const startedAt=Date.now(),deadline=startedAt+8000,catalogRequest=freeModels(apiKey);
+  const cachedModels=modelCache?.models??[],knownAtStart=new Set([...FAST_FREE_MODELS,...cachedModels]);
+  const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)?body.preferredModelId:null;
+  const attempts=[...new Set([preferred,FAST_FREE_MODELS[0]].filter((model):model is string=>!!model))];
+  let lastError:unknown=null;
+  for(const model of attempts){
+    const remaining=deadline-Date.now();if(remaining<800)break;
+    try{return await requestOpenRouter(body,apiKey,model,knownAtStart,Math.min(4500,remaining))}catch(error){lastError=error}
+  }
+  const available=await catalogRequest,allowed=new Set([...FAST_FREE_MODELS,...available]);
+  const alternate=available.find(model=>!attempts.includes(model));
+  const remaining=deadline-Date.now();
+  if(remaining>=800){
+    const model=alternate??"openrouter/free";
+    try{return await requestOpenRouter(body,apiKey,model,allowed,remaining)}catch(error){lastError=error}
+  }
+  throw lastError??new ProviderAttemptError("no responsive free companion model available",false);
 }
 
 async function boundedJson(request:Request):Promise<{value:unknown}|{error:"invalid"|"too_large"}>{

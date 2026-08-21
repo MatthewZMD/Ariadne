@@ -107,6 +107,9 @@ test("fallback and prompt preserve MT and never announce an exit",()=>{
   assert.match(ARIADNE_SYSTEM_PROMPT,/player's only name and direct form of address/i);
   assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/PLAYER:/);
   assert.doesNotMatch(greeting.message,/found the exit/i);
+  const deadEnd=deterministicReply({type:"dead_end_visible",cell:[1,0]},[route],null,null).message;
+  assert.match(deadEnd,/sorry|my fault|on me/i);
+  assert.match(deadEnd,/turn around/i);
 });
 
 test("recent exact Ariadne lines are suppressed without confusing MT text",()=>{
@@ -124,6 +127,8 @@ test("free companion allowlist requires zero price, text, context, and optional 
   assert.equal(isFreeCompanionModel(free),true);
   assert.equal(isFreeCompanionModel({...free,pricing:{...free.pricing,completion:"0.1"}}),false);
   assert.equal(isFreeCompanionModel({...free,reasoning:{mandatory:true}}),false);
+  assert.equal(isFreeCompanionModel({...free,supported_parameters:[],reasoning:undefined}),true);
+  assert.equal(isFreeCompanionModel({...free,reasoning:{mandatory:false,default_enabled:true}}),false);
   assert.equal(isFreeCompanionModel({...free,expiration_date:"2020-01-01"}),false);
 });
 
