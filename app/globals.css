@@ -156,4 +156,4 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 7; touch-
   .control-copy { grid-column: 1 / -1; }
   .reset { align-self: center; }
 }
-@media (prefers-reduced-motion: reduce) { .blink, .boot-screen::after, .ariadne-chat-line.discovery, .star-pulse .viewport-wrap::after, .story-stage, .story-continue span, .animated-story-stars i, .story-title-panel, .closure-panel { animation: none; } .boot-screen { transition: none; } .closure-screen { animation: none; background: #030403; } }
+@media (prefers-reduced-motion: reduce) { .blink, .boot-screen::after, .star-pulse .viewport-wrap::after, .story-stage, .story-continue span, .animated-story-stars i, .story-title-panel, .closure-panel { animation: none; } .boot-screen { transition: none; } .closure-screen { animation: none; background: #030403; } }

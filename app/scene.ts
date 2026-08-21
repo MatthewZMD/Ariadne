@@ -149,7 +149,7 @@ const openingDescription=(direction:RouteDirection)=>direction==="straight"?"ahe
 
 export function buildPerceivedScene(args:{
   seed:number;world:InfiniteWorld;anchors:ThemeAnchor[];entities:AmbientEntity[];pose:ScenePose;tick:number;
-  routeDirections:RouteDirection[];visibleJunction:boolean;visibleEndAhead:boolean;activeStar:StarObjective|null;
+  routeDirections:RouteDirection[];visibleRoutes?:Array<{direction:RouteDirection;instruction:string}>;visibleJunction:boolean;visibleEndAhead:boolean;activeStar:StarObjective|null;
   visibleCells:Array<[number,number]>;
   phase:"charming"|"attached"|"overbearing";relationshipIntensity:number;collectedStars:number;
   movementState:"walking"|"turning"|"stationary";memory:SceneMemory;reducedMotion?:boolean;
@@ -193,9 +193,10 @@ export function buildPerceivedScene(args:{
   for(const object of objects){const prior=(object as typeof object&{_priorDistance?:number})._priorDistance;if(prior===undefined||args.movementState!=="walking")continue;const current=visibleEntities.find(item=>item.entity.id===object.id)?.projection.distance??prior;if(prior-current>.35){approaching=object.name;break}if(current-prior>.35)movingAwayFrom=object.name}
   const cleanObjects=objects.map(object=>({id:object.id,name:object.name,direction:object.direction,distance:object.distance,action:object.action,firstSeen:object.firstSeen})),currentVisible=new Map(cleanObjects.map(object=>[object.id,object.name]));
   for(const[id,name]of memory.previousVisible)if(!currentVisible.has(id))changes.push(`${name} has slipped out of MT's view`);memory.previousVisible=currentVisible;
+  const visibleRouteDescriptions=args.visibleRoutes?.length?args.visibleRoutes.map(route=>({direction:route.direction,description:route.instruction})):[...new Set(args.routeDirections)].map(direction=>({direction,description:`an open passage ${openingDescription(direction)}`}));
   const scene:PerceivedScene={
     setting:{primaryEnvironment:primary,blendedEnvironments:[...new Set([primary,...layers])],visibleDetails:[copy.name,...copy.details.slice(0,3)]},
-    geometry:{facingDescription:`MT is facing ${facingDescription(pose.angle)}`,visibleOpenings:[...new Set(args.routeDirections)].map(direction=>({direction,description:`an open passage ${openingDescription(direction)}`})),visibleEndAhead:args.visibleEndAhead,visibleJunction:args.visibleJunction},
+    geometry:{facingDescription:`MT is facing ${facingDescription(pose.angle)}`,visibleOpenings:visibleRouteDescriptions,visibleEndAhead:args.visibleEndAhead,visibleJunction:args.visibleJunction},
     objects:cleanObjects,spectacles,
     objective:{starVisible:!!star,starDirection,starDistance},
     mtAttention:{lookingToward:centered?.name??null,approaching,movingAwayFrom,pausedNear:args.movementState==="stationary"?near?.name??null:null},

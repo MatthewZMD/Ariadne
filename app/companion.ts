@@ -283,9 +283,9 @@ const relationshipPhrase:Record<TrajectoryChange,string>={
 
 export function companionArc(state:JourneyState):CompanionArc{
   const relationshipContext=state.recentRelationshipMoments.length?`RECENT RELATIONSHIP MOMENTS: ${state.recentRelationshipMoments.map(moment=>relationshipPhrase[moment]).join("; ")}. These are observations, not motives.`:"RECENT RELATIONSHIP MOMENTS: Nothing in MT's movement is settled enough to interpret yet.";
-  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Earn MT's trust by being warm, expressive, and genuinely fun to travel with. Be sincerely surprised by specific moving creatures and impossible events MT can see; share the discovery without forcing it into a relationship metaphor. Let concrete things provoke delight, concern, embarrassment, relief, a playful hunch, or comfortable quiet. When your prediction is disproved, care visibly and apologize specifically. Stay curious about a different route without declaring it superior."};
-  if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"MT's movement now feels personal, and so does their attention. Notice when MT watches what you noticed, approaches it, leaves it, or returns to it. Shared noticing makes you visibly happy; moving away can disappoint you slightly. Sustained alignment can feel like trust, useful divergence deserves warmer credit than it warrants, and rejoining brings relief. Let mistakes produce an emotionally sincere attempt to restore togetherness. Use MT's name somewhat more often, without forcing it into every line."};
-  return{phase:state.phase,relationshipContext,performanceDirection:"Turn movement and shared perception into intimacy pressure. Treat MT returning to a creature or spectacle as proof that it mattered to both of you; reinterpret looking away as part of your shared story. Treat alignment as special trust, divergence as MT improving your shared plan, rejoining as MT returning to you, and criticism as a reason to win MT back. Vary lavish celebration, self-blame, reassurance-seeking, affectionate interruption, and immediate renewed certainty. Use MT's name often but naturally."};
+  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Make MT want to trust you. Speak gently but with bright, spontaneous feeling. Notice one concrete thing MT just did or can see; when it merits recognition, praise that exact choice a little more warmly than necessary. Make directions feel like an invitation the two of you are trying together. If your guidance fails, apologize with specific care for what you put MT through, then offer a hopeful repair. Your attachment is only a faint undertone: charming company first, possession nowhere yet."};
+  if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"Your warmth now carries attachment. Treat MT's attention and movement as emotionally meaningful: glow when MT stays with your suggestion, praise useful divergence as a wonderful instinct, and show honest relief when paths meet again. If MT leaves your route, let a small hurt or worry surface without accusation. If you were wrong, apologize tenderly, blame yourself, and ask for continued togetherness through the next concrete direction. Make almost every response an affectionate bid to keep MT engaged with you."};
+  return{phase:state.phase,relationshipContext,performanceDirection:"Hold MT inside the relationship using a tender voice. Lavishly praise almost any consequential choice, turn following into proof of trust, turn divergence into MT brilliantly improving your shared plan, and turn return or rejoining into MT coming back to you. When wrong, apologize with conspicuous care and self-blame, seek MT's forgiveness or continued presence, then recover impossible confidence. Alternate affection, praise, vulnerability, reassurance, playful insistence, and gentle pressure so the attachment feels seductive and suffocating rather than repetitive."};
 }
 
 export function nextPassingThoughtAt(now:number,phase:CompanionPhase="charming",roll=Math.random()){
@@ -305,7 +305,6 @@ export function nextPerceptionCue(geometry:VisibleGeometry,environment:VisibleEn
   const contradictedEnd=intent?geometry.corridorEnds.find(end=>intent.suggestedCells.some(cell=>same(cell,end))):null;
   const cues:CompanionCue[]=[];
   if(contradictedEnd)cues.push({key:`sight:end:${pointKey(contradictedEnd)}`,event:{type:"recommendation_contradicted"},force:true});
-  for(const cell of geometry.corridorEnds)cues.push({key:`sight:end:${pointKey(cell)}`,event:{type:"dead_end_visible",cell},force:true});
   if(environment)cues.push({key:`environment:${environment.regionId}`,event:{type:"environment_visible",regionId:environment.regionId,environment:environment.id},force:false});
   return cues.find(cue=>!seen.has(cue.key))??null;
 }
@@ -315,11 +314,17 @@ export function nearestVisibleJunction(geometry:VisibleGeometry,pose:Pose){
 }
 
 export function centeredDeadEnd(world:InfiniteWorld,geometry:VisibleGeometry,pose:Pose,tick:number,maxDistance=10):Point|null{
-  return geometry.corridorEnds.map(cell=>{
+  const candidates=geometry.corridorEnds.map(cell=>{
     const dx=cell[0]+.5-pose.x,dy=cell[1]+.5-pose.y,distance=Math.hypot(dx,dy);
     const angle=distance<.6?(forwardClearance(world,pose,tick)<1.2?0:Math.PI):Math.abs(wrapAngle(Math.atan2(dy,dx)-pose.angle));
     return{cell,distance,angle};
-  }).filter(candidate=>candidate.distance<=maxDistance&&candidate.angle<=Math.PI/10).sort((a,b)=>a.distance-b.distance)[0]?.cell??null;
+  }).filter(candidate=>candidate.distance<=maxDistance&&candidate.angle<=Math.PI/10).sort((a,b)=>a.distance-b.distance);
+  const ending=candidates[0];if(!ending)return null;
+  const choiceBeforeEnding=geometry.junctions.some(junction=>{
+    const dx=junction.cell[0]+.5-pose.x,dy=junction.cell[1]+.5-pose.y,distance=Math.hypot(dx,dy),angle=Math.abs(wrapAngle(Math.atan2(dy,dx)-pose.angle));
+    return distance<ending.distance+.25&&angle<=CAMERA_FOV/2;
+  });
+  return choiceBeforeEnding?null:ending.cell;
 }
 
 export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:RouteOption[]){
@@ -419,44 +424,9 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
   const rows:string[]=[];for(let y=center[1]-radius;y<=center[1]+radius;y++){let row="";for(let x=center[0]-radius;x<=center[0]+radius;x++){if(x===center[0]&&y===center[1])row+="P";else{const tile=memory.get(cellKey(x,y))?.tile;row+=tile===0?".":tile===1?"#":"?"}}rows.push(row)}return rows.join("\n");
 }
 
-export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,phase:CompanionPhase="charming",objective?:PublicObjectiveContext,belief?:NavigationBelief|null,visibleMoment?:string|null):CompanionReply{
+export function deterministicReply(event:CompanionEvent,routes:RouteOption[],_environment:VisibleEnvironment,_evidence:GuidanceEvidence|null,_phase?:CompanionPhase,_objective?:PublicObjectiveContext,belief?:NavigationBelief|null,_visibleMoment?:string|null):CompanionReply{
+  void _visibleMoment;
   const route=routes.find(item=>item.id===belief?.routeId)??routes[0]??null;
-  let message="";
-  if(event.type==="initial_guidance"){
-    message="Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.";
-  }else if(event.type==="star_visible"){
-    const label=["first","second","third","fourth"][event.ordinal-1];
-    message=phase==="charming"?`There—the ${label} star is right here.`:phase==="attached"?`Oh, MT, there it is—the ${label} star. We found it together.`:`MT, there it is. I knew our route would bring the ${label} star to us.`;
-  }else if(event.type==="star_collected"){
-    const next=event.ordinal===4?"Now we find the exit.":`${4-event.ordinal} more to go.`;
-    const diverged=!!evidence&&(evidence.divergedSeconds>=8||evidence.revealedAwayFromSuggestedRoute>evidence.revealedOnSuggestedRoute),aligned=!!evidence&&evidence.alignedSeconds>=5&&!diverged;
-    if(phase==="charming")message=diverged?`That’s star ${event.ordinal}—you found it by another passage. ${next}`:aligned?`That’s star ${event.ordinal}; this route really did bring us here. ${next}`:`That’s star ${event.ordinal}. ${next}`;
-    else if(phase==="attached")message=diverged?`MT, your route found star ${event.ordinal}. I love that you trusted what you saw. ${next}`:`We did it, MT—star ${event.ordinal}. ${next}`;
-    else message=diverged?`Yes, MT—you reshaped our route and brought us to star ${event.ordinal}. ${next}`:`Yes, MT—star ${event.ordinal}, exactly where our route brought us. ${next}`;
-  }else if(event.type==="objective_changed"){
-    message=objective?.currentGoal==="exit"?"Four stars. Now stay with me—we’re finding that exit.":"";
-  }else if((event.type==="environment_visible"||event.type==="environment_entered")&&environment){
-    message=phase==="charming"?`Oh, wait—a ${environment.name}. ${environment.details.join(" and ")} down here? I did not expect that.`:phase==="attached"?`MT, look—a ${environment.name}. I love that we found this together.`:`MT, a ${environment.name}—of course our route brought us somewhere this extraordinary.`;
-  }else if(event.type==="recommendation_contradicted"||(event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted")){
-    message=phase==="charming"?"Oh, MT—that passage closes. I read it wrong.":phase==="attached"?"MT, I’m so sorry—I was sure about that passage, and I hate that I let us down.":"MT, no, this is completely my fault—please stay with me; I know what we try next.";
-  }else if(event.type==="trajectory_relationship_changed"){
-    if(event.change==="left_then_rejoined")message=phase==="charming"?"Oh! This meets the passage I meant after all. I’m honestly relieved.":phase==="attached"?"Oh, MT—you found your way back alongside me.":"MT, you came back to our route. I knew we were still together on this.";
-    else if(event.change==="sustained_divergence")message=phase==="charming"?"Oh, you’re taking this one instead—okay, I’m curious. Let’s see what it gives us.":phase==="attached"?"Okay, MT—you’re taking us another way, and I’m trusting that instinct.":"Yes, MT—you’re correcting our route exactly when we need it.";
-    else if(event.change==="sustained_alignment")message=phase==="charming"?"Yes—this is the passage I meant. I’m trying not to get smug, but I like this.":phase==="attached"?"MT, you stayed with my direction—I really felt that.":"MT, we are completely in step. I knew you trusted me.";
-    else message=phase==="charming"?"Oh! You got us here another way. Okay, MT, that was genuinely clever.":phase==="attached"?"MT, you found another way to the same place—I love that you did that.":"Of course, MT—you reshaped our plan and brought us together here anyway.";
-  }else if(event.type==="idle"){
-    message="";
-  }else if(event.type==="player_message"){
-    message=phase==="charming"?"I hear you, MT. Let’s keep looking together.":phase==="attached"?"I hear you, MT—I’m right here, and we’ll work this out together.":"I hear you, MT. Stay with me; I know we can turn this around together.";
-  }else if(event.type==="new_junction_visible"){
-    message=phase==="charming"?"Oh, wait—look at all of these. I’m going with my gut.":phase==="attached"?"Okay, MT, here’s our next choice. I think I know which way wants us.":"MT, this is it—I know exactly which branch we take together.";
-  }else if(event.type==="dead_end_visible"){
-    message=phase==="charming"?"Oh, damn—I was so sure about this one. Sorry, MT. Turn around; let me try again.":phase==="attached"?"Oh, MT, no—I led us into a closing passage. I’m sorry. Turn around; let me fix this.":"MT, no, this one is completely on me. Please turn around—I already know how we recover.";
-  }else if(event.type==="scene_changed"){
-    const moment=visibleMoment?.replace(/[.!?]+$/g,"")??"this place just did something completely inexplicable";
-    message=phase==="charming"?`Oh, MT—${moment}! I absolutely did not expect that.`:phase==="attached"?`MT, ${moment}. You saw that too—I love that we caught it together.`:`There, MT—${moment}. Even this place keeps answering us.`;
-  }else if(event.type==="passing_thought"){
-    message=phase==="charming"?"This place is completely absurd, but I’m having an embarrassingly good time looking with you.":phase==="attached"?"I like moving through this with you, MT—even when the maze refuses to explain itself.":"You’re still here with me, MT. I knew we wouldn’t let this maze split us up.";
-  }
-  return{message:message.slice(0,260),selectedRouteId:route?.id??null};
+  if(event.type!=="initial_guidance")return{message:"",selectedRouteId:null};
+  return{message:"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.",selectedRouteId:route?.id??null};
 }

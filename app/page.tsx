@@ -165,8 +165,8 @@ export default function Home(){
   },[]);
 
   const refreshScene=useCallback((movementState:"walking"|"turning"|"stationary"="stationary")=>{
-    const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),journey=journeyRef.current;
-    const result=buildPerceivedScene({seed:current.seed,world:current.world,anchors:current.anchors,entities:current.entities,pose,tick:current.moves,visibleCells:geometry.cells,routeDirections:routes.map(route=>route.direction),visibleJunction:geometry.junctions.length>0,visibleEndAhead:!!centeredDeadEnd(current.world,geometry,pose,current.moves),activeStar:current.objective.activeStar,phase:journey.phase,relationshipIntensity:Math.min(1,journey.relationshipDepth/38+current.objective.collectedStars*.04),collectedStars:current.objective.collectedStars,movementState,memory:sceneMemoryRef.current,reducedMotion});
+    const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),visibleRoutes=planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited),sceneRoutes=visibleRoutes.length?visibleRoutes:routes,journey=journeyRef.current;
+    const result=buildPerceivedScene({seed:current.seed,world:current.world,anchors:current.anchors,entities:current.entities,pose,tick:current.moves,visibleCells:geometry.cells,routeDirections:sceneRoutes.map(route=>route.direction),visibleRoutes:sceneRoutes.map(route=>({direction:route.direction,instruction:route.instruction})),visibleJunction:visibleRoutes.length>0,visibleEndAhead:!!centeredDeadEnd(current.world,geometry,pose,current.moves),activeStar:current.objective.activeStar,phase:journey.phase,relationshipIntensity:Math.min(1,journey.relationshipDepth/38+current.objective.collectedStars*.04),collectedStars:current.objective.collectedStars,movementState,memory:sceneMemoryRef.current,reducedMotion});
     sceneRef.current=result.scene;if(result.changes.length)sceneChangesRef.current=[...new Set([...sceneChangesRef.current,...result.changes])].slice(-12);
     return result;
   },[reducedMotion]);
@@ -247,7 +247,7 @@ export default function Home(){
       const reply=await response.json() as CompanionReply&{source?:"provider"|"fallback";modelUsed?:string|null};
       if(!requestIsCurrent())return;
       if(reply.source==="provider"){providerFailureRef.current=0;if(reply.modelUsed)preferredModelRef.current=reply.modelUsed}
-      else{providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000)}
+      else{providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000);if(event.type!=="initial_guidance")return}
       const selectedAtRequest=routes.find(r=>r.id===belief?.routeId)??null;
       const latest=runRef.current,latestPose=poseRef.current,latestGeometry=forwardVisibleGeometry(latest.world,latestPose,latest.moves);
       const latestVisibleJunction=event.type==="new_junction_visible"?planVisibleJunctionRoutes(latest.world,latestPose,latest.moves,latestGeometry,latest.memory,latest.visited):[];
@@ -258,7 +258,8 @@ export default function Home(){
       if(selectedAtRequest&&!rebased&&event.type!=="initial_guidance")return;
       const route=rebased??(guidesNow?latestRoutes[0]??null:null);
       const replyText=event.type==="initial_guidance"&&selectedAtRequest&&!rebased?"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.":reply.message.trim();
-      const safeReply=route&&messageConflictsWithRoute(replyText,route)?deterministicReply(event,latestRoutes,environment,evidence,currentArc.phase,objectiveContext,belief,sceneChangesAtRequest[0]):reply,safeText=safeReply===reply?replyText:safeReply.message;
+      if(route&&messageConflictsWithRoute(replyText,route))return;
+      const safeReply=reply,safeText=replyText;
       const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",needsInstruction=!!route&&!!spokenInstruction&&!messageIdentifiesRoute(safeText,route),finalText=[safeText,needsInstruction?spokenInstruction:""].filter(Boolean).join(" ");
       const repeated=isRecentCompanionRepeat(finalText,messagesRef.current);
       if(finalText&&!repeated){
@@ -272,9 +273,10 @@ export default function Home(){
     }catch(error){
       if(requestIsCurrent()){
         providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000);console.warn("ARIADNE request will retry after a transient failure",error);
-        const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief,sceneChangesAtRequest[0]),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!messageIdentifiesRoute(fallback.message,route)?instruction:""] .filter(Boolean).join(" ");
-        const repeated=isRecentCompanionRepeat(text,messagesRef.current);
-        if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now()};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(event.type==="initial_guidance"&&repeated)published=true;
+        if(event.type==="initial_guidance"){
+          const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief,sceneChangesAtRequest[0]),text=fallback.message,repeated=isRecentCompanionRepeat(text,messagesRef.current);
+          if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now()};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(repeated)published=true;
+        }
       }
     }finally{
       clearTimeout(requestTimeout);

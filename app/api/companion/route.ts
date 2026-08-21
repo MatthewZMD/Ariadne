@@ -308,7 +308,7 @@ export async function POST(request:Request){
   const parsed=await boundedJson(request);if("error" in parsed)return Response.json({error:parsed.error==="too_large"?"companion request too large":"invalid JSON"},{status:parsed.error==="too_large"?413:400});
   const body=parseCompanionRequest(parsed.value);if(!body)return Response.json({error:"invalid companion request"},{status:400});
   const allowedRouteId=body.navigationBelief?.routeId??null;
-  const fallback=()=>acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0]),body.legalRoutes,allowedRouteId);
+  const fallback=()=>body.trigger.type==="initial_guidance"?acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0]),body.legalRoutes,allowedRouteId):{message:"",selectedRouteId:null};
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback",modelUsed:null});

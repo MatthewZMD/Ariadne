@@ -89,9 +89,12 @@ test("phase cards change social interpretation rather than only frequency",()=>{
   const charming=companionArc(createJourneyState()).performanceDirection;
   const attached=companionArc({...createJourneyState(),phase:"attached"}).performanceDirection;
   const overbearing=companionArc({...createJourneyState(),phase:"overbearing"}).performanceDirection;
-  assert.match(charming,/earn MT's trust/i);
-  assert.match(attached,/movement now feels personal/i);
-  assert.match(overbearing,/intimacy pressure/i);
+  assert.match(charming,/want to trust you/i);
+  assert.match(charming,/praise that exact choice/i);
+  assert.match(attached,/warmth now carries attachment/i);
+  assert.match(attached,/apologize tenderly/i);
+  assert.match(overbearing,/tender voice/i);
+  assert.match(overbearing,/seductive and suffocating/i);
   assert.doesNotMatch(`${charming} ${attached} ${overbearing}`,/CHARMING|ATTACHED|OVERBEARING/);
   assert.equal(nextPassingThoughtAt(1_000,"charming",0),41_000);
   assert.equal(nextPassingThoughtAt(1_000,"attached",0),31_000);
@@ -99,17 +102,15 @@ test("phase cards change social interpretation rather than only frequency",()=>{
   assert.deepEqual([companionCooldownMs("charming"),companionCooldownMs("attached"),companionCooldownMs("overbearing")],[12000,9000,6000]);
 });
 
-test("fallback and prompt preserve MT and never announce an exit",()=>{
+test("deterministic voice exists only for the required opening greeting",()=>{
   const greeting=deterministicReply({type:"initial_guidance"},[route],null,null);
   assert.equal(greeting.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
   const environment={id:"frozen",regionId:"frozen:0:0",name:"frozen archive",details:["ice","shelves"]};
-  assert.match(deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null).message,/frozen archive/i);
-  assert.match(ARIADNE_SYSTEM_PROMPT,/player's only name and direct form of address/i);
+  assert.equal(deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null).message,"");
+  assert.match(ARIADNE_SYSTEM_PROMPT,/Speak to MT, never about MT/i);
   assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/PLAYER:/);
   assert.doesNotMatch(greeting.message,/found the exit/i);
-  const deadEnd=deterministicReply({type:"dead_end_visible",cell:[1,0]},[route],null,null).message;
-  assert.match(deadEnd,/sorry|my fault|on me/i);
-  assert.match(deadEnd,/turn around/i);
+  assert.deepEqual(deterministicReply({type:"dead_end_visible",cell:[1,0]},[route],null,null),{message:"",selectedRouteId:null});
 });
 
 test("recent exact Ariadne lines are suppressed without confusing MT text",()=>{
@@ -208,14 +209,16 @@ test("dead ends are visible before collision and remove invalid guidance",()=>{
   assert.deepEqual(routesForEvent({type:"dead_end_visible",cell:[2,0]},[towardEnd,escape],[]),[escape]);
   assert.deepEqual(centeredDeadEnd(world,geometry,pose,0),[2,0]);
   assert.equal(centeredDeadEnd(world,geometry,{...pose,angle:Math.PI/2},0),null);
+  const choiceBeforeWall={...geometry,junctions:[{id:"junction:1,0",cell:[1,0],open:["0,0","2,0","1,-1"]}]};
+  assert.equal(centeredDeadEnd(world,choiceBeforeWall,pose,0),null);
 });
 
-test("perception episodes deduplicate junctions but expose corridor endings",()=>{
+test("perception episodes leave generic corridor endings to the centered POV check",()=>{
   const junction={cells:[[0,0]],junctions:[{id:"junction:0,0",cell:[0,0],open:["1,0","0,1","-1,0"]}],corridorEnds:[],summary:""};
   assert.equal(nearestVisibleJunction(junction,{x:2.5,y:.5,angle:0,bob:0}).id,"junction:0,0");
   assert.equal(nextPerceptionCue(junction,null,null,new Set()),null);
   const ending={cells:[[1,0]],junctions:[],corridorEnds:[[1,0]],summary:""};
-  assert.equal(nextPerceptionCue(ending,null,null,new Set()).event.type,"dead_end_visible");
+  assert.equal(nextPerceptionCue(ending,null,null,new Set()),null);
 });
 
 test("spontaneous thoughts require actual walking",()=>{

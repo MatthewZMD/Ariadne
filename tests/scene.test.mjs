@@ -40,6 +40,12 @@ test("MT attention records approach and turning away without leaking render inte
   const publicScene=sceneForPrompt(approaching.scene);assert.equal("id" in publicScene.objects[0],false);assert.equal("visualKind" in publicScene.spectacles[0],false);assert.equal("worldPosition" in publicScene.spectacles[0],false);
 });
 
+test("Ariadne receives the same explicit upcoming openings MT sees",()=>{
+  const world={tile(){return 0}},memory=createSceneMemory();
+  const scene=buildPerceivedScene({...args(world,memory),visibleRoutes:[{direction:"left",instruction:"Take the first passage on your left."},{direction:"left",instruction:"Take the second passage on your left."},{direction:"right",instruction:"Take the passage on your right."}]}).scene;
+  assert.deepEqual(scene.geometry.visibleOpenings.map(opening=>opening.description),["Take the first passage on your left.","Take the second passage on your left.","Take the passage on your right."]);
+});
+
 test("renderer consumes shared perceived objects and spectacle layers",async()=>{
   const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8"));
   assert.match(source,/perceivedIds/);assert.match(source,/renderSpectacles\(ctx,scene/);assert.match(source,/depths\[rayIndex\]/);assert.match(source,/renderAriadneThread/);assert.match(source,/atlasFrame/);
