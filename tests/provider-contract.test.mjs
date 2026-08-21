@@ -9,13 +9,13 @@ const perceivedScene={setting:{primaryEnvironment:"neutral",blendedEnvironments:
 
 test("provider prose passes through unchanged",()=>{
   const message="Oh—yes, your instinct was absolutely right.";
-  assert.equal(acceptReply({message,selectedRouteId:"left",kind:"agreement"},routes).message,message);
+  assert.equal(acceptReply({message,selectedRouteId:"left"},routes).message,message);
 });
 
 test("the provider may select only a supplied route",()=>{
-  assert.equal(acceptReply({message:"Try it.",selectedRouteId:"invented",kind:"guidance"},routes).selectedRouteId,null);
-  assert.equal(acceptReply({message:"Try it.",selectedRouteId:"left",kind:"guidance"},routes,null).selectedRouteId,null);
-  assert.equal(acceptReply({message:"Try it.",selectedRouteId:"left",kind:"guidance"},routes,"left").selectedRouteId,"left");
+  assert.equal(acceptReply({message:"Try it.",selectedRouteId:"invented"},routes).selectedRouteId,null);
+  assert.equal(acceptReply({message:"Try it.",selectedRouteId:"left"},routes,null).selectedRouteId,null);
+  assert.equal(acceptReply({message:"Try it.",selectedRouteId:"left"},routes,"left").selectedRouteId,"left");
 });
 
 test("directional prose cannot contradict the controller belief",()=>{
@@ -34,10 +34,6 @@ test("a route ordinal is part of the navigation contract",()=>{
   assert.equal(messageConflictsWithRoute("I trust this one.",secondLeft),false);
 });
 
-test("silence has no message or route",()=>{
-  assert.deepEqual(acceptReply({message:"hidden",selectedRouteId:"left",kind:"silence"},routes),{message:"",selectedRouteId:null,kind:"silence"});
-});
-
 test("provider text extraction accepts Responses and compatible free-model payloads",()=>{
   assert.equal(extractProviderText({output_text:"one"}),"one");
   assert.equal(extractProviderText({output:[{content:[{type:"text",text:"two"}]}]}),"two");
@@ -45,8 +41,8 @@ test("provider text extraction accepts Responses and compatible free-model paylo
 });
 
 test("provider replies recover fenced or prefaced JSON without retrying a usable completion",()=>{
-  const reply=parseProviderReply('Here is the response:\n```json\n{"message":"Take the left opening.","selectedRouteId":"left","kind":"guidance"}\n```',routes,{id:"belief",objectiveStage:0,junctionId:"junction",routeId:"left",instruction:"Go left."});
-  assert.deepEqual(reply,{message:"Take the left opening.",selectedRouteId:"left",kind:"guidance"});
+  const reply=parseProviderReply('Here is the response:\n```json\n{"message":"Take the left opening.","selectedRouteId":"left"}\n```',routes,{id:"belief",objectiveStage:0,junctionId:"junction",routeId:"left",instruction:"Go left."});
+  assert.deepEqual(reply,{message:"Take the left opening.",selectedRouteId:"left"});
   assert.equal(parseProviderReply("The user wants a cheerful navigation response.",routes,null),null);
 });
 
@@ -82,7 +78,7 @@ test("a healthy sticky model does not fetch the model catalog",async()=>{
   process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
   globalThis.fetch=async(url)=>{
     calls.push(String(url));
-    return new Response(JSON.stringify({model:"nvidia/nemotron-3.5-lightning:free",choices:[{message:{content:"Take the left passage."}}]}),{status:200,headers:{"content-type":"application/json"}});
+    return new Response(JSON.stringify({model:"nvidia/nemotron-nano-12b-v2-vl:free",choices:[{message:{content:"Take the left passage."}}]}),{status:200,headers:{"content-type":"application/json"}});
   };
   try{
     const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody())}));
@@ -108,7 +104,7 @@ test("provider identity cannot escape the free allowlist",()=>{
 
 test("conversation history is sent as real provider roles instead of flattened prompt text",()=>{
   const body={...requestBody(),trigger:{type:"passing_thought"},navigationBelief:null,olderContextSummary:"ARIADNE: Earlier line.",recentMessages:[
-    {id:"a",role:"ariadne",text:"We have already begun.",time:1,kind:"observation"},
+    {id:"a",role:"ariadne",text:"We have already begun.",time:1},
     {id:"m",role:"player",text:"Keep going.",time:2},
   ]};
   const messages=buildProviderMessages(body);

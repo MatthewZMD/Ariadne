@@ -262,7 +262,7 @@ export default function Home(){
       const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",needsInstruction=!!route&&!!spokenInstruction&&!messageIdentifiesRoute(safeText,route),finalText=[safeText,needsInstruction?spokenInstruction:""].filter(Boolean).join(" ");
       const repeated=isRecentCompanionRepeat(finalText,messagesRef.current);
       if(finalText&&!repeated){
-        const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:safeReply.kind};
+        const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now()};
         const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);
         published=true;nextPassingThoughtRef.current=nextPassingThoughtAt(Date.now(),journeyRef.current.phase);
         messagePulseAtRef.current=Date.now();sceneChangesRef.current=sceneChangesRef.current.filter(change=>!sceneChangesAtRequest.includes(change));
@@ -274,7 +274,7 @@ export default function Home(){
         providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000);console.warn("ARIADNE request will retry after a transient failure",error);
         const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief,sceneChangesAtRequest[0]),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!messageIdentifiesRoute(fallback.message,route)?instruction:""] .filter(Boolean).join(" ");
         const repeated=isRecentCompanionRepeat(text,messagesRef.current);
-        if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now(),kind:fallback.kind};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(event.type==="initial_guidance"&&repeated)published=true;
+        if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now()};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(event.type==="initial_guidance"&&repeated)published=true;
       }
     }finally{
       clearTimeout(requestTimeout);
@@ -291,7 +291,7 @@ export default function Home(){
     if(closureStartedRef.current)return;closureStartedRef.current=true;heldRef.current.clear();document.exitPointerLock?.();pendingEventsRef.current=[];
     planningControllerRef.current?.controller.abort();planningControllerRef.current=null;
     if(activeRequestRef.current){activeRequestRef.current.preempted=true;activeRequestRef.current.controller.abort();activeRequestRef.current=null}requestInFlightRef.current=false;
-    const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalAriadneLine(reason),time:Date.now(),kind:"guidance"};
+    const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalAriadneLine(reason),time:Date.now()};
     const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);setCompanionStatus("LINK LOST");setChatOpen(false);setExperienceState("ending");
     closureTimerRef.current=setTimeout(()=>{closureTimerRef.current=null;setClosureRevealed(true)},2400);
   },[setExperienceState]);
@@ -430,7 +430,7 @@ export default function Home(){
     <section className="viewport-wrap" aria-label="Infinite first person maze game" aria-hidden={experience!=="playing"&&experience!=="paused"}><div className="viewport-label"><span>CAM_01 // {heading}</span><span className="objective-stars" aria-label={`${run.objective.collectedStars} of 4 stars collected`}>{starMarks}</span><span>{companionStatus} · ENTER CHAT · ESC PAUSE · N NEW SIGNAL</span></div>
         <canvas ref={canvasRef} width={1280} height={720} tabIndex={0} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()}
           onTouchStart={e=>{touchXRef.current=e.touches[0]?.clientX??null}} onTouchMove={e=>{const x=e.touches[0]?.clientX;if(x!==undefined&&touchXRef.current!==null){poseRef.current.angle=wrap(poseRef.current.angle+(x-touchXRef.current)*.0035);lastTurnRef.current=Date.now();pauseObservedRef.current=false}touchXRef.current=x??null}} onTouchEnd={()=>{touchXRef.current=null}}/>
-        <div className="vignette comfort-vignette"/>{companionMessages.length>0&&<div className={`ariadne-chat ${chatOpen?"chat-open":""}`} aria-live="polite">{companionMessages.slice(-5).map(message=><div key={message.id} className={`ariadne-chat-line ${message.role} ${message.kind==="environment"?"discovery":""}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<MT>"}</span> {message.text}</div>)}</div>}
+        <div className="vignette comfort-vignette"/>{companionMessages.length>0&&<div className={`ariadne-chat ${chatOpen?"chat-open":""}`} aria-live="polite">{companionMessages.slice(-5).map(message=><div key={message.id} className={`ariadne-chat-line ${message.role}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<MT>"}</span> {message.text}</div>)}</div>}
         {chatOpen&&<form className="minecraft-chat-input" onSubmit={sendToCompanion}><span>&gt;</span><input ref={chatInputRef} aria-label="Message ARIADNE" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.form?.requestSubmit()}else if(e.key==="Escape"){e.preventDefault();setChatOpen(false);setCompanionInput("");e.currentTarget.blur();canvasRef.current?.focus()}}} placeholder="Message ARIADNE"/></form>}
     </section>
   </main>;

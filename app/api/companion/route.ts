@@ -19,13 +19,12 @@ type ProviderPayload={model?:string;output_text?:string;output?:Array<{text?:str
 class ProviderAttemptError extends Error{readonly retryable:boolean;constructor(message:string,retryable:boolean){super(message);this.retryable=retryable}}
 
 const MAX_REQUEST_BYTES=64*1024;
-const replyKinds=["guidance","praise","apology","agreement","reframe","environment","reply","observation","silence"] as const;
 const routeDirections=["left","right","straight","back"] as const;
 const themes=["neutral","beach","tornado","ruins","frozen","foundry","cavern"] as const;
 const trajectoryChanges=["sustained_alignment","sustained_divergence","left_then_rejoined","same_waypoint_different_route","recommendation_visibly_contradicted"] as const;
 const goalByStars=["first_star","second_star","third_star","fourth_star","exit"] as const;
 const objectiveEvents=["searching","star_visible","star_collected","objective_changed"] as const;
-const FAST_FREE_MODELS=["nvidia/nemotron-3.5-lightning:free","dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free"];
+const FAST_FREE_MODELS=["nvidia/nemotron-nano-12b-v2-vl:free","nvidia/nemotron-nano-9b-v2:free","dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free"];
 
 type RecordValue=Record<string,unknown>;
 const isRecord=(value:unknown):value is RecordValue=>!!value&&typeof value==="object"&&!Array.isArray(value);
@@ -103,7 +102,7 @@ function isPerceivedScene(value:unknown):value is PromptPerceivedScene{
 
 function isMessage(value:unknown):value is CompanionMessage{
   if(!isRecord(value))return false;
-  return isString(value.id,160,1)&&(value.role==="ariadne"||value.role==="player")&&isString(value.text,500,1)&&isNumber(value.time,0,10_000_000_000_000)&&(value.kind===undefined||isEnum(value.kind,replyKinds));
+  return isString(value.id,160,1)&&(value.role==="ariadne"||value.role==="player")&&isString(value.text,500,1)&&isNumber(value.time,0,10_000_000_000_000);
 }
 
 function isArc(value:unknown):value is CompanionArc{
@@ -144,11 +143,10 @@ export function parseCompanionRequest(value:unknown):RequestBody|null{
 function validReply(value:unknown,routes:RouteOption[],belief:NavigationBelief|null):value is CompanionReply{
   if(!isRecord(value))return false;
   const selected=value.selectedRouteId,believedRoute=routes.find(route=>route.id===belief?.routeId);
-  return isString(value.message,320)&&(selected===null||selected===belief?.routeId)&&(selected===null||routes.some(route=>route.id===selected))&&(!believedRoute||!messageConflictsWithRoute(value.message,believedRoute))&&isEnum(value.kind,replyKinds);
+  return isString(value.message,320)&&(selected===null||selected===belief?.routeId)&&(selected===null||routes.some(route=>route.id===selected))&&(!believedRoute||!messageConflictsWithRoute(value.message,believedRoute));
 }
 
 export function acceptReply(reply:CompanionReply,routes:RouteOption[],allowedRouteId?:string|null):CompanionReply{
-  if(reply.kind==="silence")return{...reply,message:"",selectedRouteId:null};
   const selectedIsAllowed=routes.some(route=>route.id===reply.selectedRouteId)&&(allowedRouteId===undefined||reply.selectedRouteId===allowedRouteId);
   return{...reply,message:reply.message.trim().slice(0,320),selectedRouteId:selectedIsAllowed?reply.selectedRouteId:null};
 }
@@ -170,28 +168,19 @@ export function parseProviderReply(text:string,routes:RouteOption[],belief:Navig
   const cleaned=text.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");
   const start=cleaned.indexOf("{"),end=cleaned.lastIndexOf("}");
   const candidates=[cleaned,start>=0&&end>start?cleaned.slice(start,end+1):null].filter((value,index,all):value is string=>!!value&&all.indexOf(value)===index);
-  for(const candidate of candidates)try{const reply=JSON.parse(candidate) as unknown;if(validReply(reply,routes,belief))return reply}catch{continue}
+  for(const candidate of candidates)try{const reply=JSON.parse(candidate) as unknown;if(validReply(reply,routes,belief))return{message:reply.message,selectedRouteId:reply.selectedRouteId}}catch{continue}
   return null;
-}
-
-function inferredKind(event:CompanionEvent,hasRoute:boolean):CompanionReply["kind"]{
-  if(event.type==="player_message")return"reply";
-  if(event.type==="star_collected")return"praise";
-  if(event.type==="recommendation_contradicted"||event.type==="dead_end_visible")return"apology";
-  if(event.type==="environment_visible"||event.type==="environment_entered"||event.type==="scene_changed"||event.type==="star_visible")return"environment";
-  if(event.type==="trajectory_relationship_changed")return event.change==="sustained_divergence"?"reframe":"agreement";
-  return hasRoute?"guidance":"observation";
 }
 
 export const providerReplyRestartsJourney=(message:string)=>/\b(?:hi|hello),?\s*MT\b.{0,40}\bI[’']m Ariadne\b|\bI[’']m here to help you find four stars\b/i.test(message);
 
 function normalizeProviderReply(text:string,body:RequestBody){
   const mayIntroduce=body.trigger.type==="initial_guidance";
-  const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured&&!mayIntroduce&&providerReplyRestartsJourney(structured.message))return null;if(structured)return structured;
-  const message=text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^(["'])|(["'])$/g,"").trim();
+  const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured&&!mayIntroduce&&providerReplyRestartsJourney(structured.message))return null;if(structured)return{message:structured.message,selectedRouteId:structured.selectedRouteId};
+  const message=text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^\s*(?:<ARIADNE>|ARIADNE:)\s*/i,"").replace(/^(["'])|(["'])$/g,"").trim();
   const route=body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId)??null;
   if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithRoute(message,route))return null;
-  return{message,selectedRouteId:route?.id??null,kind:inferredKind(body.trigger,!!route)} satisfies CompanionReply;
+  return{message,selectedRouteId:route?.id??null} satisfies CompanionReply;
 }
 
 export function isVerifiedProviderModel(requested:string,actual:string|undefined,allowed:Set<string>){
@@ -249,18 +238,18 @@ function semanticEvent(event:CompanionEvent){
 }
 
 function statePrompt(body:RequestBody){
-  const setting=body.environment?`MT can see a ${body.environment.name}: ${body.environment.details.join(" and ")}.`:"No distinct setting is visible right now.";
+  const setting=body.environment?`${body.environment.name}; details: ${body.environment.details.join(", ")}`:"ordinary maze";
   const scene=body.perceivedScene,openings=scene.geometry.visibleOpenings.map(item=>item.description).join(", ")||"no open passage in the current view";
-  const objects=scene.objects.slice(0,6).map(item=>`${item.name} is ${item.action} ${item.direction.replace("_"," ")}`).join("; ")||"No distinct moving object is visible.";
-  const spectacles=scene.spectacles.slice(0,6).map(item=>item.description).join("; ")||"No large spectacle is active.";
-  const attention=[scene.mtAttention.lookingToward&&`MT is looking toward ${scene.mtAttention.lookingToward}`,scene.mtAttention.approaching&&`MT is approaching ${scene.mtAttention.approaching}`,scene.mtAttention.movingAwayFrom&&`MT is moving away from ${scene.mtAttention.movingAwayFrom}`,scene.mtAttention.pausedNear&&`MT is paused near ${scene.mtAttention.pausedNear}`].filter(Boolean).join("; ")||"MT's attention is not fixed on a particular visible object.";
-  const changes=body.sceneChanges.length?body.sceneChanges.map(change=>`- ${change}`).join("\n"):"Nothing visually important has changed since you last spoke.";
-  const previous=body.recommendation?.message??"You have not given a direction yet.";
+  const objects=scene.objects.slice(0,6).map(item=>`${item.direction.replace("_"," ")}/${item.distance}: ${item.name}, ${item.action}`).join("; ")||"none";
+  const spectacles=scene.spectacles.slice(0,6).map(item=>`${item.direction.replace("_"," ")}: ${item.description}`).join("; ")||"none";
+  const attention=[scene.mtAttention.lookingToward&&`looking toward ${scene.mtAttention.lookingToward}`,scene.mtAttention.approaching&&`approaching ${scene.mtAttention.approaching}`,scene.mtAttention.movingAwayFrom&&`leaving ${scene.mtAttention.movingAwayFrom}`,scene.mtAttention.pausedNear&&`paused beside ${scene.mtAttention.pausedNear}`].filter(Boolean).join("; ")||body.activity.state.replaceAll("_"," ");
+  const changes=body.sceneChanges.length?body.sceneChanges.map(change=>`- ${change}`).join("\n"):"none";
+  const previous=body.recommendation?.message??"none";
   const goalLabels={first_star:"the first star",second_star:"the second star",third_star:"the third star",fourth_star:"the fourth star",exit:"the exit"};
-  const goal=`MT has collected ${body.objective.collectedStars} of four stars. You are helping MT find ${goalLabels[body.objective.currentGoal]}. ${body.objective.activeStarVisible?"The current star is visible.":"The current objective is not visible."}`;
+  const goal=`${body.objective.collectedStars}/4 collected; seeking ${goalLabels[body.objective.currentGoal]}; ${body.objective.activeStarVisible?"star visible":"goal unseen"}`;
   const route=body.navigationBelief?body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId):null;
-  const belief=route?`You are convinced this is the best route toward the current objective: ${route.instruction}`:"You do not need to give a new direction in this response.";
-  return `<scene>\nCURRENT GOAL\n${goal}\n\nWHAT MT CAN SEE NOW\n${scene.geometry.facingDescription}. Visible ways: ${openings}. ${scene.geometry.visibleEndAhead?"The passage visibly ends ahead.":""}\n${setting}\nVisible activity: ${objects}\nLarger visible events: ${spectacles}\n\nWHAT HAS CHANGED SINCE YOU LAST SPOKE\n${changes}\n\nWHAT MT DID IN RESPONSE\n${attention}\n${body.activity.description.replaceAll("The player",PLAYER_NAME)}\n\nLATEST MOMENT\n${semanticEvent(body.trigger)}\n\nCURRENT GUIDANCE\n${previous}\n\nTRAJECTORY SINCE GUIDANCE\n${semanticMovement(body.recommendationEvidence)}\n\nCURRENT PHASE CARD\n${body.companionArc.performanceDirection}\n${body.companionArc.relationshipContext}\n\nWHAT YOU CURRENTLY BELIEVE\n${belief}\n</scene>`;
+  const belief=route?route.instruction:"no new direction needed";
+  return `<private_stage_card>\nGOAL: ${goal}\nVIEW: ways ${openings}; ahead ${scene.geometry.visibleEndAhead?"ends":"continues"}; setting ${setting}\nVISIBLE OBJECTS: ${objects}\nVISIBLE SPECTACLES: ${spectacles}\nCHANGES: ${changes}\nMT'S ACTION: ${attention}\nLATEST MOMENT: ${semanticEvent(body.trigger)}\nYOUR LAST WORDS: ${previous}\nPATH RELATIONSHIP: ${semanticMovement(body.recommendationEvidence)}\nACTING DIRECTION: ${body.companionArc.performanceDirection} ${body.companionArc.relationshipContext}\nYOUR BELIEF: ${belief}\n</private_stage_card>`;
 }
 
 type ProviderMessage={role:"system"|"user"|"assistant";content:string};
@@ -276,7 +265,7 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
   const isRouter=model==="openrouter/free";
   let response:Response;
   try{
-    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{effort:"none",exclude:true},max_tokens:90})});
+    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{enabled:false,exclude:true},include_reasoning:false,max_tokens:96,temperature:.85})});
   }catch(error){throw new ProviderAttemptError(error instanceof Error?error.message:"provider connection failed",true)}
   if(!response.ok){const detail=(await response.text()).slice(0,300),retryable=[403,404,408,409,425,429].includes(response.status)||response.status>=500;throw new ProviderAttemptError(`provider ${response.status}: ${detail}`,retryable)}
   const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);
