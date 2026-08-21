@@ -71,7 +71,7 @@ button { font: inherit; }
 .viewport-label { position: absolute; inset: 0 0 auto; z-index: 3; display: flex; justify-content: space-between; padding: 10px 12px; font-size: 10px; letter-spacing: .14em; color: #a9aa9c; background: linear-gradient(rgba(8,10,9,.85), transparent); }
 .objective-stars { position: absolute; left: 50%; transform: translateX(-50%); color: var(--amber); letter-spacing: .34em; font-size: 13px; text-shadow: 0 0 8px rgba(242,207,105,.35); }
 .star-pulse .viewport-wrap::after { content: ""; position: absolute; inset: 0; z-index: 6; pointer-events: none; background: rgba(242,207,105,.16); animation: star-collect .8s steps(5) forwards; }
-canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 7; touch-action: none; }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 7; touch-action: none; image-rendering: pixelated; }
 .vignette { pointer-events: none; position: absolute; inset: 0; z-index: 2; box-shadow: inset 0 0 90px rgba(0,0,0,.52), inset 0 0 20px rgba(0,0,0,.38); background: repeating-linear-gradient(0deg, rgba(255,255,255,.008) 0 1px, transparent 1px 5px); }
 .vignette.comfort-vignette { box-shadow: inset 0 0 150px 38px rgba(0,0,0,.58), inset 0 0 28px rgba(0,0,0,.5); }
 .console { border: 1px solid #3f443d; background: #111411; padding: 16px; display: flex; flex-direction: column; }

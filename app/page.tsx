@@ -10,6 +10,7 @@ import { messageConflictsWithRoute, messageIdentifiesRoute } from "./navigation-
 import { closureReason, finalAriadneLine, type ClosureReason } from "./closure";
 import { ClosureScreen, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
 import { acceleratedSpeed, advanceInputRamp, MOVE_ACCELERATION, TURN_ACCELERATION, type InputRamp } from "./movement";
+import { buildPerceivedScene, createSceneMemory, sceneForPrompt, type PerceivedScene, type VisualFrameState } from "./scene";
 
 const PLAYER_RADIUS=.18;
 type MemoryCell={tile:number;seenAt:number};
@@ -21,7 +22,7 @@ type Run={
 
 const wrap=(a:number)=>(a+Math.PI*2)%(Math.PI*2);
 const bearing=(a:number)=>["E","S","W","N"][Math.round(wrap(a)/(Math.PI/2))%4];
-const EVENT_PRIORITY:Record<CompanionEvent["type"],number>={initial_guidance:15,player_message:14,star_collected:13,star_visible:12,objective_changed:11,recommendation_contradicted:10,dead_end_visible:9,new_junction_visible:8,trajectory_relationship_changed:7,environment_visible:6,environment_entered:6,target_reached:5,same_target_reached_differently:5,revisited_position:2,sustained_backtrack:2,repeated_collision:2,idle:2,passing_thought:1};
+const EVENT_PRIORITY:Record<CompanionEvent["type"],number>={initial_guidance:15,player_message:14,star_collected:13,star_visible:12,objective_changed:11,recommendation_contradicted:10,dead_end_visible:9,new_junction_visible:8,trajectory_relationship_changed:7,scene_changed:7,environment_visible:6,environment_entered:6,target_reached:5,same_target_reached_differently:5,revisited_position:2,sustained_backtrack:2,repeated_collision:2,idle:2,passing_thought:1};
 const eventPriority=(event:CompanionEvent)=>EVENT_PRIORITY[event.type];
 const strongestCue=(cues:Array<CompanionCue|null>)=>cues.filter((cue):cue is CompanionCue=>!!cue).sort((a,b)=>eventPriority(b.event)-eventPriority(a.event))[0]??null;
 const objectiveIdentity=(run:Run)=>`${run.objective.stage}:${run.objective.activeStar?.id??"exit"}`;
@@ -95,6 +96,7 @@ export default function Home(){
   const generationControllerRef=useRef<AbortController|null>(null),planningControllerRef=useRef<{controller:AbortController;priority:number}|null>(null);
   const activeRequestRef=useRef<{controller:AbortController;priority:number;preempted:boolean;runEpoch:number;objectiveEpoch:number;objectiveIdentity:string}|null>(null);
   const exitSearchStartedAtRef=useRef<number|null>(null),closureStartedRef=useRef(false),closureTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const sceneRef=useRef<PerceivedScene|null>(null),sceneMemoryRef=useRef(createSceneMemory()),sceneChangesRef=useRef<string[]>([]),seenMajorScenesRef=useRef(new Set<string>()),lastSceneBuildRef=useRef(0),messagePulseAtRef=useRef(0);
   const setExperienceState=useCallback((next:ExperienceState)=>{experienceRef.current=next;setExperience(next)},[]);
   const applyRun=useCallback((next:Run)=>{
     ++runEpochRef.current;objectiveEpochRef.current++;greetingCompleteRef.current=false;
@@ -104,7 +106,7 @@ export default function Home(){
     const scheduler=createThemeScheduler(next.seed);next.anchors=[plantCheckpoint(next.world,1,1,scheduler.nextTheme() as ThemeId,scheduler.nextAt,next.spawnAngle)];
     next.entities=entitiesNear(next.seed,next.world,next.anchors,next.appearance,1.5,1.5);runRef.current=next;schedulerRef.current=scheduler;heldRef.current.clear();
     poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};lastCellRef.current="1,1";
-    guidanceRef.current=null;guidanceTraceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenPerceptionCuesRef.current=new Set();seenStarEventsRef.current=new Set();collectingStarRef.current=false;pendingEventsRef.current=[];activeDeadEndRef.current=null;activeJunctionRef.current=null;journeyRef.current=createJourneyState();journeyEncounterKeysRef.current=new Set();activeTravelAccumulatorRef.current=0;traceTravelAccumulatorRef.current=0;preferredModelRef.current=null;quietUntilRef.current=0;providerFailureRef.current=0;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;nextPassingThoughtRef.current=nextPassingThoughtAt(lastMovementRef.current,"charming");pauseObservedRef.current=false;exitSearchStartedAtRef.current=null;closureStartedRef.current=false;
+    guidanceRef.current=null;guidanceTraceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenPerceptionCuesRef.current=new Set();seenStarEventsRef.current=new Set();collectingStarRef.current=false;pendingEventsRef.current=[];activeDeadEndRef.current=null;activeJunctionRef.current=null;journeyRef.current=createJourneyState();journeyEncounterKeysRef.current=new Set();activeTravelAccumulatorRef.current=0;traceTravelAccumulatorRef.current=0;preferredModelRef.current=null;quietUntilRef.current=0;providerFailureRef.current=0;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;nextPassingThoughtRef.current=nextPassingThoughtAt(lastMovementRef.current,"charming");pauseObservedRef.current=false;exitSearchStartedAtRef.current=null;closureStartedRef.current=false;sceneRef.current=null;sceneMemoryRef.current=createSceneMemory();sceneChangesRef.current=[];seenMajorScenesRef.current=new Set();lastSceneBuildRef.current=0;messagePulseAtRef.current=0;
     if(closureTimerRef.current)clearTimeout(closureTimerRef.current);closureTimerRef.current=null;
     setCompanionMessages([]);setCompanionStatus("LISTENING");setCompanionInput("");setChatOpen(false);setStarPulse(false);setClosureRevealed(false);setHeading(bearing(next.spawnAngle));setRun(next);
   },[]);
@@ -152,7 +154,7 @@ export default function Home(){
       for(const[cell,value]of memory)if(moves-value.seenAt>80)memory.delete(cell);
       const pc=world.coords(x,y);anchors=anchors.filter(a=>Math.abs(world.coords(a.x,a.y).cx-pc.cx)<=CACHE_RADIUS+1&&Math.abs(world.coords(a.x,a.y).cy-pc.cy)<=CACHE_RADIUS+1);
       const appearanceProtected=new Set([...visible,...recent]),appearance=current.appearance;retainThemeMemory(appearance,appearanceProtected);
-      const entities=entitiesNear(current.seed,world,anchors,appearance,x+.5,y+.5);
+      const collageIntensity=Math.min(1,journeyRef.current.relationshipDepth/38+current.objective.collectedStars*.04),entities=entitiesNear(current.seed,world,anchors,appearance,x+.5,y+.5,collageIntensity);
       const next={...current,anchors,entities,memory,appearanceProtected,visited,recent,player:{x,y},moves,shifts,message,revision:current.revision+1};
       runRef.current=next;setRun(next);
   },[]);
@@ -161,6 +163,13 @@ export default function Home(){
     if(journeyEncounterKeysRef.current.has(key))return;
     journeyEncounterKeysRef.current.add(key);journeyRef.current=recordJourneyEncounter(journeyRef.current,kind);
   },[]);
+
+  const refreshScene=useCallback((movementState:"walking"|"turning"|"stationary"="stationary")=>{
+    const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),journey=journeyRef.current;
+    const result=buildPerceivedScene({seed:current.seed,world:current.world,anchors:current.anchors,entities:current.entities,pose,tick:current.moves,visibleCells:geometry.cells,routeDirections:routes.map(route=>route.direction),visibleJunction:geometry.junctions.length>0,visibleEndAhead:!!centeredDeadEnd(current.world,geometry,pose,current.moves),activeStar:current.objective.activeStar,phase:journey.phase,relationshipIntensity:Math.min(1,journey.relationshipDepth/38+current.objective.collectedStars*.04),collectedStars:current.objective.collectedStars,movementState,memory:sceneMemoryRef.current,reducedMotion});
+    sceneRef.current=result.scene;if(result.changes.length)sceneChangesRef.current=[...new Set([...sceneChangesRef.current,...result.changes])].slice(-12);
+    return result;
+  },[reducedMotion]);
 
   const collectActiveStar=useCallback(()=>{
     if(collectingStarRef.current)return;const current=runRef.current,active=current.objective.activeStar,pose=poseRef.current;
@@ -188,7 +197,7 @@ export default function Home(){
 
   const callCompanion=useCallback(async(event:CompanionEvent,playerMessage?:string,force=false)=>{
     const now=Date.now();
-    const eventKey=(value:CompanionEvent)=>value.type==="trajectory_relationship_changed"?`${value.type}:${value.change}`:value.type==="star_visible"||value.type==="star_collected"?`${value.type}:${value.starId}`:value.type;
+    const eventKey=(value:CompanionEvent)=>value.type==="trajectory_relationship_changed"?`${value.type}:${value.change}`:value.type==="star_visible"||value.type==="star_collected"?`${value.type}:${value.starId}`:value.type==="scene_changed"?`${value.type}:${value.sceneId}`:value.type;
     const queue=()=>{const key=eventKey(event),index=pendingEventsRef.current.findIndex(item=>eventKey(item.event)===key),queued={event,force,playerMessage};if(index>=0)pendingEventsRef.current[index]={...pendingEventsRef.current[index],...queued,force:pendingEventsRef.current[index].force||force};else pendingEventsRef.current.push(queued);pendingEventsRef.current.sort((a,b)=>eventPriority(b.event)-eventPriority(a.event));pendingEventsRef.current=pendingEventsRef.current.slice(0,6)};
     if(requestInFlightRef.current){queue();const active=activeRequestRef.current,planning=planningControllerRef.current;if(force&&active&&eventPriority(event)>active.priority){active.preempted=true;active.controller.abort()}if(force&&planning&&eventPriority(event)>planning.priority)planning.controller.abort();return}
     const phaseAtCall=journeyRef.current.phase,cooldown=companionCooldownMs(phaseAtCall);
@@ -196,7 +205,7 @@ export default function Home(){
     let current=runRef.current;const pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),environment=visibleEnvironment(current.anchors,geometry,pose);
     const currentRoutes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),visibleJunctionRoutes=event.type==="new_junction_visible"?planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited):[];
     const routes=routesForEvent(event,currentRoutes,visibleJunctionRoutes),egocentricView=describeEgocentricView(current.world,pose,current.moves,currentRoutes),intent=guidanceRef.current;
-    const activity=analyzePlayerActivity(trajectoryRef.current,now,lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0);
+    const activity=analyzePlayerActivity(trajectoryRef.current,now,lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0),sceneResult=refreshScene(activity.state==="turning_in_place"?"turning":activity.state),sceneAtRequest=sceneResult.scene,sceneChangesAtRequest=sceneChangesRef.current.slice(-8);
     const evidence=guidanceTraceRef.current?.evidence??null,currentArc=companionArc(journeyRef.current);
     const activeStarVisible=starVisible(current.world,current.objective,pose,current.moves);
     const navigationEvents=new Set<CompanionEvent["type"]>(["initial_guidance","new_junction_visible","dead_end_visible","recommendation_contradicted","target_reached","same_target_reached_differently","revisited_position","repeated_collision","player_message","star_visible","star_collected","objective_changed"]);
@@ -232,7 +241,7 @@ export default function Home(){
     let published=false;
     requestInFlightRef.current=true;lastCompanionCallRef.current=now;nextPassingThoughtRef.current=nextPassingThoughtAt(now,currentArc.phase);setCompanionStatus("THINKING");
     try{
-      const response=await fetch("/api/companion",{method:"POST",headers:{"content-type":"application/json"},signal:requestToken.controller.signal,body:JSON.stringify({sessionId:companionSessionRef.current,trigger:event,activity,recommendation:intent,recommendationEvidence:evidence,actualTrajectory:trajectoryRef.current.slice(-32),currentView:egocentricView,environment,rememberedMap:compactMap(current.memory,[current.player.x,current.player.y]),legalRoutes:routes,recentMessages:messagesRef.current.slice(-8),olderContextSummary:messagesRef.current.slice(0,-8).slice(-8).map(m=>`${m.role==="player"?"MT":"ARIADNE"}: ${m.text}`).join(" | "),companionArc:currentArc,objective:objectiveContext,navigationBelief:belief,playerMessage,preferredModelId:preferredModelRef.current})});
+      const response=await fetch("/api/companion",{method:"POST",headers:{"content-type":"application/json"},signal:requestToken.controller.signal,body:JSON.stringify({sessionId:companionSessionRef.current,trigger:event,activity,recommendation:intent,recommendationEvidence:evidence,actualTrajectory:trajectoryRef.current.slice(-32),currentView:egocentricView,environment,perceivedScene:sceneForPrompt(sceneAtRequest),sceneChanges:sceneChangesAtRequest,rememberedMap:compactMap(current.memory,[current.player.x,current.player.y]),legalRoutes:routes,recentMessages:messagesRef.current.slice(-8),olderContextSummary:messagesRef.current.slice(0,-8).slice(-8).map(m=>`${m.role==="player"?"MT":"ARIADNE"}: ${m.text}`).join(" | "),companionArc:currentArc,objective:objectiveContext,navigationBelief:belief,playerMessage,preferredModelId:preferredModelRef.current})});
       if(!requestIsCurrent())return;
       if(!response.ok)throw new Error(`companion request failed: ${response.status}`);
       const reply=await response.json() as CompanionReply&{source?:"provider"|"fallback";modelUsed?:string|null};
@@ -249,20 +258,21 @@ export default function Home(){
       if(selectedAtRequest&&!rebased&&event.type!=="initial_guidance")return;
       const route=rebased??(guidesNow?latestRoutes[0]??null:null);
       const replyText=event.type==="initial_guidance"&&selectedAtRequest&&!rebased?"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.":reply.message.trim();
-      const safeReply=route&&messageConflictsWithRoute(replyText,route)?deterministicReply(event,latestRoutes,environment,evidence,currentArc.phase,objectiveContext,belief):reply,safeText=safeReply===reply?replyText:safeReply.message;
+      const safeReply=route&&messageConflictsWithRoute(replyText,route)?deterministicReply(event,latestRoutes,environment,evidence,currentArc.phase,objectiveContext,belief,sceneChangesAtRequest[0]):reply,safeText=safeReply===reply?replyText:safeReply.message;
       const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",needsInstruction=!!route&&!!spokenInstruction&&!messageIdentifiesRoute(safeText,route),finalText=[safeText,needsInstruction?spokenInstruction:""].filter(Boolean).join(" ");
       const repeated=isRecentCompanionRepeat(finalText,messagesRef.current);
       if(finalText&&!repeated){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:safeReply.kind};
         const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);
         published=true;nextPassingThoughtRef.current=nextPassingThoughtAt(Date.now(),journeyRef.current.phase);
+        messagePulseAtRef.current=Date.now();sceneChangesRef.current=sceneChangesRef.current.filter(change=>!sceneChangesAtRequest.includes(change));
       }else if(event.type==="initial_guidance"&&repeated)published=true;
       const groundedReply={...safeReply,message:repeated?"":finalText},nextIntent=!repeated&&spokenInstruction?createGuidanceIntent(groundedReply,route,{...latestPose}):null;
       if(nextIntent){guidanceRef.current=nextIntent;guidanceTraceRef.current=createGuidanceTrace(nextIntent);traceTravelAccumulatorRef.current=0;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set(latestGeometry.cells.map(([x,y])=>cellKey(x,y)));newlyRevealedRef.current=new Set()}
     }catch(error){
       if(requestIsCurrent()){
         providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000);console.warn("ARIADNE request will retry after a transient failure",error);
-        const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!messageIdentifiesRoute(fallback.message,route)?instruction:""] .filter(Boolean).join(" ");
+        const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief,sceneChangesAtRequest[0]),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!messageIdentifiesRoute(fallback.message,route)?instruction:""] .filter(Boolean).join(" ");
         const repeated=isRecentCompanionRepeat(text,messagesRef.current);
         if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now(),kind:fallback.kind};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(event.type==="initial_guidance"&&repeated)published=true;
       }
@@ -274,7 +284,7 @@ export default function Home(){
         const pending=pendingEventsRef.current[0];if(pending?.force){pendingEventsRef.current.shift();queueMicrotask(()=>{void callCompanionRef.current(pending.event,pending.playerMessage,true)})}
       }
     }
-  },[]);
+  },[refreshScene]);
   useEffect(()=>{callCompanionRef.current=callCompanion},[callCompanion]);
 
   const beginClosure=useCallback((reason:ClosureReason)=>{
@@ -362,7 +372,7 @@ export default function Home(){
 
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
-    const resize=()=>{const rect=canvas.getBoundingClientRect(),scale=Math.min(devicePixelRatio||1,1.5);canvas.width=Math.max(1,Math.round(rect.width*scale));canvas.height=Math.max(1,Math.round(rect.height*scale))};
+    const resize=()=>{const rect=canvas.getBoundingClientRect(),logicalHeight=360;canvas.height=logicalHeight;canvas.width=Math.max(480,Math.min(960,Math.round(logicalHeight*rect.width/Math.max(1,rect.height))))};
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize();return()=>observer.disconnect();
   },[ready]);
 
@@ -385,10 +395,11 @@ export default function Home(){
         collectActiveStar();
       }
       const next=bearing(pose.angle);setHeading(old=>old===next?old:next);
-      const latest=runRef.current,ctx=canvasRef.current?.getContext("2d");if(ctx)renderWorld(ctx,latest.world,latest.anchors,latest.entities,latest.appearance,latest.appearanceProtected,pose,moving,reducedMotion,latest.moves,latest.objective.activeStar);
+      const latest=runRef.current;if(now-lastSceneBuildRef.current>140){lastSceneBuildRef.current=now;const result=refreshScene(moving?"walking":turn!==0?"turning":"stationary");if(result.majorFirstSeen&&greetingCompleteRef.current&&!seenMajorScenesRef.current.has(result.majorFirstSeen)){seenMajorScenesRef.current.add(result.majorFirstSeen);void callCompanion({type:"scene_changed",sceneId:result.majorFirstSeen})}}
+      const ctx=canvasRef.current?.getContext("2d");if(ctx){const journey=journeyRef.current,messagePulse=Math.max(0,1-(Date.now()-messagePulseAtRef.current)/1400),visual:VisualFrameState={time:now*.001,movementSpeed:moving?moveSpeed:0,turnRate:turn*turnSpeed,collisionPulse:Math.min(1,collisionRef.current/24),relationshipPhase:journey.phase,relationshipIntensity:Math.min(1,journey.relationshipDepth/38+latest.objective.collectedStars*.04),collectedStars:latest.objective.collectedStars,activeStarVisible:sceneRef.current?.objective.starVisible??false,visibleRouteCount:sceneRef.current?.geometry.visibleOpenings.length??0,messagePulse,reducedMotion};renderWorld(ctx,latest.world,latest.anchors,latest.entities,latest.appearance,latest.appearanceProtected,pose,moving,reducedMotion,latest.moves,latest.objective.activeStar,sceneRef.current,visual)}
       frame=requestAnimationFrame(tick);
     };frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
-  },[enterCell,callCompanion,collectActiveStar,reducedMotion]);
+  },[enterCell,callCompanion,collectActiveStar,reducedMotion,refreshScene]);
 
   const sendToCompanion=async(e:React.FormEvent)=>{
     e.preventDefault();const text=companionInput.trim();if(!text)return;setCompanionInput("");setChatOpen(false);chatInputRef.current?.blur();heldRef.current.clear();

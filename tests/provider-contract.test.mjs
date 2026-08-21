@@ -5,6 +5,7 @@ import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
 import { mentionedDirections, messageConflictsWithDirection, messageConflictsWithRoute, messageIdentifiesRoute } from "../app/navigation-contracts.ts";
 
 const routes=[{id:"left",direction:"left",knownCells:[[0,0]],targetCell:[0,0],targetRegionId:null,description:"",instruction:"Go left.",score:1}];
+const perceivedScene={setting:{primaryEnvironment:"neutral",blendedEnvironments:["neutral"],visibleDetails:["the shifting maze","moving fossils"]},geometry:{facingDescription:"MT is facing east",visibleOpenings:[{direction:"left",description:"an open passage on MT's left"},{direction:"straight",description:"an open passage ahead"}],visibleEndAhead:false,visibleJunction:true},objects:[{name:"a gold rune",direction:"left",distance:"mid",action:"rearranging its own pixels",firstSeen:true}],spectacles:[{description:"gold runes are falling upward along the walls",direction:"left",salience:"major",firstSeen:true}],objective:{starVisible:false,starDirection:null,starDistance:null},mtAttention:{lookingToward:null,approaching:null,movingAwayFrom:null,pausedNear:null}};
 
 test("provider prose passes through unchanged",()=>{
   const message="Oh—yes, your instinct was absolutely right.";
@@ -54,7 +55,7 @@ const requestBody=()=>({
   activity:{state:"walking",stationarySeconds:0,positionChangedSinceRecommendation:true,headingChangedSinceRecommendation:false,atVisibleChoice:true,description:"The player is walking."},
   recommendation:null,recommendationEvidence:null,actualTrajectory:[],
   currentView:{facing:"east",centerView:"the passage extends ahead",openings:["left","straight"],blocked:["right","back"],description:"The player can see two openings."},
-  environment:null,rememberedMap:"###\n#P.\n###",legalRoutes:routes,recentMessages:[],olderContextSummary:"",
+  environment:null,perceivedScene,sceneChanges:["gold runes are falling upward along the walls"],rememberedMap:"###\n#P.\n###",legalRoutes:routes,recentMessages:[],olderContextSummary:"",
   companionArc:{phase:"charming",performanceDirection:"React to the visible choice.",relationshipContext:"Nothing has settled yet."},
   objective:{collectedStars:0,currentGoal:"first_star",activeStarVisible:false,latestEvent:"searching"},
   navigationBelief:{id:"belief",objectiveStage:0,junctionId:"junction",routeId:"left",instruction:"Go left."},
@@ -66,6 +67,7 @@ test("companion request parsing validates nested prompt data and objective invar
   assert.equal(parseCompanionRequest({...requestBody(),legalRoutes:[{...routes[0],knownCells:[[Number.NaN,0]]}]}),null);
   assert.equal(parseCompanionRequest({...requestBody(),objective:{...requestBody().objective,currentGoal:"exit"}}),null);
   assert.equal(parseCompanionRequest({...requestBody(),navigationBelief:{...requestBody().navigationBelief,routeId:"not-supplied"}}),null);
+  assert.equal(parseCompanionRequest({...requestBody(),perceivedScene:{...perceivedScene,objects:[{...perceivedScene.objects[0],distance:"twelve metres"}]}}),null);
 });
 
 test("companion endpoint rejects declared and streamed oversized bodies",async()=>{
@@ -114,6 +116,7 @@ test("conversation history is sent as real provider roles instead of flattened p
   assert.equal(messages[2].content,"We have already begun.");
   assert.equal(messages[3].content,"Keep going.");
   assert.doesNotMatch(messages.at(-1).content,/RECENT CONVERSATION|We have already begun/);
+  assert.match(messages.at(-1).content,/gold runes are falling upward|rearranging its own pixels/);
   assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/Begin the first response exactly/i);
 });
 

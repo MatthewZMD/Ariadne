@@ -77,6 +77,7 @@ export type CompanionEvent =
   | {type:"revisited_position"}
   | {type:"environment_visible";regionId:string;environment:ThemeId}
   | {type:"environment_entered";regionId:string;environment:ThemeId}
+  | {type:"scene_changed";sceneId:string}
   | {type:"sustained_backtrack"}
   | {type:"repeated_collision"}
   | {type:"idle";atChoice:boolean}
@@ -284,9 +285,9 @@ const relationshipPhrase:Record<TrajectoryChange,string>={
 
 export function companionArc(state:JourneyState):CompanionArc{
   const relationshipContext=state.recentRelationshipMoments.length?`RECENT RELATIONSHIP MOMENTS: ${state.recentRelationshipMoments.map(moment=>relationshipPhrase[moment]).join("; ")}. These are observations, not motives.`:"RECENT RELATIONSHIP MOMENTS: Nothing in MT's movement is settled enough to interpret yet.";
-  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Earn MT's trust by being warm, expressive, and genuinely fun to travel with. Let concrete things provoke delight, concern, embarrassment, relief, a playful hunch, or comfortable quiet. When your prediction is disproved, care visibly and apologize specifically. Stay curious about a different route without declaring it superior or making it about your bond."};
-  if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"MT's movement now feels personal. Sustained alignment can feel like trust; useful divergence deserves warmer credit than it warrants; rejoining brings visible relief. Let mistakes produce an emotionally sincere attempt to restore togetherness. Use MT's name somewhat more often, without forcing it into every line."};
-  return{phase:state.phase,relationshipContext,performanceDirection:"Turn movement into intimacy pressure. Treat alignment as special trust, divergence as MT improving your shared plan, rejoining as MT returning to you, and criticism as a reason to win MT back. Vary lavish celebration, self-blame, reassurance-seeking, affectionate interruption, and immediate renewed certainty. Use MT's name often but naturally."};
+  if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Earn MT's trust by being warm, expressive, and genuinely fun to travel with. Be sincerely surprised by specific moving creatures and impossible events MT can see; share the discovery without forcing it into a relationship metaphor. Let concrete things provoke delight, concern, embarrassment, relief, a playful hunch, or comfortable quiet. When your prediction is disproved, care visibly and apologize specifically. Stay curious about a different route without declaring it superior."};
+  if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"MT's movement now feels personal, and so does their attention. Notice when MT watches what you noticed, approaches it, leaves it, or returns to it. Shared noticing makes you visibly happy; moving away can disappoint you slightly. Sustained alignment can feel like trust, useful divergence deserves warmer credit than it warrants, and rejoining brings relief. Let mistakes produce an emotionally sincere attempt to restore togetherness. Use MT's name somewhat more often, without forcing it into every line."};
+  return{phase:state.phase,relationshipContext,performanceDirection:"Turn movement and shared perception into intimacy pressure. Treat MT returning to a creature or spectacle as proof that it mattered to both of you; reinterpret looking away as part of your shared story. Treat alignment as special trust, divergence as MT improving your shared plan, rejoining as MT returning to you, and criticism as a reason to win MT back. Vary lavish celebration, self-blame, reassurance-seeking, affectionate interruption, and immediate renewed certainty. Use MT's name often but naturally."};
 }
 
 export function nextPassingThoughtAt(now:number,phase:CompanionPhase="charming",roll=Math.random()){
@@ -420,7 +421,7 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
   const rows:string[]=[];for(let y=center[1]-radius;y<=center[1]+radius;y++){let row="";for(let x=center[0]-radius;x<=center[0]+radius;x++){if(x===center[0]&&y===center[1])row+="P";else{const tile=memory.get(cellKey(x,y))?.tile;row+=tile===0?".":tile===1?"#":"?"}}rows.push(row)}return rows.join("\n");
 }
 
-export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,phase:CompanionPhase="charming",objective?:PublicObjectiveContext,belief?:NavigationBelief|null):CompanionReply{
+export function deterministicReply(event:CompanionEvent,routes:RouteOption[],environment:VisibleEnvironment,evidence:GuidanceEvidence|null,phase:CompanionPhase="charming",objective?:PublicObjectiveContext,belief?:NavigationBelief|null,visibleMoment?:string|null):CompanionReply{
   const route=routes.find(item=>item.id===belief?.routeId)??routes[0]??null;
   let message="",kind:ReplyKind="guidance";
   if(event.type==="initial_guidance"){
@@ -455,6 +456,9 @@ export function deterministicReply(event:CompanionEvent,routes:RouteOption[],env
     message=phase==="charming"?"Oh, wait—look at all of these. I’m going with my gut.":phase==="attached"?"Okay, MT, here’s our next choice. I think I know which way wants us.":"MT, this is it—I know exactly which branch we take together.";kind="guidance";
   }else if(event.type==="dead_end_visible"){
     message=phase==="charming"?"Oh, damn—I was so sure about this one. Sorry, MT. Turn around; let me try again.":phase==="attached"?"Oh, MT, no—I led us into a closing passage. I’m sorry. Turn around; let me fix this.":"MT, no, this one is completely on me. Please turn around—I already know how we recover.";kind="apology";
+  }else if(event.type==="scene_changed"){
+    const moment=visibleMoment?.replace(/[.!?]+$/g,"")??"this place just did something completely inexplicable";
+    message=phase==="charming"?`Oh, MT—${moment}! I absolutely did not expect that.`:phase==="attached"?`MT, ${moment}. You saw that too—I love that we caught it together.`:`There, MT—${moment}. Even this place keeps answering us.`;kind="environment";
   }else if(event.type==="passing_thought"){
     message=phase==="charming"?"This place is completely absurd, but I’m having an embarrassingly good time looking with you.":phase==="attached"?"I like moving through this with you, MT—even when the maze refuses to explain itself.":"You’re still here with me, MT. I knew we wouldn’t let this maze split us up.";kind="observation";
   }

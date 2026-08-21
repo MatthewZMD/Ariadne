@@ -1,6 +1,6 @@
 export type ThemeId = "neutral" | "beach" | "tornado" | "ruins" | "frozen" | "foundry" | "cavern";
 export type ThemeAnchor = { x: number; y: number; theme: ThemeId; bornAt: number; triggered: boolean };
-export type AmbientEntity = { x: number; y: number; kind: string; theme: ThemeId; phase: number; scale: number };
+export type AmbientEntity = { id:string; x: number; y: number; kind: string; theme: ThemeId; phase: number; scale: number };
 export type ThemeLayer = { id: ThemeId; influence: number };
 export type ThemeSample = { id: ThemeId; influence: number; layers: ThemeLayer[] };
 export type ThemeMemory = Map<string, ThemeSample>;

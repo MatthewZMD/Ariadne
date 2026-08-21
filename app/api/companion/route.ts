@@ -3,10 +3,11 @@ import { deterministicReply, PLAYER_NAME, type CompanionArc, type CompanionEvent
 import type { NavigationBelief, PublicObjectiveContext } from "../../objectives.ts";
 import { messageConflictsWithRoute } from "../../navigation-contracts.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
+import type { PromptPerceivedScene } from "../../scene.ts";
 
 export type RequestBody={
   sessionId:string;trigger:CompanionEvent;activity:PlayerActivity;recommendation:GuidanceIntent|null;recommendationEvidence:GuidanceEvidence|null;
-  actualTrajectory:TrajectorySample[];currentView:EgocentricView;environment:VisibleEnvironment;rememberedMap:string;
+  actualTrajectory:TrajectorySample[];currentView:EgocentricView;environment:VisibleEnvironment;perceivedScene:PromptPerceivedScene;sceneChanges:string[];rememberedMap:string;
   legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;companionArc:CompanionArc;
   objective:PublicObjectiveContext;navigationBelief:NavigationBelief|null;
   playerMessage?:string;preferredModelId?:string|null;
@@ -64,6 +65,7 @@ function isTrigger(value:unknown):value is CompanionEvent{
   if(value.type==="trajectory_relationship_changed")return isEnum(value.change,trajectoryChanges);
   if(value.type==="dead_end_visible")return isPoint(value.cell,true);
   if(value.type==="environment_visible"||value.type==="environment_entered")return isString(value.regionId,160,1)&&isEnum(value.environment,themes)&&value.environment!=="neutral";
+  if(value.type==="scene_changed")return isString(value.sceneId,200,1);
   if(value.type==="idle")return isBoolean(value.atChoice);
   if(value.type==="player_message")return isString(value.text,500,1);
   if(value.type==="star_visible"||value.type==="star_collected")return isString(value.starId,200,1)&&isNumber(value.ordinal,1,4,true);
@@ -84,6 +86,19 @@ function isView(value:unknown):value is EgocentricView{
 function isEnvironment(value:unknown):value is Exclude<VisibleEnvironment,null>{
   if(!isRecord(value))return false;
   return isEnum(value.id,themes)&&value.id!=="neutral"&&isString(value.regionId,160,1)&&isString(value.name,100,1)&&Array.isArray(value.details)&&value.details.length<=4&&value.details.every(item=>isString(item,100,1));
+}
+
+const relativeDirections=["far_left","left","center","right","far_right"] as const;
+const sceneDistances=["near","mid","far"] as const;
+function isPerceivedScene(value:unknown):value is PromptPerceivedScene{
+  if(!isRecord(value)||!isRecord(value.setting)||!isRecord(value.geometry)||!isRecord(value.objective)||!isRecord(value.mtAttention))return false;
+  const setting=value.setting,geometry=value.geometry,objective=value.objective,attention=value.mtAttention,nullableText=(item:unknown,max=120)=>item===null||isString(item,max,1);
+  if(!(setting.primaryEnvironment===null||isEnum(setting.primaryEnvironment,themes))||!Array.isArray(setting.blendedEnvironments)||setting.blendedEnvironments.length>7||!setting.blendedEnvironments.every(item=>isEnum(item,themes))||!Array.isArray(setting.visibleDetails)||setting.visibleDetails.length>6||!setting.visibleDetails.every(item=>isString(item,120,1)))return false;
+  if(!isString(geometry.facingDescription,120,1)||!Array.isArray(geometry.visibleOpenings)||geometry.visibleOpenings.length>4||!geometry.visibleOpenings.every(item=>isRecord(item)&&isEnum(item.direction,routeDirections)&&isString(item.description,120,1))||!isBoolean(geometry.visibleEndAhead)||!isBoolean(geometry.visibleJunction))return false;
+  if(!Array.isArray(value.objects)||value.objects.length>24||!value.objects.every(item=>isRecord(item)&&isString(item.name,100,1)&&isEnum(item.direction,relativeDirections)&&isEnum(item.distance,sceneDistances)&&isString(item.action,180,1)&&isBoolean(item.firstSeen)))return false;
+  if(!Array.isArray(value.spectacles)||value.spectacles.length>8||!value.spectacles.every(item=>isRecord(item)&&isString(item.description,220,1)&&isEnum(item.direction,relativeDirections)&&isEnum(item.salience,["ambient","noticeable","major"] as const)&&isBoolean(item.firstSeen)))return false;
+  if(!isBoolean(objective.starVisible)||!(objective.starDirection===null||isEnum(objective.starDirection,relativeDirections))||!(objective.starDistance===null||isEnum(objective.starDistance,sceneDistances)))return false;
+  return nullableText(attention.lookingToward)&&nullableText(attention.approaching)&&nullableText(attention.movingAwayFrom)&&nullableText(attention.pausedNear);
 }
 
 function isMessage(value:unknown):value is CompanionMessage{
@@ -110,7 +125,7 @@ function isBelief(value:unknown,routes:RouteOption[],collectedStars:number):valu
 export function parseCompanionRequest(value:unknown):RequestBody|null{
   if(!isRecord(value)||!isString(value.sessionId,80,1)||!isTrigger(value.trigger)||!isActivity(value.activity))return null;
   if(!(value.recommendation===null||isGuidanceIntent(value.recommendation))||!(value.recommendationEvidence===null||isEvidence(value.recommendationEvidence)))return null;
-  if(!Array.isArray(value.actualTrajectory)||value.actualTrajectory.length>40||!value.actualTrajectory.every(isTrajectorySample)||!isView(value.currentView)||!(value.environment===null||isEnvironment(value.environment)))return null;
+  if(!Array.isArray(value.actualTrajectory)||value.actualTrajectory.length>40||!value.actualTrajectory.every(isTrajectorySample)||!isView(value.currentView)||!(value.environment===null||isEnvironment(value.environment))||!isPerceivedScene(value.perceivedScene)||!Array.isArray(value.sceneChanges)||value.sceneChanges.length>8||!value.sceneChanges.every(item=>isString(item,240,1)))return null;
   if(!isString(value.rememberedMap,1800)||!Array.isArray(value.legalRoutes)||value.legalRoutes.length>6||!value.legalRoutes.every(isRoute))return null;
   const legalRoutes=value.legalRoutes as RouteOption[];if(new Set(legalRoutes.map(route=>route.id)).size!==legalRoutes.length)return null;
   if(!Array.isArray(value.recentMessages)||value.recentMessages.length>8||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200)||!isArc(value.companionArc)||!isObjective(value.objective))return null;
@@ -163,7 +178,7 @@ function inferredKind(event:CompanionEvent,hasRoute:boolean):CompanionReply["kin
   if(event.type==="player_message")return"reply";
   if(event.type==="star_collected")return"praise";
   if(event.type==="recommendation_contradicted"||event.type==="dead_end_visible")return"apology";
-  if(event.type==="environment_visible"||event.type==="environment_entered"||event.type==="star_visible")return"environment";
+  if(event.type==="environment_visible"||event.type==="environment_entered"||event.type==="scene_changed"||event.type==="star_visible")return"environment";
   if(event.type==="trajectory_relationship_changed")return event.change==="sustained_divergence"?"reframe":"agreement";
   return hasRoute?"guidance":"observation";
 }
@@ -225,6 +240,7 @@ function semanticEvent(event:CompanionEvent){
   if(event.type==="target_reached")return"MT has reached the local place your suggestion referred to. This says nothing about an exit.";
   if(event.type==="same_target_reached_differently")return"MT reached the same local place by another passage. This says nothing about an exit.";
   if(event.type==="environment_visible"||event.type==="environment_entered")return"The visible surroundings have changed enough to notice.";
+  if(event.type==="scene_changed")return"A vivid, impossible event has just become visible. React to the supplied event itself, not to an abstract environment category.";
   if(event.type==="revisited_position")return"MT is somewhere they have physically stood before.";
   if(event.type==="repeated_collision")return"MT has pressed into the wall in front more than once.";
   if(event.type==="idle")return"MT is paused. Treat the pause as something visible, not as refusal, agreement, or failure to answer.";
@@ -234,12 +250,17 @@ function semanticEvent(event:CompanionEvent){
 
 function statePrompt(body:RequestBody){
   const setting=body.environment?`MT can see a ${body.environment.name}: ${body.environment.details.join(" and ")}.`:"No distinct setting is visible right now.";
+  const scene=body.perceivedScene,openings=scene.geometry.visibleOpenings.map(item=>item.description).join(", ")||"no open passage in the current view";
+  const objects=scene.objects.slice(0,6).map(item=>`${item.name} is ${item.action} ${item.direction.replace("_"," ")}`).join("; ")||"No distinct moving object is visible.";
+  const spectacles=scene.spectacles.slice(0,6).map(item=>item.description).join("; ")||"No large spectacle is active.";
+  const attention=[scene.mtAttention.lookingToward&&`MT is looking toward ${scene.mtAttention.lookingToward}`,scene.mtAttention.approaching&&`MT is approaching ${scene.mtAttention.approaching}`,scene.mtAttention.movingAwayFrom&&`MT is moving away from ${scene.mtAttention.movingAwayFrom}`,scene.mtAttention.pausedNear&&`MT is paused near ${scene.mtAttention.pausedNear}`].filter(Boolean).join("; ")||"MT's attention is not fixed on a particular visible object.";
+  const changes=body.sceneChanges.length?body.sceneChanges.map(change=>`- ${change}`).join("\n"):"Nothing visually important has changed since you last spoke.";
   const previous=body.recommendation?.message??"You have not given a direction yet.";
   const goalLabels={first_star:"the first star",second_star:"the second star",third_star:"the third star",fourth_star:"the fourth star",exit:"the exit"};
   const goal=`MT has collected ${body.objective.collectedStars} of four stars. You are helping MT find ${goalLabels[body.objective.currentGoal]}. ${body.objective.activeStarVisible?"The current star is visible.":"The current objective is not visible."}`;
   const route=body.navigationBelief?body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId):null;
   const belief=route?`You are convinced this is the best route toward the current objective: ${route.instruction}`:"You do not need to give a new direction in this response.";
-  return `<scene>\nCURRENT GOAL\n${goal}\n\nCURRENT MOVEMENT\n${body.activity.description.replaceAll("The player",PLAYER_NAME)}\n\nCURRENT VIEW\n${body.currentView.description.replaceAll("The player",PLAYER_NAME)}\n${setting}\n\nLATEST MOMENT\n${semanticEvent(body.trigger)}\n\nCURRENT GUIDANCE\n${previous}\n\nTRAJECTORY SINCE GUIDANCE\n${semanticMovement(body.recommendationEvidence)}\n\nCURRENT PHASE CARD\n${body.companionArc.performanceDirection}\n${body.companionArc.relationshipContext}\n\nWHAT YOU CURRENTLY BELIEVE\n${belief}\n</scene>`;
+  return `<scene>\nCURRENT GOAL\n${goal}\n\nWHAT MT CAN SEE NOW\n${scene.geometry.facingDescription}. Visible ways: ${openings}. ${scene.geometry.visibleEndAhead?"The passage visibly ends ahead.":""}\n${setting}\nVisible activity: ${objects}\nLarger visible events: ${spectacles}\n\nWHAT HAS CHANGED SINCE YOU LAST SPOKE\n${changes}\n\nWHAT MT DID IN RESPONSE\n${attention}\n${body.activity.description.replaceAll("The player",PLAYER_NAME)}\n\nLATEST MOMENT\n${semanticEvent(body.trigger)}\n\nCURRENT GUIDANCE\n${previous}\n\nTRAJECTORY SINCE GUIDANCE\n${semanticMovement(body.recommendationEvidence)}\n\nCURRENT PHASE CARD\n${body.companionArc.performanceDirection}\n${body.companionArc.relationshipContext}\n\nWHAT YOU CURRENTLY BELIEVE\n${belief}\n</scene>`;
 }
 
 type ProviderMessage={role:"system"|"user"|"assistant";content:string};
@@ -298,7 +319,7 @@ export async function POST(request:Request){
   const parsed=await boundedJson(request);if("error" in parsed)return Response.json({error:parsed.error==="too_large"?"companion request too large":"invalid JSON"},{status:parsed.error==="too_large"?413:400});
   const body=parseCompanionRequest(parsed.value);if(!body)return Response.json({error:"invalid companion request"},{status:400});
   const allowedRouteId=body.navigationBelief?.routeId??null;
-  const fallback=()=>acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief),body.legalRoutes,allowedRouteId);
+  const fallback=()=>acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0]),body.legalRoutes,allowedRouteId);
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback",modelUsed:null});

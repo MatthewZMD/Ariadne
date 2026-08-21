@@ -2,6 +2,8 @@ import { hash32, type InfiniteWorld } from "./world.mjs";
 import { THEMES, rememberedThemeAt, themeAt, type AmbientEntity, type ThemeAnchor, type ThemeMemory, type ThemeSample } from "./themes";
 import { CAMERA_FOV } from "./camera";
 import { visibleStarProjection, type StarObjective } from "./objectives";
+import type { PerceivedScene, VisualFrameState } from "./scene";
+import { atlasFrame } from "./sprite-atlas";
 
 export type Pose = { x:number; y:number; angle:number; bob:number };
 type Ray = {distance:number;mapX:number;mapY:number;side:number;u:number};
@@ -89,6 +91,7 @@ function cast(world:InfiniteWorld,pose:Pose,angle:number,tick:number):Ray{
 function sprite(ctx:CanvasRenderingContext2D,x:number,y:number,size:number,kind:string,color:string,time:number,phase:number){
   const unit=Math.max(1,Math.floor(size/7));ctx.save();ctx.translate(Math.round(x),Math.round(y));
   ctx.fillStyle="rgba(5,7,6,.36)";ctx.fillRect(-unit*3,unit*3,unit*6,unit);
+  const atlas=atlasFrame(kind,time,phase);if(atlas){const drawSize=Math.max(8,Math.round(size)),bounce=Math.round(Math.sin(time*3+phase)*unit*.45);ctx.drawImage(atlas.atlas,atlas.source.sx,atlas.source.sy,atlas.source.size,atlas.source.size,-drawSize/2,-drawSize/2+bounce,drawSize,drawSize);ctx.restore();return}
   ctx.fillStyle=color;
   if(["crab","frog","moth","glowmoth"].includes(kind)){
     const flap=Math.sin(time*4+phase)>0?1:0;ctx.fillRect(-unit*2,-unit,unit*4,unit*3);
@@ -104,10 +107,50 @@ function sprite(ctx:CanvasRenderingContext2D,x:number,y:number,size:number,kind:
 
 function objectiveStar(ctx:CanvasRenderingContext2D,x:number,y:number,size:number,time:number){
   const unit=Math.max(2,Math.floor(size/9)),pulse=1+Math.sin(time*3)*.08;ctx.save();ctx.translate(Math.round(x),Math.round(y-Math.sin(time*2.2)*unit));ctx.scale(pulse,pulse);
+  const halo=ctx.createRadialGradient(0,0,unit,0,0,unit*8);halo.addColorStop(0,"rgba(255,241,155,.38)");halo.addColorStop(.4,"rgba(242,168,54,.18)");halo.addColorStop(1,"rgba(242,168,54,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*8,-unit*8,unit*16,unit*16);
+  for(let i=0;i<6;i++){const angle=time*(i%2?-.7:.9)+i*Math.PI/3,orbit=unit*(5+(i%2));ctx.fillStyle=i%2?"#fff2ad":"#e99b45";ctx.fillRect(Math.round(Math.cos(angle)*orbit),Math.round(Math.sin(angle)*orbit),unit,unit)}
   ctx.fillStyle="rgba(8,7,3,.45)";ctx.fillRect(-unit*3,unit*4,unit*6,unit);
   ctx.fillStyle="#f2cf69";ctx.fillRect(-unit,-unit*4,unit*2,unit*8);ctx.fillRect(-unit*4,-unit,unit*8,unit*2);
   ctx.fillRect(-unit*3,-unit*2,unit*2,unit*2);ctx.fillRect(unit,-unit*2,unit*2,unit*2);ctx.fillRect(-unit*2,unit,unit,unit*3);ctx.fillRect(unit,unit,unit,unit*3);
   ctx.fillStyle="#fff2ad";ctx.fillRect(-unit,-unit*3,unit,unit*3);ctx.restore();
+}
+
+function renderSpectacles(ctx:CanvasRenderingContext2D,scene:PerceivedScene,pose:Pose,depths:Float32Array,horizon:number,time:number,intensity:number,reducedMotion:boolean){
+  const{width,height}=ctx.canvas,t=reducedMotion?0:time,density=Math.max(4,Math.round(7+intensity*11));ctx.save();ctx.imageSmoothingEnabled=false;
+  for(const spectacle of scene.spectacles){
+    const dx=spectacle.worldPosition[0]-pose.x,dy=spectacle.worldPosition[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
+    if(dist<=.35||dist>12||Math.abs(rel)>FOV*.58)continue;
+    const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.2)continue;
+    const size=Math.min(height*.78,height/Math.max(.5,corrected)*(spectacle.salience==="major"?.8:.48)),sy=horizon+height/(dist*3.8)-size*.18;
+    const seed=hash32(spectacle.id),accent=THEMES[spectacle.theme].accent,kind=spectacle.visualKind;
+    const envelope=reducedMotion?1:spectacle.salience==="major"?Math.min(1,spectacle.progress*5,(1-spectacle.progress)*5):1,travel=!reducedMotion&&spectacle.salience==="major"?(spectacle.progress-.5)*54:0;
+    ctx.globalAlpha=(spectacle.salience==="ambient"?.28:.48+intensity*.2)*envelope;
+    ctx.save();ctx.translate(Math.round(sx),Math.round(sy));ctx.scale(size/100,size/100);
+    if(kind==="masonry-fish"||kind==="frog-parade"||kind==="steam-animals"||kind==="moth-orbit"||kind==="crab-orchestra"||kind==="leaf-whale"||kind==="page-bird"||kind==="umbrella-storm"||kind==="spore-whale"){
+      for(let i=0;i<density;i++){const phase=t*(kind==="moth-orbit"?1.5:.55)+i*1.7+seed%13,x=travel+Math.sin(phase)*(18+i/density*22),y=-20+(i%5)*9+Math.cos(phase*1.3)*5,unit=2+(i%3);ctx.fillStyle=i%4===0?"#ff6d9f":i%3===0?"#71e0dd":i%2?accent:"#f3d66e";ctx.fillRect(Math.round(x),Math.round(y),unit*3,unit);ctx.fillRect(Math.round(x+(i%2?unit*3:-unit)),Math.round(y-unit),unit,unit*3)}
+    }else if(kind==="water-caustics"||kind==="crystal-rainbow"||kind==="breathing-light"||kind==="lightning-color"){
+      const bands=kind==="crystal-rainbow"?["#ff5d73","#ffcb4d","#75e4b3","#73b8ff","#c783ff"]:[accent,"#f3d66e","#7ee4db"];
+      for(let i=0;i<density;i++){const x=-43+((Math.sin(t*(.4+i*.02)+i)*18+i*13)%86),y=-38+(i%7)*11;ctx.fillStyle=bands[i%bands.length]!;ctx.fillRect(Math.round(x),Math.round(y),14+i%3*4,2+(i%3))}
+    }else if(kind==="page-current"||kind==="debris-wheel"||kind==="sand-ribbon"||kind==="warning-flock"||kind==="shell-fountain"||kind==="ice-curtain"||kind==="crystal-dance"){
+      for(let i=0;i<density;i++){const angle=t*.7+i/density*Math.PI*2,radius=18+(i%density)*2,x=travel+Math.cos(angle)*radius,y=-8+Math.sin(angle)*radius*.55;ctx.fillStyle=i%3===0?"#f3ead2":accent;ctx.fillRect(Math.round(x),Math.round(y),6+i%3*3,3)}
+    }else if(kind==="vine-writing"||kind==="living-pipes"||kind==="frost-bloom"||kind==="book-breath"||kind==="pipe-creature"||kind==="lightning-ladder"){
+      ctx.strokeStyle=accent;ctx.lineWidth=3;ctx.beginPath();for(let i=0;i<18;i++){const x=travel+(i-9)*5,y=-12+Math.sin(t+i*.7)*18+i%3*7;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}ctx.stroke();
+      for(let i=0;i<8;i++){ctx.fillStyle=i%2?accent:"#f2d06f";ctx.fillRect(Math.round(travel+(i-4)*11),Math.round(-12+Math.sin(t+i)*20),5,5)}
+    }else if(kind==="ceiling-mouth"||kind==="furnace-grin"||kind==="watching-eyes"||kind==="statue-turn"){
+      const open=.25+Math.abs(Math.sin(t*1.5+seed))*.75;ctx.fillStyle="#ffcf57";ctx.fillRect(Math.round(-45+travel),-48,90,Math.round(8+open*25));ctx.fillStyle="#30102f";ctx.fillRect(Math.round(-35+travel),-41,70,Math.round(open*15));ctx.fillStyle="#fff1ad";ctx.fillRect(Math.round(-25+travel),-46,9,7);ctx.fillRect(Math.round(18+travel),-46,9,7);
+    }else{
+      const palette=["#ff5d73","#ffcb4d","#75e4b3","#73b8ff","#c783ff",accent];for(let i=0;i<density;i++){const x=travel+Math.sin(t*.6+i*2.4)*42,y=-42+((i*17+(kind.includes("rain")?-t*34:t*18))%84+84)%84;ctx.fillStyle=palette[(i+seed)%palette.length]!;ctx.fillRect(Math.round(x),Math.round(y),2+i%3,2+i%3)}
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha=1;ctx.restore();
+}
+
+function renderAriadneThread(ctx:CanvasRenderingContext2D,time:number,visual:VisualFrameState){
+  const{width,height}=ctx.canvas,intensity=Math.max(.08,visual.relationshipIntensity),count=visual.relationshipPhase==="charming"?1:visual.relationshipPhase==="attached"?2:4,pulse=.35+visual.messagePulse*.65;ctx.save();ctx.fillStyle="#e9bd52";ctx.globalAlpha=(.22+intensity*.3)*pulse;
+  for(let strand=0;strand<count;strand++)for(let i=0;i<42;i++){const p=i/41,side=strand%2===0?1:-1,x=side>0?width-(6+strand*7+Math.sin(time*1.4+p*9+strand)*5):6+strand*7+Math.sin(time*1.4+p*9+strand)*5,y=p*height,unit=visual.relationshipPhase==="overbearing"&&i%7===0?4:2;ctx.fillRect(Math.round(x),Math.round(y),unit,unit)}
+  if(visual.messagePulse>.05)for(let i=0;i<18;i++){const angle=i/18*Math.PI*2+time,radius=(1-visual.messagePulse)*width*.18+18;ctx.fillRect(Math.round(width/2+Math.cos(angle)*radius),Math.round(height*.47+Math.sin(angle)*radius*.45),3,3)}
+  ctx.restore();
 }
 
 function wallSprite(ctx:CanvasRenderingContext2D,x:number,top:number,width:number,height:number,u:number,kind:string,accent:string,alpha:number){
@@ -137,19 +180,22 @@ function wallSprite(ctx:CanvasRenderingContext2D,x:number,top:number,width:numbe
   ctx.globalAlpha=1;ctx.restore();
 }
 
-export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor[],appearance:ThemeMemory,x:number,y:number):AmbientEntity[]{
+export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor[],appearance:ThemeMemory,x:number,y:number,collageIntensity=0):AmbientEntity[]{
   const out:AmbientEntity[]=[];
+  const rememberedThemes=[...new Set(anchors.filter(anchor=>anchor.triggered).map(anchor=>anchor.theme))];
   for(let cy=Math.floor(y)-9;cy<=Math.floor(y)+9;cy++)for(let cx=Math.floor(x)-9;cx<=Math.floor(x)+9;cx++){
     if(world.tile(cx,cy)!==0)continue;const info=appearance.get(`${cx},${cy}`)??themeAt(anchors,cx,cy);if(info.id==="neutral")continue;
-    const h=hash32(seed,"entity",cx,cy);if(h%17!==0||((h>>>8)%100)/100>info.influence)continue;const def=THEMES[info.id];const pool=h%3===0?def.life:def.props;
-    out.push({x:cx+.5,y:cy+.5,kind:pool[h%pool.length],theme:info.id,phase:(h%628)/100,scale:.65+(h%50)/100});
+    const h=hash32(seed,"entity",cx,cy);if(h%17!==0||((h>>>8)%100)/100>info.influence)continue;let entityTheme=info.id;
+    if(rememberedThemes.length>1&&((h>>>14)%100)/100<collageIntensity*.38)entityTheme=rememberedThemes[(h>>>20)%rememberedThemes.length]!;
+    const def=THEMES[entityTheme],pool=h%3===0?def.life:def.props;
+    const kind=pool[h%pool.length];out.push({id:`entity:${cx}:${cy}:${kind}`,x:cx+.5,y:cy+.5,kind,theme:entityTheme,phase:(h%628)/100,scale:.65+(h%50)/100});
   }return out;
 }
 
-export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anchors:ThemeAnchor[],entities:AmbientEntity[],appearance:ThemeMemory,protectedCells:Set<string>,pose:Pose,moving:boolean,reducedMotion:boolean,tick:number,activeStar:StarObjective|null=null){
+export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anchors:ThemeAnchor[],entities:AmbientEntity[],appearance:ThemeMemory,protectedCells:Set<string>,pose:Pose,moving:boolean,reducedMotion:boolean,tick:number,activeStar:StarObjective|null=null,scene:PerceivedScene|null=null,visual:VisualFrameState|null=null){
   const{width,height}=ctx.canvas,time=reducedMotion?0:performance.now()*.001;const here=themeAt(anchors,pose.x,pose.y),neutral=THEMES.neutral;
   const behavior=!reducedMotion?(here.id==="beach"?Math.sin(time*2)*2:here.id==="tornado"?Math.sin(time*5)*1.5:here.id==="frozen"?Math.sin(time)*.7:0):0;
-  const bob=moving&&!reducedMotion?Math.sin(pose.bob)*3.2:0,horizon=height*.47+bob+behavior;
+  const bob=moving&&!reducedMotion?Math.sin(pose.bob)*3.2:0,lean=!reducedMotion?(visual?.turnRate??0)*height*.008:0,collision=!reducedMotion?(visual?.collisionPulse??0)*Math.sin(time*22)*3:0,horizon=height*.47+bob+behavior+lean+collision;
   const ceiling=ctx.createLinearGradient(0,0,0,horizon);ceiling.addColorStop(0,neutral.ceiling);ceiling.addColorStop(1,"#282923");ctx.fillStyle=ceiling;ctx.fillRect(0,0,width,horizon);
   const floor=ctx.createLinearGradient(0,horizon,0,height);floor.addColorStop(0,neutral.floor);floor.addColorStop(1,"#10120f");ctx.fillStyle=floor;ctx.fillRect(0,horizon,width,height-horizon);
   renderPlanes(ctx,anchors,appearance,protectedCells,pose,horizon,height,reducedMotion);
@@ -174,11 +220,14 @@ export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anc
     const spriteChance=seed%5===0&&theme.influence>.08;
     if(spriteChance){const wallKind=wall.wallSprites[seed%wall.wallSprites.length];wallSprite(ctx,x,top,cw,wallH,ray.u,wallKind,wall.accent,(.18+theme.influence*.64)*(1-fog*.7))}
   }
-  const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<12).sort((a,b)=>b.dist-a.dist).slice(0,28);
+  if(scene)renderSpectacles(ctx,scene,pose,depths,horizon,time,visual?.relationshipIntensity??0,reducedMotion);
+  const perceivedIds=scene?new Set(scene.objects.map(object=>object.id)):null;
+  const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>(!perceivedIds||perceivedIds.has(v.e.id))&&Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<12).sort((a,b)=>b.dist-a.dist).slice(0,28);
   for(const v of visible){const sx=(.5+v.rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS)));if(v.dist>depths[rayIndex]+.2)continue;const size=Math.min(120,height/v.dist*.33*v.e.scale),sy=horizon+height/(v.dist*3.8);sprite(ctx,sx,sy,size,v.e.kind,THEMES[v.e.theme].accent,time,v.e.phase)}
   if(activeStar){const projection=visibleStarProjection(world,activeStar,pose,tick,12,FOV);
     if(projection){const {distance:dist,relativeAngle:rel}=projection,sx=(.5+rel/FOV)*width,size=Math.min(150,height/dist*.42),sy=horizon+height/(dist*3.8);objectiveStar(ctx,sx,sy,size,time)}
   }
+  if(visual)renderAriadneThread(ctx,time,visual);
   const vignette=ctx.createRadialGradient(width/2,horizon,height*.12,width/2,horizon,width*.72);vignette.addColorStop(0,"rgba(0,0,0,0)");vignette.addColorStop(1,"rgba(3,4,3,.43)");ctx.fillStyle=vignette;ctx.fillRect(0,0,width,height);
   ctx.fillStyle="rgba(220,215,194,.45)";ctx.fillRect(width/2-7,horizon,14,1);ctx.fillRect(width/2,horizon-7,1,14);
   ctx.fillStyle="rgba(0,0,0,.05)";for(let y=0;y<height;y+=5)ctx.fillRect(0,y,width,1);
