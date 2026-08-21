@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { InfiniteWorld, THEME_IDS, chunkTopology, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
+import { CHUNK_SIZE, InfiniteWorld, LOGICAL_SPACING, THEME_IDS, chunkTopology, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
 
 test("shared portals match across positive and negative chunk seams", () => {
   const seed=192837;
@@ -22,17 +22,19 @@ test("every chunk has one connected walkable network containing all portals",()=
   }
 });
 
-test("chunks contain frequent meaningful dead ends instead of mostly through-corridors",()=>{
-  let cells=0,deadEnds=0,corridors=0,junctions=0,chunksWithTenDeadEnds=0;
+test("long corridors separate decisions while preserving branches and dead ends",()=>{
+  let cells=0,deadEnds=0,corridors=0,junctions=0;
   for(let seed=1;seed<=240;seed++){
     const topology=chunkTopology(generateChunk(seed,(seed%13)-6,(seed%17)-8,seed%4));
     cells+=topology.logicalCells;deadEnds+=topology.deadEnds;corridors+=topology.corridors;junctions+=topology.junctions;
-    if(topology.deadEnds>=10)chunksWithTenDeadEnds++;
   }
+  assert.equal(LOGICAL_SPACING,4);
+  assert.equal(cells/240,16);
   assert.ok(deadEnds/cells>=.24,`dead-end rate was only ${deadEnds/cells}`);
   assert.ok(corridors/cells<.55,`corridor rate was ${corridors/cells}`);
   assert.ok(junctions/cells>=.2,`junction rate was only ${junctions/cells}`);
-  assert.ok(chunksWithTenDeadEnds>=180,`only ${chunksWithTenDeadEnds} chunks had ten dead ends`);
+  assert.ok(junctions/240<6,`average junction count was ${junctions/240}`);
+  assert.ok(junctions/(240*CHUNK_SIZE*CHUNK_SIZE)<.025,`physical decision density was ${junctions/(240*CHUNK_SIZE*CHUNK_SIZE)}`);
 });
 
 test("infinite coordinates stream through a bounded cache",()=>{

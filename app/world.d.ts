@@ -1,5 +1,6 @@
 export const CHUNK_SIZE: number;
 export const CACHE_RADIUS: number;
+export const LOGICAL_SPACING: number;
 export const THEME_IDS: string[];
 export const floorDiv: (n:number,d:number)=>number;
 export const mod: (n:number,d:number)=>number;

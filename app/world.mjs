@@ -1,5 +1,8 @@
 export const CHUNK_SIZE = 16;
 export const CACHE_RADIUS = 3;
+export const LOGICAL_SPACING = 4;
+const LOGICAL_MIN = 1;
+const LOGICAL_MAX = CHUNK_SIZE - 3;
 export const THEME_IDS = ["beach", "tornado", "ruins", "frozen", "foundry", "cavern"];
 
 export const floorDiv = (n, d) => Math.floor(n / d);
@@ -30,7 +33,8 @@ export function seededRandom(seed) {
 }
 
 function edgeOffset(seed, axis, a, b) {
-  return 1 + 2 * (hash32(seed, "edge", axis, a, b) % 7);
+  const positions = Math.floor((LOGICAL_MAX - LOGICAL_MIN) / LOGICAL_SPACING) + 1;
+  return LOGICAL_MIN + LOGICAL_SPACING * (hash32(seed, "edge", axis, a, b) % positions);
 }
 
 export function portalsFor(seed, cx, cy) {
@@ -54,9 +58,9 @@ export function generateChunk(seed, cx, cy, epoch = 0) {
   const tiles = Array.from({ length: CHUNK_SIZE }, () => Array(CHUNK_SIZE).fill(1));
   const seen = new Set([cellKey(1, 1)]), frontier = [];
   const addFrontier = (x, y) => {
-    for (const [dx,dy] of [[2,0],[-2,0],[0,2],[0,-2]]) {
+    for (const [dx,dy] of [[LOGICAL_SPACING,0],[-LOGICAL_SPACING,0],[0,LOGICAL_SPACING],[0,-LOGICAL_SPACING]]) {
       const nx=x+dx,ny=y+dy;
-      if(nx>0&&ny>0&&nx<15&&ny<15&&!seen.has(cellKey(nx,ny)))frontier.push({x,y,nx,ny});
+      if(nx>=LOGICAL_MIN&&ny>=LOGICAL_MIN&&nx<=LOGICAL_MAX&&ny<=LOGICAL_MAX&&!seen.has(cellKey(nx,ny)))frontier.push({x,y,nx,ny});
     }
   };
   tiles[1][1] = 0;
@@ -65,14 +69,14 @@ export function generateChunk(seed, cx, cy, epoch = 0) {
     const index=Math.floor(random()*frontier.length),edge=frontier[index];
     frontier[index]=frontier[frontier.length-1];frontier.pop();
     const id=cellKey(edge.nx,edge.ny);if(seen.has(id))continue;
-    seen.add(id);tiles[(edge.y+edge.ny)/2][(edge.x+edge.nx)/2]=0;tiles[edge.ny][edge.nx]=0;
+    seen.add(id);carveLine(tiles,edge.x,edge.y,edge.nx,edge.ny);
     addFrontier(edge.nx,edge.ny);
   }
   const portals = portalsFor(seed, cx, cy);
   carveLine(tiles, portals.north, 0, portals.north, 1);
-  carveLine(tiles, portals.south, 15, portals.south, 13);
+  carveLine(tiles, portals.south, 15, portals.south, LOGICAL_MAX);
   carveLine(tiles, 0, portals.west, 1, portals.west);
-  carveLine(tiles, 15, portals.east, 13, portals.east);
+  carveLine(tiles, 15, portals.east, LOGICAL_MAX, portals.east);
   return { cx, cy, epoch, tiles, lastTouched: 0 };
 }
 
@@ -161,7 +165,7 @@ export function connectedTileCount(chunk) {
 
 export function chunkTopology(chunk) {
   let deadEnds=0,corridors=0,junctions=0,logicalCells=0;
-  for(let y=1;y<15;y+=2)for(let x=1;x<15;x+=2){
+  for(let y=LOGICAL_MIN;y<=LOGICAL_MAX;y+=LOGICAL_SPACING)for(let x=LOGICAL_MIN;x<=LOGICAL_MAX;x+=LOGICAL_SPACING){
     if(chunk.tiles[y][x]!==0)continue;logicalCells++;
     const degree=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>chunk.tiles[y+dy]?.[x+dx]===0).length;
     if(degree===1)deadEnds++;else if(degree===2)corridors++;else if(degree>=3)junctions++;
