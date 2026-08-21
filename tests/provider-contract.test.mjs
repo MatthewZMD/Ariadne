@@ -75,6 +75,25 @@ test("companion endpoint rejects declared and streamed oversized bodies",async()
   assert.equal(streamed.status,413);
 });
 
+test("a healthy sticky model does not fetch the model catalog",async()=>{
+  const originalFetch=globalThis.fetch,originalProvider=process.env.AI_PROVIDER,originalKey=process.env.OPENROUTER_API_KEY,calls=[];
+  process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
+  globalThis.fetch=async(url)=>{
+    calls.push(String(url));
+    return new Response(JSON.stringify({model:"nvidia/nemotron-3.5-lightning:free",choices:[{message:{content:"Take the left passage."}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody())}));
+    const reply=await response.json();
+    assert.equal(reply.source,"provider");
+    assert.deepEqual(calls,["https://openrouter.ai/api/v1/chat/completions"]);
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;
+    if(originalKey===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=originalKey;
+  }
+});
+
 test("provider identity cannot escape the free allowlist",()=>{
   const allowed=new Set(["free/model-a","free/model-b"]);
   assert.equal(isVerifiedProviderModel("free/model-a","free/model-a",allowed),true);

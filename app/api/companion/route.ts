@@ -265,7 +265,7 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
 }
 
 async function openRouter(body:RequestBody,apiKey:string):Promise<ProviderResult>{
-  const startedAt=Date.now(),deadline=startedAt+8000,catalogRequest=freeModels(apiKey);
+  const startedAt=Date.now(),deadline=startedAt+8000;
   const cachedModels=modelCache?.models??[],knownAtStart=new Set([...FAST_FREE_MODELS,...cachedModels]);
   const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)?body.preferredModelId:null;
   const attempts=[...new Set([preferred,FAST_FREE_MODELS[0]].filter((model):model is string=>!!model))];
@@ -274,7 +274,7 @@ async function openRouter(body:RequestBody,apiKey:string):Promise<ProviderResult
     const remaining=deadline-Date.now();if(remaining<800)break;
     try{return await requestOpenRouter(body,apiKey,model,knownAtStart,Math.min(4500,remaining))}catch(error){lastError=error}
   }
-  const available=await catalogRequest,allowed=new Set([...FAST_FREE_MODELS,...available]);
+  const available=await freeModels(apiKey),allowed=new Set([...FAST_FREE_MODELS,...available]);
   const alternate=available.find(model=>!attempts.includes(model));
   const remaining=deadline-Date.now();
   if(remaining>=800){
