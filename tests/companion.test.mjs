@@ -163,7 +163,27 @@ test("a visible intersection produces advance turn options",()=>{
   const memory=new Map([...open].map(key=>[key,{tile:0}])),pose={x:.5,y:.5,angle:0,bob:0},geometry=forwardVisibleGeometry(world,pose,0);
   const routes=planVisibleJunctionRoutes(world,pose,0,geometry,memory,new Set(["0,0","1,0"]));
   assert.deepEqual(routes.map(item=>item.direction).sort(),["left","straight"]);
-  assert.match(instructionForCurrentChoice(routes.find(item=>item.direction==="left"),routes),/^Take the left when you get there\.$/);
+  assert.match(instructionForCurrentChoice(routes.find(item=>item.direction==="left"),routes),/^Take the passage on your left when you get there\.$/);
+});
+
+test("multiple visible passages on one side receive grounded ordinals",()=>{
+  const open=new Set(["0,0","1,0","2,0","3,0","4,0","5,0","2,-1","4,-1"]),world={tile:(x,y)=>open.has(`${x},${y}`)?0:1};
+  const memory=new Map([...open].map(key=>[key,{tile:0}])),pose={x:.5,y:.5,angle:0,bob:0};
+  const geometry={cells:[...open].map(key=>key.split(",").map(Number)),junctions:[{id:"junction:2,0",cell:[2,0],open:["1,0","3,0","2,-1"]},{id:"junction:4,0",cell:[4,0],open:["3,0","5,0","4,-1"]}],corridorEnds:[],summary:""};
+  const left=planVisibleJunctionRoutes(world,pose,0,geometry,memory,new Set()).filter(route=>route.direction==="left").sort((a,b)=>a.openingOrdinal-b.openingOrdinal);
+  assert.equal(left.length,2);
+  assert.deepEqual(left.map(route=>route.openingOrdinal),[1,2]);
+  assert.deepEqual(left.map(route=>route.instruction),["Take the first passage on your left.","Take the second passage on your left."]);
+});
+
+test("an opening beside MT counts before a farther opening on the same side",()=>{
+  const open=new Set(["-1,0","0,0","0,-1","1,0","2,0","3,0","2,-1"]),world={tile:(x,y)=>open.has(`${x},${y}`)?0:1};
+  const memory=new Map([...open].map(key=>[key,{tile:0}])),pose={x:.5,y:.5,angle:0,bob:0};
+  const geometry={cells:[...open].map(key=>key.split(",").map(Number)),junctions:[{id:"junction:0,0",cell:[0,0],open:["-1,0","1,0","0,-1"]},{id:"junction:2,0",cell:[2,0],open:["1,0","3,0","2,-1"]}],corridorEnds:[],summary:""};
+  const left=planVisibleJunctionRoutes(world,pose,0,geometry,memory,new Set()).filter(route=>route.direction==="left").sort((a,b)=>a.openingOrdinal-b.openingOrdinal);
+  assert.equal(left[0].decisionPoint,"current");
+  assert.equal(left[0].instruction,"Take the first passage on your left.");
+  assert.equal(left[1].instruction,"Take the second passage on your left.");
 });
 
 test("visible-junction routing follows a bent visible corridor",()=>{

@@ -1,7 +1,7 @@
 import process from "node:process";
 import { deterministicReply, PLAYER_NAME, type CompanionArc, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type GuidanceIntent, type PlayerActivity, type RouteOption, type TrajectorySample, type VisibleEnvironment } from "../../companion.ts";
 import type { NavigationBelief, PublicObjectiveContext } from "../../objectives.ts";
-import { messageConflictsWithDirection } from "../../navigation-contracts.ts";
+import { messageConflictsWithRoute } from "../../navigation-contracts.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 
 export type RequestBody={
@@ -39,7 +39,8 @@ const nullablePoint=(value:unknown)=>value===null||isPoint(value,true);
 function isRoute(value:unknown):value is RouteOption{
   if(!isRecord(value))return false;
   return isString(value.id,160,1)&&isEnum(value.direction,routeDirections)&&isPointArray(value.knownCells,24)&&value.knownCells.length>0&&nullablePoint(value.targetCell)&&(value.targetRegionId===null||isString(value.targetRegionId,160,1))&&isString(value.description,240)&&isString(value.instruction,160)&&isNumber(value.score)&&
-    (value.decisionPoint===undefined||value.decisionPoint==="current"||value.decisionPoint==="upcoming")&&(value.decisionCell===undefined||isPoint(value.decisionCell,true));
+    (value.decisionPoint===undefined||value.decisionPoint==="current"||value.decisionPoint==="upcoming")&&(value.decisionCell===undefined||isPoint(value.decisionCell,true))&&
+    (value.openingOrdinal===undefined||isNumber(value.openingOrdinal,1,12,true))&&(value.sameSideOpeningCount===undefined||isNumber(value.sameSideOpeningCount,2,12,true));
 }
 
 function isTrajectorySample(value:unknown):value is TrajectorySample{
@@ -128,7 +129,7 @@ export function parseCompanionRequest(value:unknown):RequestBody|null{
 function validReply(value:unknown,routes:RouteOption[],belief:NavigationBelief|null):value is CompanionReply{
   if(!isRecord(value))return false;
   const selected=value.selectedRouteId,believedRoute=routes.find(route=>route.id===belief?.routeId);
-  return isString(value.message,320)&&(selected===null||selected===belief?.routeId)&&(selected===null||routes.some(route=>route.id===selected))&&(!believedRoute||!messageConflictsWithDirection(value.message,believedRoute.direction))&&isEnum(value.kind,replyKinds);
+  return isString(value.message,320)&&(selected===null||selected===belief?.routeId)&&(selected===null||routes.some(route=>route.id===selected))&&(!believedRoute||!messageConflictsWithRoute(value.message,believedRoute))&&isEnum(value.kind,replyKinds);
 }
 
 export function acceptReply(reply:CompanionReply,routes:RouteOption[],allowedRouteId?:string|null):CompanionReply{
@@ -174,7 +175,7 @@ function normalizeProviderReply(text:string,body:RequestBody){
   const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured&&!mayIntroduce&&providerReplyRestartsJourney(structured.message))return null;if(structured)return structured;
   const message=text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^(["'])|(["'])$/g,"").trim();
   const route=body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId)??null;
-  if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithDirection(message,route.direction))return null;
+  if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithRoute(message,route))return null;
   return{message,selectedRouteId:route?.id??null,kind:inferredKind(body.trigger,!!route)} satisfies CompanionReply;
 }
 

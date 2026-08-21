@@ -13,6 +13,8 @@ export type RouteOption={
   score:number;
   decisionPoint?:"current"|"upcoming";
   decisionCell?:Point;
+  openingOrdinal?:number;
+  sameSideOpeningCount?:number;
 };
 
 export function mentionedDirections(message:string){
@@ -27,4 +29,32 @@ export function mentionedDirections(message:string){
 export function messageConflictsWithDirection(message:string,direction:RouteDirection){
   const mentioned=mentionedDirections(message);
   return mentioned.size>0&&([...mentioned].some(item=>item!==direction)||!mentioned.has(direction));
+}
+
+const ordinalWords=["","first","second","third","fourth","fifth","sixth","seventh","eighth","ninth","tenth","eleventh","twelfth"];
+
+export function openingOrdinalWord(ordinal:number){
+  return ordinalWords[ordinal]??`${ordinal}th`;
+}
+
+function mentionedOpeningOrdinals(message:string){
+  const found=new Set<number>();
+  ordinalWords.slice(1).forEach((word,index)=>{
+    if(new RegExp(`\\b${word}\\s+(?:opening|passage|branch|door|way)\\b`,"i").test(message))found.add(index+1);
+  });
+  for(const match of message.matchAll(/\b(\d+)(?:st|nd|rd|th)\s+(?:opening|passage|branch|door|way)\b/gi))found.add(Number(match[1]));
+  return found;
+}
+
+export function messageIdentifiesRoute(message:string,route:RouteOption){
+  if(!mentionedDirections(message).has(route.direction))return false;
+  if(!route.openingOrdinal)return true;
+  return mentionedOpeningOrdinals(message).has(route.openingOrdinal);
+}
+
+export function messageConflictsWithRoute(message:string,route:RouteOption){
+  if(messageConflictsWithDirection(message,route.direction))return true;
+  if(!route.openingOrdinal)return false;
+  const ordinals=mentionedOpeningOrdinals(message);
+  return ordinals.size>0&&!ordinals.has(route.openingOrdinal);
 }

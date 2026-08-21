@@ -6,7 +6,7 @@ import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
 import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestVisibleJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, rebaseSelectedRoute, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type TrajectorySample } from "./companion";
 import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, releaseStarRoute, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
-import { mentionedDirections, messageConflictsWithDirection } from "./navigation-contracts";
+import { messageConflictsWithRoute, messageIdentifiesRoute } from "./navigation-contracts";
 import { closureReason, finalAriadneLine, type ClosureReason } from "./closure";
 import { ClosureScreen, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
 import { acceleratedSpeed, advanceInputRamp, MOVE_ACCELERATION, TURN_ACCELERATION, type InputRamp } from "./movement";
@@ -24,7 +24,6 @@ const bearing=(a:number)=>["E","S","W","N"][Math.round(wrap(a)/(Math.PI/2))%4];
 const EVENT_PRIORITY:Record<CompanionEvent["type"],number>={initial_guidance:15,player_message:14,star_collected:13,star_visible:12,objective_changed:11,recommendation_contradicted:10,dead_end_visible:9,new_junction_visible:8,trajectory_relationship_changed:7,environment_visible:6,environment_entered:6,target_reached:5,same_target_reached_differently:5,revisited_position:2,sustained_backtrack:2,repeated_collision:2,idle:2,passing_thought:1};
 const eventPriority=(event:CompanionEvent)=>EVENT_PRIORITY[event.type];
 const strongestCue=(cues:Array<CompanionCue|null>)=>cues.filter((cue):cue is CompanionCue=>!!cue).sort((a,b)=>eventPriority(b.event)-eventPriority(a.event))[0]??null;
-const includesDirection=(message:string,direction:"left"|"right"|"straight"|"back")=>mentionedDirections(message).has(direction);
 const objectiveIdentity=(run:Run)=>`${run.objective.stage}:${run.objective.activeStar?.id??"exit"}`;
 
 function visibleCells(world:InfiniteWorld,pose:Pose,tick:number){
@@ -250,8 +249,8 @@ export default function Home(){
       if(selectedAtRequest&&!rebased&&event.type!=="initial_guidance")return;
       const route=rebased??(guidesNow?latestRoutes[0]??null:null);
       const replyText=event.type==="initial_guidance"&&selectedAtRequest&&!rebased?"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.":reply.message.trim();
-      const safeReply=route&&messageConflictsWithDirection(replyText,route.direction)?deterministicReply(event,latestRoutes,environment,evidence,currentArc.phase,objectiveContext,belief):reply,safeText=safeReply===reply?replyText:safeReply.message;
-      const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",needsInstruction=!!route&&!!spokenInstruction&&!includesDirection(safeText,route.direction),finalText=[safeText,needsInstruction?spokenInstruction:""].filter(Boolean).join(" ");
+      const safeReply=route&&messageConflictsWithRoute(replyText,route)?deterministicReply(event,latestRoutes,environment,evidence,currentArc.phase,objectiveContext,belief):reply,safeText=safeReply===reply?replyText:safeReply.message;
+      const spokenInstruction=guidesNow?instructionForCurrentChoice(route,latestRoutes):"",needsInstruction=!!route&&!!spokenInstruction&&!messageIdentifiesRoute(safeText,route),finalText=[safeText,needsInstruction?spokenInstruction:""].filter(Boolean).join(" ");
       const repeated=isRecentCompanionRepeat(finalText,messagesRef.current);
       if(finalText&&!repeated){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now(),kind:safeReply.kind};
@@ -263,7 +262,7 @@ export default function Home(){
     }catch(error){
       if(requestIsCurrent()){
         providerFailureRef.current++;nextPassingThoughtRef.current=Date.now()+Math.min(5000*providerFailureRef.current,15000);console.warn("ARIADNE request will retry after a transient failure",error);
-        const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!includesDirection(fallback.message,route.direction)?instruction:""] .filter(Boolean).join(" ");
+        const fallback=deterministicReply(event,routes,environment,evidence,currentArc.phase,objectiveContext,belief),route=routes.find(item=>item.id===belief?.routeId)??null,instruction=route?instructionForCurrentChoice(route,routes):"",text=[fallback.message,instruction&&route&&!messageIdentifiesRoute(fallback.message,route)?instruction:""] .filter(Boolean).join(" ");
         const repeated=isRecentCompanionRepeat(text,messagesRef.current);
         if(text&&!repeated){const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now(),kind:fallback.kind};const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);published=true}else if(event.type==="initial_guidance"&&repeated)published=true;
       }

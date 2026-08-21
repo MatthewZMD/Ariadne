@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { POST, acceptReply, buildProviderMessages, extractProviderText, isVerifiedProviderModel, parseCompanionRequest, parseProviderReply, providerReplyRestartsJourney } from "../app/api/companion/route.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
-import { mentionedDirections, messageConflictsWithDirection } from "../app/navigation-contracts.ts";
+import { mentionedDirections, messageConflictsWithDirection, messageConflictsWithRoute, messageIdentifiesRoute } from "../app/navigation-contracts.ts";
 
 const routes=[{id:"left",direction:"left",knownCells:[[0,0]],targetCell:[0,0],targetRegionId:null,description:"",instruction:"Go left.",score:1}];
 
@@ -23,6 +23,14 @@ test("directional prose cannot contradict the controller belief",()=>{
   assert.equal(messageConflictsWithDirection("I have a good feeling about this.","right"),false);
   assert.equal(messageConflictsWithDirection("You’re absolutely right, MT.","left"),false);
   assert.equal(mentionedDirections("You left that passage behind us.").size,0);
+});
+
+test("a route ordinal is part of the navigation contract",()=>{
+  const secondLeft={...routes[0],openingOrdinal:2,sameSideOpeningCount:2,instruction:"Take the second passage on your left."};
+  assert.equal(messageIdentifiesRoute("Take the second passage on your left.",secondLeft),true);
+  assert.equal(messageIdentifiesRoute("Turn left.",secondLeft),false);
+  assert.equal(messageConflictsWithRoute("Take the first passage on your left.",secondLeft),true);
+  assert.equal(messageConflictsWithRoute("I trust this one.",secondLeft),false);
 });
 
 test("silence has no message or route",()=>{

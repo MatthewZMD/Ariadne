@@ -3,7 +3,7 @@ import { themeAt, type ThemeAnchor, type ThemeId } from "./themes.ts";
 import { CAMERA_FOV } from "./camera.ts";
 import type { Pose } from "./renderer.ts";
 import type { NavigationBelief, PublicObjectiveContext } from "./objectives.ts";
-import type { Point, RouteDirection, RouteOption } from "./navigation-contracts.ts";
+import { openingOrdinalWord, type Point, type RouteDirection, type RouteOption } from "./navigation-contracts.ts";
 export type { Point, RouteDirection, RouteOption } from "./navigation-contracts.ts";
 
 export type ReplyKind = "guidance" | "praise" | "apology" | "agreement" | "reframe" | "environment" | "reply" | "observation" | "silence";
@@ -220,18 +220,30 @@ export function planVisibleJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:num
       parents.set(key,current);queue.push(neighbor);
     }
   }
-  const distanceToPlayer=(cell:Point)=>Math.hypot(cell[0]+.5-pose.x,cell[1]+.5-pose.y);
-  const junction=geometry.junctions.filter(item=>parents.has(pointKey(item.cell))).sort((a,b)=>distanceToPlayer(a.cell)-distanceToPlayer(b.cell))[0];
-  if(!junction)return[];
-  const path:Point[]=[];let cursor:Point|null=junction.cell;
-  while(cursor){path.unshift(cursor);cursor=parents.get(pointKey(cursor))??null}
-  if(path.length===1)return planRoutes(world,pose,tick,memory,visited).map(route=>({...route,decisionPoint:"current" as const,decisionCell:junction.cell}));
-  const approach=path.at(-2)!,step:Point=[junction.cell[0]-approach[0],junction.cell[1]-approach[1]],arrivalPose:Pose={x:junction.cell[0]+.5,y:junction.cell[1]+.5,angle:Math.atan2(step[1],step[0]),bob:0};
-  return openNeighbors(world,junction.cell[0],junction.cell[1],tick).filter(cell=>!same(cell,approach)).map((branch,index)=>{
-    const direction=relativeDirection(arrivalPose,branch),knownVisits=visited.has(pointKey(branch))?1:0,frontierBonus=openNeighbors(world,branch[0],branch[1],tick).filter(cell=>!memory.has(pointKey(cell))).length;
-    const instruction=direction==="straight"?"Go straight when you get there.":direction==="back"?"Turn around when you get there.":`Take the ${direction} when you get there.`;
-    return{id:`approach:${pointKey(junction.cell)}:${pointKey(branch)}:${index}`,direction,knownCells:[...path.slice(1),branch],targetCell:branch,targetRegionId:null,description:instruction,instruction,score:frontierBonus*4-knownVisits*2+(direction==="straight"?1:0),decisionPoint:"upcoming" as const,decisionCell:junction.cell};
-  }).sort((a,b)=>b.score-a.score);
+  const reachable=geometry.junctions.filter(item=>parents.has(pointKey(item.cell))).map(junction=>{
+    const path:Point[]=[];let cursor:Point|null=junction.cell;
+    while(cursor){path.unshift(cursor);cursor=parents.get(pointKey(cursor))??null}
+    return{junction,path};
+  }).sort((a,b)=>a.path.length-b.path.length);
+  if(!reachable.length)return[];
+  const current=reachable.find(({path})=>path.length===1);
+  const currentRoutes=current?planRoutes(world,pose,tick,memory,visited).map(route=>({...route,decisionPoint:"current" as const,decisionCell:current.junction.cell})):[];
+  const upcomingRoutes=reachable.filter(({path})=>path.length>1).flatMap(({junction,path})=>{
+    const approach=path.at(-2)!,step:Point=[junction.cell[0]-approach[0],junction.cell[1]-approach[1]],arrivalPose:Pose={x:junction.cell[0]+.5,y:junction.cell[1]+.5,angle:Math.atan2(step[1],step[0]),bob:0};
+    return openNeighbors(world,junction.cell[0],junction.cell[1],tick).filter(cell=>!same(cell,approach)).map((branch,index)=>{
+      const direction=relativeDirection(arrivalPose,branch),knownVisits=visited.has(pointKey(branch))?1:0,frontierBonus=openNeighbors(world,branch[0],branch[1],tick).filter(cell=>!memory.has(pointKey(cell))).length;
+      const instruction=direction==="straight"?"Go straight when you get there.":direction==="back"?"Turn around when you get there.":`Take the passage on your ${direction} when you get there.`;
+      return{id:`approach:${pointKey(junction.cell)}:${pointKey(branch)}:${index}`,direction,knownCells:[...path.slice(1),branch],targetCell:branch,targetRegionId:null,description:instruction,instruction,score:frontierBonus*4-knownVisits*2+(direction==="straight"?1:0)-path.length*.01,decisionPoint:"upcoming" as const,decisionCell:junction.cell};
+    });
+  });
+  const candidates:RouteOption[]=[...currentRoutes,...upcomingRoutes];
+  for(const direction of ["left","right"] as const){
+    const decisionDistance=(route:RouteOption)=>route.decisionPoint==="current"?0:Math.max(1,route.knownCells.length-1);
+    const side=candidates.filter(route=>route.direction===direction).sort((a,b)=>decisionDistance(a)-decisionDistance(b));
+    if(side.length<2)continue;
+    side.forEach((route,index)=>{route.openingOrdinal=index+1;route.sameSideOpeningCount=side.length;route.instruction=`Take the ${openingOrdinalWord(index+1)} passage on your ${direction}.`;route.description=route.instruction});
+  }
+  return candidates.sort((a,b)=>b.score-a.score).slice(0,6);
 }
 
 export function createJourneyState(uniqueCellsVisited=1):JourneyState{
