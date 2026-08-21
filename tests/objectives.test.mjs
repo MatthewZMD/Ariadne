@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseNavigationBelief, createObjectiveStateAsync, collectStar, createObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStar, starCollectedAt, starVisible } from "../app/objectives.ts";
+import { chooseNavigationBelief, createObjectiveStateAsync, collectStar, createObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStar, starCollectedAt, starRouteIsOpen, starVisible } from "../app/objectives.ts";
 import { InfiniteWorld, chunkKey } from "../app/world.mjs";
 
 test("the first star is reachable, distant, and protects its generated path",()=>{
@@ -19,6 +19,27 @@ test("cooperative star search has parity with the synchronous wrapper and honors
   await assert.rejects(createObjectiveStateAsync(new InfiniteWorld(813),[1,1],813,visible,visited,0,controller.signal),error=>error?.name==="AbortError");
 });
 
+test("cooperative placement cannot have its route regenerated while MT keeps moving",async()=>{
+  const world=new InfiniteWorld(914),visible=new Set(["1,1"]),visited=new Set(["1,1"]);let settled=false;
+  const placement=createObjectiveStateAsync(world,[1,1],914,visible,visited).finally(()=>{settled=true});
+  for(let step=0;step<80&&!settled;step++){await new Promise(resolve=>setTimeout(resolve,0));const x=8000+step*17,y=-7000-step*11;world.ensureAround(x,y,100+step);world.prune(x,y,new Set(),100+step)}
+  const state=await placement;assert.equal(starRouteIsOpen(world,state.activeStar),true);assert.deepEqual(state.activeStar.canonicalPath[0],[1,1]);
+});
+
+test("active and queued star routes survive distant chunk regeneration",()=>{
+  const world=new InfiniteWorld(915),visited=new Set(["1,1"]);let state=createObjectiveState(world,[1,1],915,new Set(),visited);state=queueNextStar(state,world,915,visited);
+  assert.deepEqual(state.activeStar.canonicalPath[0],[1,1]);assert.deepEqual(state.queuedStar.canonicalPath[0],state.activeStar.cell);
+  const protectedChunks=objectiveProtectedChunks(state);
+  for(let step=0;step<50;step++){const x=9000+step*19,y=6000-step*13;world.ensureAround(x,y,200+step);world.prune(x,y,protectedChunks,200+step)}
+  assert.equal(starRouteIsOpen(world,state.activeStar),true);assert.equal(starRouteIsOpen(world,state.queuedStar),true);
+});
+
+test("a queued route is revalidated before its star becomes active",()=>{
+  const world=new InfiniteWorld(916),visited=new Set(["1,1"]);let state=createObjectiveState(world,[1,1],916,new Set(),visited);state=queueNextStar(state,world,916,visited);
+  const broken=state.queuedStar.canonicalPath[Math.min(2,state.queuedStar.canonicalPath.length-1)],coords=world.coords(...broken);world.getChunk(coords.cx,coords.cy).tiles[coords.ly][coords.lx]=1;
+  state=collectStar(state,world,916,visited);assert.equal(state.activeStar.ordinal,2);assert.equal(starRouteIsOpen(world,state.activeStar),true);
+});
+
 test("stars advance in order and the fourth transitions permanently to the exit search",()=>{
   const world=new InfiniteWorld(91),visited=new Set(["1,1"]);let state=createObjectiveState(world,[1,1],91,new Set(),visited);
   for(let ordinal=1;ordinal<=4;ordinal++){
@@ -26,7 +47,7 @@ test("stars advance in order and the fourth transitions permanently to the exit 
     const active=state.activeStar;assert.equal(starCollectedAt(state,[active.cell[0]+.5,active.cell[1]+.5]),true);
     state=collectStar(state,world,91,visited);
   }
-  assert.equal(state.stage,4);assert.equal(state.collectedStars,4);assert.equal(state.activeStar,null);assert.equal(publicObjective(state,false).currentGoal,"exit");
+  assert.equal(state.stage,4);assert.equal(state.collectedStars,4);assert.equal(state.activeStar,null);assert.equal(publicObjective(state,false).currentGoal,"exit");assert.equal(world.pinnedChunks.size,0);
 });
 
 test("line of sight sees the star only when it is in the rendered forward corridor",()=>{

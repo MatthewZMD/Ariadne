@@ -49,7 +49,7 @@ const STAGES = [
 ] as const;
 
 const STEPS:Point[]=[[1,0],[-1,0],[0,1],[0,-1]];
-const openNeighbors=(world:InfiniteWorld,cell:Point,tick=0)=>STEPS.map(([dx,dy])=>[cell[0]+dx,cell[1]+dy] as Point).filter(([x,y])=>world.tile(x,y,tick)===0);
+const openNeighbors=(world:InfiniteWorld,cell:Point,tick=0,protectCell?:(cell:Point)=>void)=>STEPS.map(([dx,dy])=>[cell[0]+dx,cell[1]+dy] as Point).filter(cell=>{protectCell?.(cell);return world.tile(cell[0],cell[1],tick)===0});
 const pointFromKey=(key:string)=>key.split(",").map(Number) as Point;
 
 function reconstructPath(parents:Map<string,string|null>,target:Point){
@@ -64,6 +64,10 @@ function pathChunks(world:InfiniteWorld,path:Point[]){
   return [...chunks];
 }
 
+const lockStarRoute=(world:InfiniteWorld,star:StarObjective)=>{for(const id of star.protectedChunks)world.pinChunk(id);return star};
+const unlockStarRoute=(world:InfiniteWorld,star:StarObjective|null)=>{for(const id of star?.protectedChunks??[])world.unpinChunk(id)};
+export const releaseStarRoute=(world:InfiniteWorld,star:StarObjective|null)=>unlockStarRoute(world,star);
+
 const yieldSearch:SearchYield=()=>new Promise(resolve=>{
   if(typeof window!=="undefined"&&window.requestIdleCallback){window.requestIdleCallback(()=>resolve(),{timeout:24});return}
   setTimeout(resolve,0);
@@ -71,13 +75,13 @@ const yieldSearch:SearchYield=()=>new Promise(resolve=>{
 
 function throwIfCancelled(signal?:AbortSignal){if(signal?.aborted)throw new DOMException("Objective search cancelled","AbortError")}
 
-function* starSearch(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number):Generator<void,StarObjective>{
+function* starSearch(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number,protectCell?:(cell:Point)=>void):Generator<void,StarObjective>{
   const config=STAGES[ordinal-1],originKey=cellKey(origin[0],origin[1]);
   const queue:Point[]=[origin],parents=new Map<string,string|null>([[originKey,null]]),distance=new Map<string,number>([[originKey,0]]),junctions=new Map<string,number>([[originKey,0]]);
   const candidates:Array<{cell:Point;score:number}>=[];let cursor=0;
   const hardLimit=config.maximum+45,nodeLimit=140_000;
   while(cursor<queue.length&&queue.length<nodeLimit){
-    const current=queue[cursor++]!,key=cellKey(current[0],current[1]),d=distance.get(key)!,neighbors=openNeighbors(world,current,tick);
+    const current=queue[cursor++]!,key=cellKey(current[0],current[1]),d=distance.get(key)!;protectCell?.(current);const neighbors=openNeighbors(world,current,tick,protectCell);
     if(d>=config.minimum){
       const branchCount=junctions.get(key)??0,unseen=!visible.has(key)&&!visited.has(key),degree=neighbors.length;
       const within=d<=config.maximum,meets=branchCount>=config.junctions,distancePenalty=within?0:Math.abs(d-config.maximum)*3;
@@ -95,12 +99,14 @@ function* starSearch(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:numbe
 }
 
 export function placeStar(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible=new Set<string>(),visited=new Set<string>(),tick=0):StarObjective{
-  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick);let step=search.next();while(!step.done)step=search.next();return step.value;
+  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick);let step=search.next();while(!step.done)step=search.next();return lockStarRoute(world,step.value);
 }
 
 async function placeStarCooperatively(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number,yieldWork:SearchYield,signal?:AbortSignal):Promise<StarObjective>{
-  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick);
-  while(true){for(let index=0;index<450;index++){const step=search.next();if(step.done)return step.value}await yieldWork();throwIfCancelled(signal)}
+  const pinned=new Set<string>(),protectCell=([x,y]:Point)=>{const coords=world.coords(x,y),id=chunkKey(coords.cx,coords.cy);if(pinned.has(id))return;pinned.add(id);world.pinChunk(id)};
+  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick,protectCell);
+  try{while(true){for(let index=0;index<450;index++){const step=search.next();if(step.done)return lockStarRoute(world,step.value)}await yieldWork();throwIfCancelled(signal)}}
+  finally{for(const id of pinned)world.unpinChunk(id)}
 }
 
 const initialAccumulator=(seed:number,stage:number)=>seededRandom(hash32(seed,"accuracy",stage))();
@@ -134,11 +140,17 @@ export async function queueNextStarAsync(state:ObjectiveState,world:InfiniteWorl
 
 export function collectStar(state:ObjectiveState,world:InfiniteWorld,seed:number,visited:Set<string>,tick=0):ObjectiveState{
   const active=state.activeStar;if(!active)return state;
-  const collected=active.ordinal;
+  const collected=active.ordinal;unlockStarRoute(world,active);
   if(collected===4)return{stage:4,collectedStars:4,activeStar:null,queuedStar:null,decisionSerial:0,accuracyAccumulator:0,recentBeliefs:[]};
-  const next=state.queuedStar??placeStar(world,active.cell,(collected+1) as 2|3|4,seed,new Set(),visited,tick);
+  const queuedValid=!!state.queuedStar&&starRouteIsOpen(world,state.queuedStar,tick);if(state.queuedStar&&!queuedValid)unlockStarRoute(world,state.queuedStar);
+  const next=queuedValid?state.queuedStar!:placeStar(world,active.cell,(collected+1) as 2|3|4,seed,new Set(),visited,tick);
   const stage=collected as ObjectiveStage;
   return{stage,collectedStars:collected,activeStar:next,queuedStar:null,decisionSerial:0,accuracyAccumulator:initialAccumulator(seed,stage),recentBeliefs:[]};
+}
+
+export function starRouteIsOpen(world:InfiniteWorld,star:StarObjective,tick=0){
+  if(!star.canonicalPath.length)return false;
+  return star.canonicalPath.every((cell,index)=>world.tile(cell[0],cell[1],tick)===0&&(index===0||Math.abs(cell[0]-star.canonicalPath[index-1]![0])+Math.abs(cell[1]-star.canonicalPath[index-1]![1])===1));
 }
 
 export function objectiveProtectedChunks(state:ObjectiveState){

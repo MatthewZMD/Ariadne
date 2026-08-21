@@ -81,6 +81,7 @@ export class InfiniteWorld {
     this.seed = seed >>> 0;
     this.chunks = new Map();
     this.epochs = new Map();
+    this.pinnedChunks = new Map();
   }
   coords(x, y) {
     return { cx: floorDiv(x, CHUNK_SIZE), cy: floorDiv(y, CHUNK_SIZE), lx: mod(x, CHUNK_SIZE), ly: mod(y, CHUNK_SIZE) };
@@ -105,11 +106,19 @@ export class InfiniteWorld {
       for (let ox = -CACHE_RADIUS; ox <= CACHE_RADIUS; ox++) this.getChunk(cx + ox, cy + oy, tick);
     }
   }
+  pinChunk(id) {
+    this.pinnedChunks.set(id, (this.pinnedChunks.get(id) ?? 0) + 1);
+  }
+  unpinChunk(id) {
+    const count = this.pinnedChunks.get(id) ?? 0;
+    if (count <= 1) this.pinnedChunks.delete(id);
+    else this.pinnedChunks.set(id, count - 1);
+  }
   prune(x, y, protectedChunks = new Set(), tick = 0) {
     const { cx, cy } = this.coords(x, y);
     for (const [id, chunk] of this.chunks) {
       const far = Math.abs(chunk.cx - cx) > CACHE_RADIUS || Math.abs(chunk.cy - cy) > CACHE_RADIUS;
-      if (far && !protectedChunks.has(id)) {
+      if (far && !protectedChunks.has(id) && !this.pinnedChunks.has(id)) {
         if (tick - chunk.lastTouched > 20) this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
         this.chunks.delete(id);
       }

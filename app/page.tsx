@@ -5,7 +5,7 @@ import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } 
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
 import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestVisibleJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, rebaseSelectedRoute, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type TrajectorySample } from "./companion";
-import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
+import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, releaseStarRoute, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
 import { mentionedDirections, messageConflictsWithDirection } from "./navigation-contracts";
 import { closureReason, finalAriadneLine, type ClosureReason } from "./closure";
 import { ClosureScreen, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
@@ -178,7 +178,11 @@ export default function Home(){
   useEffect(()=>{
     const activeId=run.objective.activeStar?.id;if(!ready||!activeId||run.objective.queuedStar||run.objective.activeStar?.ordinal===4)return;
     const epoch=runEpochRef.current,controller=new AbortController();let cancelled=false;const prepare=async()=>{if(cancelled)return;const current=runRef.current;if(current.objective.activeStar?.id!==activeId||current.objective.queuedStar)return;
-      try{const objective=await queueNextStarAsync(current.objective,current.world,current.seed,current.visited,current.moves,controller.signal);if(cancelled||runEpochRef.current!==epoch||runRef.current.objective.activeStar?.id!==activeId||objective===current.objective)return;const latest=runRef.current,next={...latest,objective};runRef.current=next;setRun(next)}catch(error){if(!(error instanceof DOMException&&error.name==="AbortError"))console.warn("ARIADNE star preparation failed",error)}};
+      try{
+        const objective=await queueNextStarAsync(current.objective,current.world,current.seed,current.visited,current.moves,controller.signal),generated=objective.queuedStar!==current.objective.queuedStar?objective.queuedStar:null;
+        if(cancelled||runEpochRef.current!==epoch||runRef.current.objective.activeStar?.id!==activeId||objective===current.objective){if(generated)releaseStarRoute(current.world,generated);return}
+        const latest=runRef.current,next={...latest,objective};runRef.current=next;setRun(next);
+      }catch(error){if(!(error instanceof DOMException&&error.name==="AbortError"))console.warn("ARIADNE star preparation failed",error)}};
     const idle=window.requestIdleCallback?.(()=>prepare(),{timeout:1200}),timer=idle===undefined?window.setTimeout(prepare,30):undefined;
     return()=>{cancelled=true;controller.abort();if(idle!==undefined)window.cancelIdleCallback?.(idle);if(timer!==undefined)window.clearTimeout(timer)};
   },[ready,run.objective.activeStar?.id,run.objective.activeStar?.ordinal,run.objective.queuedStar]);
