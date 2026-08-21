@@ -6,7 +6,7 @@ import { InfiniteWorld, chunkKey } from "../app/world.mjs";
 test("the first star is reachable, distant, and protects its generated path",()=>{
   const world=new InfiniteWorld(731),visible=new Set(["1,1","2,1"]),visited=new Set(["1,1"]);
   const state=createObjectiveState(world,[1,1],731,visible,visited);
-  assert.equal(state.activeStar.ordinal,1);assert.ok(state.activeStar.canonicalPath.length>=71);assert.ok(state.activeStar.canonicalPath.length<=136);
+  assert.equal(state.activeStar.ordinal,1);assert.ok(state.activeStar.canonicalPath.length>=35);assert.ok(state.activeStar.canonicalPath.length<=92);
   assert.equal(visible.has(state.activeStar.cell.join(",")),false);assert.equal(world.tile(...state.activeStar.cell),0);
   const coords=world.coords(...state.activeStar.cell);assert.ok(objectiveProtectedChunks(state).has(chunkKey(coords.cx,coords.cy)));
 });

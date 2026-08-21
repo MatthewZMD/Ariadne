@@ -42,10 +42,10 @@ export type PublicObjectiveContext = {
 type SearchYield = () => Promise<void>;
 
 const STAGES = [
-  { minimum: 70, maximum: 90, junctions: 3, accuracy: .9 },
-  { minimum: 110, maximum: 140, junctions: 5, accuracy: .7 },
-  { minimum: 160, maximum: 200, junctions: 8, accuracy: .45 },
-  { minimum: 220, maximum: 270, junctions: 12, accuracy: .2 },
+  { minimum: 34, maximum: 46, junctions: 2, accuracy: .9 },
+  { minimum: 52, maximum: 68, junctions: 3, accuracy: .7 },
+  { minimum: 72, maximum: 92, junctions: 5, accuracy: .45 },
+  { minimum: 96, maximum: 120, junctions: 7, accuracy: .2 },
 ] as const;
 
 const STEPS:Point[]=[[1,0],[-1,0],[0,1],[0,-1]];
@@ -195,7 +195,7 @@ function beliefFromRankedRoutes(state:ObjectiveState,routes:RouteOption[],juncti
   const best=ranked[0]?.distance,supported=ranked.filter(item=>item.distance===best),unsupported=ranked.filter(item=>item.distance!==(best??item.distance)&&item.route.direction!=="back");
   if(best===undefined||!unsupported.length||routes.length<2||starIsVisible)route=supported[0]?.route??ranked[0]?.route??routes[0];
   else{
-    accuracyAccumulator+=STAGES[state.stage].accuracy;const useSupported=accuracyAccumulator>=1;if(useSupported)accuracyAccumulator-=1;
+    accuracyAccumulator+=STAGES[Math.min(state.stage,3)]!.accuracy;const useSupported=accuracyAccumulator>=1;if(useSupported)accuracyAccumulator-=1;
     decisionSerial++;
     route=useSupported?supported[hash32(seed,"supported",state.stage,decisionSerial)%supported.length]?.route:unsupported.slice().sort((a,b)=>(a.distance-b.distance)-((a.route.score-b.route.score)*.15))[hash32(seed,"mistake",state.stage,decisionSerial)%Math.min(2,unsupported.length)]?.route;
   }

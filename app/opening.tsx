@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react";
 import Image from "next/image";
 
-export type ExperienceState = "title" | "story" | "playing" | "paused";
+export type ExperienceState = "title" | "story" | "playing" | "paused" | "ending";
 
 const STORY = [
   {
@@ -108,5 +108,19 @@ export function PauseMenu({ onResume, onEnd }: { onResume: () => void; onEnd: ()
       <button className="pixel-button danger" type="button" onClick={onEnd}>END GAME</button>
       <p className="front-hint">ESC TO RESUME</p>
     </div>
+  </section>;
+}
+
+export function ClosureScreen({ revealed, onRestart, onLeave }: {
+  revealed: boolean;
+  onRestart: () => void;
+  onLeave: () => void;
+}) {
+  return <section className={`closure-screen ${revealed ? "revealed" : ""}`} role="dialog" aria-modal="true" aria-label="Connection ended">
+    {revealed && <div className="closure-panel">
+      <h1>LINK LOST</h1>
+      <button className="pixel-button primary" type="button" onClick={onRestart}>BEGIN AGAIN</button>
+      <button className="pixel-button danger" type="button" onClick={onLeave}>LEAVE</button>
+    </div>}
   </section>;
 }
