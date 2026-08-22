@@ -24,7 +24,7 @@ const themes=["neutral","beach","tornado","ruins","frozen","foundry","cavern"] a
 const trajectoryChanges=["sustained_alignment","sustained_divergence","left_then_rejoined","same_waypoint_different_route","recommendation_visibly_contradicted"] as const;
 const goalByStars=["first_star","second_star","third_star","fourth_star","exit"] as const;
 const objectiveEvents=["searching","star_visible","star_collected","objective_changed"] as const;
-const FAST_FREE_MODELS=["nvidia/nemotron-nano-12b-v2-vl:free","nvidia/nemotron-nano-9b-v2:free","dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free"];
+const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free","nvidia/nemotron-nano-9b-v2:free","nvidia/nemotron-nano-12b-v2-vl:free"];
 
 type RecordValue=Record<string,unknown>;
 const isRecord=(value:unknown):value is RecordValue=>!!value&&typeof value==="object"&&!Array.isArray(value);
@@ -265,7 +265,7 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
   const isRouter=model==="openrouter/free";
   let response:Response;
   try{
-    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{enabled:false,exclude:true},include_reasoning:false,max_tokens:96,temperature:.85})});
+    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{enabled:false,exclude:true},include_reasoning:false,max_tokens:160,temperature:.85})});
   }catch(error){throw new ProviderAttemptError(error instanceof Error?error.message:"provider connection failed",true)}
   if(!response.ok){const detail=(await response.text()).slice(0,300),retryable=[403,404,408,409,425,429].includes(response.status)||response.status>=500;throw new ProviderAttemptError(`provider ${response.status}: ${detail}`,retryable)}
   const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);

@@ -78,7 +78,7 @@ test("a healthy sticky model does not fetch the model catalog",async()=>{
   process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
   globalThis.fetch=async(url)=>{
     calls.push(String(url));
-    return new Response(JSON.stringify({model:"nvidia/nemotron-nano-12b-v2-vl:free",choices:[{message:{content:"Take the left passage."}}]}),{status:200,headers:{"content-type":"application/json"}});
+    return new Response(JSON.stringify({model:"dots-studio/dots-3-note-preview:free",choices:[{message:{content:"Take the left passage."}}]}),{status:200,headers:{"content-type":"application/json"}});
   };
   try{
     const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody())}));
