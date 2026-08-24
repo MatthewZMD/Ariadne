@@ -70,6 +70,8 @@ export type CompanionEvent =
   | {type:"target_reached"}
   | {type:"same_target_reached_differently"}
   | {type:"new_junction_visible"}
+  | {type:"embodied_response";response:"followed"|"diverged"|"passed"|"rejoined"}
+  | {type:"left_ariadne_waiting"}
   | {type:"dead_end_visible";cell:Point}
   | {type:"passing_thought"}
   | {type:"revisited_position"}
@@ -86,7 +88,7 @@ export type CompanionEvent =
   | {type:"initial_guidance"};
 
 export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number};
-export type CompanionReply = {message:string;selectedRouteId:string|null};
+export type CompanionReply = {message:string};
 export type CompanionCue = {key:string;event:CompanionEvent;force:boolean};
 export type CompanionPhase = "charming"|"attached"|"overbearing";
 export type JourneyState = {
@@ -426,7 +428,7 @@ export function compactMap(memory:Map<string,{tile:number}>,center:Point,radius=
 
 export function deterministicReply(event:CompanionEvent,routes:RouteOption[],_environment:VisibleEnvironment,_evidence:GuidanceEvidence|null,_phase?:CompanionPhase,_objective?:PublicObjectiveContext,belief?:NavigationBelief|null,_visibleMoment?:string|null):CompanionReply{
   void _visibleMoment;
-  const route=routes.find(item=>item.id===belief?.routeId)??routes[0]??null;
-  if(event.type!=="initial_guidance")return{message:"",selectedRouteId:null};
-  return{message:"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.",selectedRouteId:route?.id??null};
+  void routes;void belief;
+  if(event.type!=="initial_guidance")return{message:""};
+  return{message:"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit."};
 }

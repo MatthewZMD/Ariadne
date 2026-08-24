@@ -1,15 +1,16 @@
 import process from "node:process";
 import { deterministicReply, PLAYER_NAME, type CompanionArc, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceEvidence, type GuidanceIntent, type PlayerActivity, type RouteOption, type TrajectorySample, type VisibleEnvironment } from "../../companion.ts";
 import type { NavigationBelief, PublicObjectiveContext } from "../../objectives.ts";
-import { messageConflictsWithRoute } from "../../navigation-contracts.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 import type { PromptPerceivedScene } from "../../scene.ts";
+import type { AriadneEmbodimentContext } from "../../ariadne-body.ts";
+import { speechActDirection, speechActForEvent, type CompanionSpeechAct, type EmbodiedDecisionState, type SpeechAnchor } from "../../embodied-interaction.ts";
 
 export type RequestBody={
-  sessionId:string;trigger:CompanionEvent;activity:PlayerActivity;recommendation:GuidanceIntent|null;recommendationEvidence:GuidanceEvidence|null;
+  sessionId:string;trigger:CompanionEvent;speechAnchor:SpeechAnchor;dispositionCard:string;activity:PlayerActivity;recommendation:GuidanceIntent|null;recommendationEvidence:GuidanceEvidence|null;
   actualTrajectory:TrajectorySample[];currentView:EgocentricView;environment:VisibleEnvironment;perceivedScene:PromptPerceivedScene;sceneChanges:string[];rememberedMap:string;
   legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;companionArc:CompanionArc;
-  objective:PublicObjectiveContext;navigationBelief:NavigationBelief|null;
+  objective:PublicObjectiveContext;navigationBelief:NavigationBelief|null;embodiment:AriadneEmbodimentContext;
   playerMessage?:string;preferredModelId?:string|null;
 };
 
@@ -24,6 +25,8 @@ const themes=["neutral","beach","tornado","ruins","frozen","foundry","cavern"] a
 const trajectoryChanges=["sustained_alignment","sustained_divergence","left_then_rejoined","same_waypoint_different_route","recommendation_visibly_contradicted"] as const;
 const goalByStars=["first_star","second_star","third_star","fourth_star","exit"] as const;
 const objectiveEvents=["searching","star_visible","star_collected","objective_changed"] as const;
+const embodiedStates=["noticing","committing","waiting","mt_following","mt_diverging","mt_passed","route_contradicted","rejoining","resolved"] as const satisfies readonly EmbodiedDecisionState[];
+const speechActs=["invite_to_visible_choice","confirm_following","respond_to_divergence","catch_up","repair_mistake","celebrate_rejoining","react_to_star","share_visible_discovery","passing_companionship","reply_to_mt"] as const satisfies readonly CompanionSpeechAct[];
 const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free","nvidia/nemotron-nano-9b-v2:free","nvidia/nemotron-nano-12b-v2-vl:free"];
 
 type RecordValue=Record<string,unknown>;
@@ -62,6 +65,7 @@ function isGuidanceIntent(value:unknown):value is GuidanceIntent{
 function isTrigger(value:unknown):value is CompanionEvent{
   if(!isRecord(value)||!isString(value.type,48,1))return false;
   if(value.type==="trajectory_relationship_changed")return isEnum(value.change,trajectoryChanges);
+  if(value.type==="embodied_response")return isEnum(value.response,["followed","diverged","passed","rejoined"] as const);
   if(value.type==="dead_end_visible")return isPoint(value.cell,true);
   if(value.type==="environment_visible"||value.type==="environment_entered")return isString(value.regionId,160,1)&&isEnum(value.environment,themes)&&value.environment!=="neutral";
   if(value.type==="scene_changed")return isString(value.sceneId,200,1);
@@ -69,7 +73,7 @@ function isTrigger(value:unknown):value is CompanionEvent{
   if(value.type==="player_message")return isString(value.text,500,1);
   if(value.type==="star_visible"||value.type==="star_collected")return isString(value.starId,200,1)&&isNumber(value.ordinal,1,4,true);
   if(value.type==="objective_changed")return isNumber(value.collectedStars,0,4,true);
-  return ["recommendation_contradicted","target_reached","same_target_reached_differently","new_junction_visible","passing_thought","revisited_position","sustained_backtrack","repeated_collision","initial_guidance"].includes(value.type);
+  return ["recommendation_contradicted","target_reached","same_target_reached_differently","new_junction_visible","left_ariadne_waiting","passing_thought","revisited_position","sustained_backtrack","repeated_collision","initial_guidance"].includes(value.type);
 }
 
 function isActivity(value:unknown):value is PlayerActivity{
@@ -115,6 +119,16 @@ function isObjective(value:unknown):value is PublicObjectiveContext{
   return value.currentGoal===goalByStars[value.collectedStars]&&isBoolean(value.activeStarVisible)&&(value.collectedStars<4||value.activeStarVisible===false)&&isEnum(value.latestEvent,objectiveEvents);
 }
 
+function isEmbodiment(value:unknown):value is AriadneEmbodimentContext{
+  if(!isRecord(value))return false;
+  return isString(value.currentAction,240,1)&&isString(value.positionRelativeToMT,100,1)&&(value.relationToBelievedRoute===null||isString(value.relationToBelievedRoute,220,1))&&isBoolean(value.mtLookingAtAriadne)&&isBoolean(value.mtApproachingAriadne)&&isBoolean(value.mtFollowingHerLead)&&isBoolean(value.mtLeavingWhileSheWaits)&&isBoolean(value.mtReturningToHer);
+}
+
+function isSpeechAnchor(value:unknown):value is SpeechAnchor{
+  if(!isRecord(value)||!isEnum(value.speechAct,speechActs)||!isNumber(value.speechEpoch,0,100_000,true))return false;
+  return(value.episodeId===null&&value.episodeState===null)||(isString(value.episodeId,220,1)&&isEnum(value.episodeState,embodiedStates));
+}
+
 function isBelief(value:unknown,routes:RouteOption[],collectedStars:number):value is NavigationBelief|null{
   if(value===null)return true;
   if(!isRecord(value))return false;
@@ -122,12 +136,13 @@ function isBelief(value:unknown,routes:RouteOption[],collectedStars:number):valu
 }
 
 export function parseCompanionRequest(value:unknown):RequestBody|null{
-  if(!isRecord(value)||!isString(value.sessionId,80,1)||!isTrigger(value.trigger)||!isActivity(value.activity))return null;
+  if(!isRecord(value)||!isString(value.sessionId,80,1)||!isTrigger(value.trigger)||!isSpeechAnchor(value.speechAnchor)||!isString(value.dispositionCard,900,1)||!isActivity(value.activity))return null;
+  if(value.speechAnchor.speechAct!==speechActForEvent(value.trigger))return null;
   if(!(value.recommendation===null||isGuidanceIntent(value.recommendation))||!(value.recommendationEvidence===null||isEvidence(value.recommendationEvidence)))return null;
   if(!Array.isArray(value.actualTrajectory)||value.actualTrajectory.length>40||!value.actualTrajectory.every(isTrajectorySample)||!isView(value.currentView)||!(value.environment===null||isEnvironment(value.environment))||!isPerceivedScene(value.perceivedScene)||!Array.isArray(value.sceneChanges)||value.sceneChanges.length>8||!value.sceneChanges.every(item=>isString(item,240,1)))return null;
   if(!isString(value.rememberedMap,1800)||!Array.isArray(value.legalRoutes)||value.legalRoutes.length>6||!value.legalRoutes.every(isRoute))return null;
   const legalRoutes=value.legalRoutes as RouteOption[];if(new Set(legalRoutes.map(route=>route.id)).size!==legalRoutes.length)return null;
-  if(!Array.isArray(value.recentMessages)||value.recentMessages.length>8||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200)||!isArc(value.companionArc)||!isObjective(value.objective))return null;
+  if(!Array.isArray(value.recentMessages)||value.recentMessages.length>8||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200)||!isArc(value.companionArc)||!isObjective(value.objective)||!isEmbodiment(value.embodiment))return null;
   if(!isBelief(value.navigationBelief,legalRoutes,value.objective.collectedStars))return null;
   const expectedObjectiveEvent=value.trigger.type==="star_visible"?"star_visible":value.trigger.type==="star_collected"?"star_collected":value.trigger.type==="objective_changed"?"objective_changed":"searching";
   if(value.objective.latestEvent!==expectedObjectiveEvent)return null;
@@ -140,15 +155,12 @@ export function parseCompanionRequest(value:unknown):RequestBody|null{
   return value as RequestBody;
 }
 
-function validReply(value:unknown,routes:RouteOption[],belief:NavigationBelief|null):value is CompanionReply{
-  if(!isRecord(value))return false;
-  const selected=value.selectedRouteId,believedRoute=routes.find(route=>route.id===belief?.routeId);
-  return isString(value.message,320)&&(selected===null||selected===belief?.routeId)&&(selected===null||routes.some(route=>route.id===selected))&&(!believedRoute||!messageConflictsWithRoute(value.message,believedRoute));
+function validReply(value:unknown):value is CompanionReply{
+  return isRecord(value)&&isString(value.message,320);
 }
 
-export function acceptReply(reply:CompanionReply,routes:RouteOption[],allowedRouteId?:string|null):CompanionReply{
-  const selectedIsAllowed=routes.some(route=>route.id===reply.selectedRouteId)&&(allowedRouteId===undefined||reply.selectedRouteId===allowedRouteId);
-  return{...reply,message:reply.message.trim().slice(0,320),selectedRouteId:selectedIsAllowed?reply.selectedRouteId:null};
+export function acceptReply(reply:CompanionReply):CompanionReply{
+  return{message:reply.message.trim().slice(0,320)};
 }
 
 export function isFreeCompanionModel(model:OpenRouterModel,now=Date.now()){
@@ -164,11 +176,11 @@ export function extractProviderText(data:ProviderPayload){
   return null;
 }
 
-export function parseProviderReply(text:string,routes:RouteOption[],belief:NavigationBelief|null){
+export function parseProviderReply(text:string){
   const cleaned=text.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");
   const start=cleaned.indexOf("{"),end=cleaned.lastIndexOf("}");
   const candidates=[cleaned,start>=0&&end>start?cleaned.slice(start,end+1):null].filter((value,index,all):value is string=>!!value&&all.indexOf(value)===index);
-  for(const candidate of candidates)try{const reply=JSON.parse(candidate) as unknown;if(validReply(reply,routes,belief))return{message:reply.message,selectedRouteId:reply.selectedRouteId}}catch{continue}
+  for(const candidate of candidates)try{const reply=JSON.parse(candidate) as unknown;if(validReply(reply))return{message:reply.message}}catch{continue}
   return null;
 }
 
@@ -176,11 +188,10 @@ export const providerReplyRestartsJourney=(message:string)=>/\b(?:hi|hello),?\s*
 
 function normalizeProviderReply(text:string,body:RequestBody){
   const mayIntroduce=body.trigger.type==="initial_guidance";
-  const structured=parseProviderReply(text,body.legalRoutes,body.navigationBelief);if(structured&&!mayIntroduce&&providerReplyRestartsJourney(structured.message))return null;if(structured)return{message:structured.message,selectedRouteId:structured.selectedRouteId};
+  const structured=parseProviderReply(text);if(structured&&!mayIntroduce&&providerReplyRestartsJourney(structured.message))return null;if(structured)return{message:structured.message};
   const message=text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^\s*(?:<ARIADNE>|ARIADNE:)\s*/i,"").replace(/^(["'])|(["'])$/g,"").trim();
-  const route=body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId)??null;
-  if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message)||route&&messageConflictsWithRoute(message,route))return null;
-  return{message,selectedRouteId:route?.id??null} satisfies CompanionReply;
+  if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message))return null;
+  return{message} satisfies CompanionReply;
 }
 
 export function isVerifiedProviderModel(requested:string,actual:string|undefined,allowed:Set<string>){
@@ -221,7 +232,9 @@ function semanticEvent(event:CompanionEvent){
   if(event.type==="star_visible")return`The ${["first","second","third","fourth"][event.ordinal-1]} star has just become visible to MT. React to the actual sight of it.`;
   if(event.type==="star_collected")return`MT has just collected star ${event.ordinal} of four. Celebrate, while interpreting the journey only through the supplied trajectory facts.`;
   if(event.type==="objective_changed")return event.collectedStars===4?"All four stars are collected. You are now certain you can guide MT to the exit.":`The next objective has begun after ${event.collectedStars} collected star${event.collectedStars===1?"":"s"}.`;
-  if(event.type==="new_junction_visible")return"MT is approaching an intersection visible ahead. Choose one supplied direction for that intersection.";
+  if(event.type==="new_junction_visible")return"An intersection is visible. Your body has already chosen and is physically indicating one passage.";
+  if(event.type==="embodied_response")return({followed:"MT entered the passage your body indicated.",diverged:"MT entered another passage and you are catching up beside them.",passed:"MT moved past while you waited and you are catching up.",rejoined:"MT has just returned toward you after moving away."})[event.response];
+  if(event.type==="left_ariadne_waiting")return"You chose a passage at the intersection and waited there, but MT took another passage. You have now caught up beside MT. React directly to MT from here; do not speak as though you are still waiting behind.";
   if(event.type==="dead_end_visible")return"MT can already see that the passage ends ahead. React before MT reaches the wall and choose another supplied way.";
   if(event.type==="passing_thought")return"Nothing decisive just happened. Share one fresh feeling or observation about travelling here with MT; this is not a navigation moment.";
   if(event.type==="trajectory_relationship_changed")return({sustained_alignment:"MT has travelled alongside your suggestion for a sustained stretch.",sustained_divergence:"MT has moved away from your suggestion for a sustained stretch; the result is not settled.",left_then_rejoined:"MT moved away from your suggested route and later rejoined it.",same_waypoint_different_route:"MT reached the same local place by another route.",recommendation_visibly_contradicted:"Visible geometry has contradicted the route you suggested."})[event.change];
@@ -247,9 +260,8 @@ function statePrompt(body:RequestBody){
   const previous=body.recommendation?.message??"none";
   const goalLabels={first_star:"the first star",second_star:"the second star",third_star:"the third star",fourth_star:"the fourth star",exit:"the exit"};
   const goal=`${body.objective.collectedStars}/4 collected; seeking ${goalLabels[body.objective.currentGoal]}; ${body.objective.activeStarVisible?"star visible":"goal unseen"}`;
-  const route=body.navigationBelief?body.legalRoutes.find(item=>item.id===body.navigationBelief?.routeId):null;
-  const belief=route?route.instruction:"no new direction needed";
-  return `<private_stage_card>\nGOAL: ${goal}\nVIEW: ways ${openings}; ahead ${scene.geometry.visibleEndAhead?"ends":"continues"}; setting ${setting}\nVISIBLE OBJECTS: ${objects}\nVISIBLE SPECTACLES: ${spectacles}\nCHANGES: ${changes}\nMT'S ACTION: ${attention}\nLATEST MOMENT: ${semanticEvent(body.trigger)}\nYOUR LAST WORDS: ${previous}\nPATH RELATIONSHIP: ${semanticMovement(body.recommendationEvidence)}\nACTING DIRECTION: ${body.companionArc.performanceDirection} ${body.companionArc.relationshipContext}\nYOUR BELIEF: ${belief}\n</private_stage_card>`;
+  const physical=[body.embodiment.currentAction,body.embodiment.relationToBelievedRoute,body.embodiment.mtLookingAtAriadne&&"MT is looking directly toward your light.",body.embodiment.mtApproachingAriadne&&"MT is moving closer to your light.",body.embodiment.mtFollowingHerLead&&"MT is moving with the passage you physically indicated.",body.embodiment.mtLeavingWhileSheWaits&&"MT moved away while you waited at the passage.",body.embodiment.mtReturningToHer&&"MT has come back toward you after moving away."].filter(Boolean).join(" ");
+  return `<private_stage_card>\nGOAL: ${goal}\nVIEW: ways ${openings}; ahead ${scene.geometry.visibleEndAhead?"ends":"continues"}; setting ${setting}\nVISIBLE OBJECTS: ${objects}\nVISIBLE SPECTACLES: ${spectacles}\nCHANGES: ${changes}\nYOUR BODY: ${physical}\nMT'S ACTION: ${attention}\nLATEST MOMENT: ${semanticEvent(body.trigger)}\nREQUIRED SPEECH ACT: ${speechActDirection(body.speechAnchor.speechAct)}\nYOUR LAST WORDS: ${previous}\nPATH RELATIONSHIP: ${semanticMovement(body.recommendationEvidence)}\nCURRENT DISPOSITION: ${body.dispositionCard}\nPERFORMANCE: ${body.companionArc.performanceDirection} ${body.companionArc.relationshipContext}\n</private_stage_card>`;
 }
 
 type ProviderMessage={role:"system"|"user"|"assistant";content:string};
@@ -261,11 +273,11 @@ export function buildProviderMessages(body:RequestBody):ProviderMessage[]{
   return messages;
 }
 
-async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,allowed:Set<string>,timeoutMs:number):Promise<ProviderResult>{
+async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,allowed:Set<string>,timeoutMs:number,clientSignal:AbortSignal):Promise<ProviderResult>{
   const isRouter=model==="openrouter/free";
   let response:Response;
   try{
-    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.timeout(timeoutMs),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{enabled:false,exclude:true},include_reasoning:false,max_tokens:160,temperature:.85})});
+    response=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},signal:AbortSignal.any([clientSignal,AbortSignal.timeout(timeoutMs)]),body:JSON.stringify({model,messages:buildProviderMessages(body),provider:{sort:"latency",allow_fallbacks:true},reasoning:{enabled:false,exclude:true},include_reasoning:false,max_tokens:160,temperature:.85})});
   }catch(error){throw new ProviderAttemptError(error instanceof Error?error.message:"provider connection failed",true)}
   if(!response.ok){const detail=(await response.text()).slice(0,300),retryable=[403,404,408,409,425,429].includes(response.status)||response.status>=500;throw new ProviderAttemptError(`provider ${response.status}: ${detail}`,retryable)}
   const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);
@@ -274,22 +286,22 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
   return{reply,modelUsed:data.model??null};
 }
 
-async function openRouter(body:RequestBody,apiKey:string):Promise<ProviderResult>{
-  const startedAt=Date.now(),deadline=startedAt+8000;
+async function openRouter(body:RequestBody,apiKey:string,clientSignal:AbortSignal):Promise<ProviderResult>{
+  const startedAt=Date.now(),deadline=startedAt+9500;
   const cachedModels=modelCache?.models??[],knownAtStart=new Set([...FAST_FREE_MODELS,...cachedModels]);
   const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)?body.preferredModelId:null;
-  const attempts=[...new Set([preferred,FAST_FREE_MODELS[0]].filter((model):model is string=>!!model))];
+  const attempts=[preferred??FAST_FREE_MODELS[0]!];
   let lastError:unknown=null;
   for(const model of attempts){
-    const remaining=deadline-Date.now();if(remaining<800)break;
-    try{return await requestOpenRouter(body,apiKey,model,knownAtStart,Math.min(4500,remaining))}catch(error){lastError=error}
+    const remaining=deadline-Date.now();if(remaining<700)break;
+    try{return await requestOpenRouter(body,apiKey,model,knownAtStart,Math.min(2600,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted||error instanceof Error&&/free-models-per-min|limit_source/i.test(error.message))throw error}
   }
   const available=await freeModels(apiKey),allowed=new Set([...FAST_FREE_MODELS,...available]);
   const alternate=available.find(model=>!attempts.includes(model));
   const remaining=deadline-Date.now();
   if(remaining>=800){
     const model=alternate??"openrouter/free";
-    try{return await requestOpenRouter(body,apiKey,model,allowed,remaining)}catch(error){lastError=error}
+    try{return await requestOpenRouter(body,apiKey,model,allowed,remaining,clientSignal)}catch(error){lastError=error}
   }
   throw lastError??new ProviderAttemptError("no responsive free companion model available",false);
 }
@@ -307,11 +319,10 @@ async function boundedJson(request:Request):Promise<{value:unknown}|{error:"inva
 export async function POST(request:Request){
   const parsed=await boundedJson(request);if("error" in parsed)return Response.json({error:parsed.error==="too_large"?"companion request too large":"invalid JSON"},{status:parsed.error==="too_large"?413:400});
   const body=parseCompanionRequest(parsed.value);if(!body)return Response.json({error:"invalid companion request"},{status:400});
-  const allowedRouteId=body.navigationBelief?.routeId??null;
-  const fallback=()=>body.trigger.type==="initial_guidance"?acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0]),body.legalRoutes,allowedRouteId):{message:"",selectedRouteId:null};
+  const fallback=()=>body.trigger.type==="initial_guidance"?acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0])):{message:""};
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback",modelUsed:null});
-    const result=await openRouter(body,apiKey);return Response.json({...acceptReply(result.reply,body.legalRoutes,allowedRouteId),source:"provider",modelUsed:result.modelUsed});
+    const result=await openRouter(body,apiKey,request.signal);return Response.json({...acceptReply(result.reply),source:"provider",modelUsed:result.modelUsed});
   }catch(error){console.error("ARIADNE free provider request failed",error);return Response.json({...fallback(),source:"fallback",modelUsed:null})}
 }

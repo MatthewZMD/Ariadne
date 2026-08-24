@@ -43,6 +43,28 @@ test("infinite coordinates stream through a bounded cache",()=>{
   assert.equal(typeof world.tile(-10001,21007),"number");
 });
 
+test("a run-scoped entrance gate seals only the cell behind MT until the world is recycled",()=>{
+  const world=new InfiniteWorld(404),forwardBefore=world.tile(2,1),gate=world.setEntranceGate(1,1,1,0);
+  assert.deepEqual(gate.cell,[0,1]);assert.deepEqual(gate.inside,[1,1]);assert.equal(world.tile(0,1),1);assert.equal(world.isEntranceGate(0,1),true);
+  assert.equal(world.tile(2,1),forwardBefore,"installing the gate must not rewrite the route ahead");
+  world.ensureAround(900,900,200);world.prune(900,900,new Set(),200);
+  assert.equal(world.tile(0,1,201),1,"chunk recycling must not reopen the current run's entrance");
+  const recycled=new InfiniteWorld(405);assert.equal(recycled.entranceGate,null);assert.equal(recycled.isEntranceGate(0,1),false);
+});
+
+test("the starting corridor has exactly one traversable direction",()=>{
+  const world=new InfiniteWorld(406),gate=world.setEntranceCorridor(1,1,1,0,3);
+  assert.deepEqual(gate.facing,[1,0]);
+  assert.equal(world.tile(0,1),1,"the entrance gate must seal the route behind MT");
+  for(let step=0;step<3;step++){
+    assert.equal(world.tile(1+step,0),1,`north side of entrance step ${step} must be a wall`);
+    assert.equal(world.tile(1+step,2),1,`south side of entrance step ${step} must be a wall`);
+    assert.equal(world.tile(2+step,1),0,`entrance must remain open ahead at step ${step}`);
+  }
+  const immediateNeighbors=[[2,1],[0,1],[1,0],[1,2]].filter(([x,y])=>world.tile(x,y)===0);
+  assert.deepEqual(immediateNeighbors,[[2,1]]);
+});
+
 test("regenerated interiors change while stable seam portals survive",()=>{
   const seed=8181,cx=-3,cy=5,a=generateChunk(seed,cx,cy,0),b=generateChunk(seed,cx,cy,1),p=portalsFor(seed,cx,cy);
   assert.equal(a.tiles[0][p.north],b.tiles[0][p.north]);assert.equal(a.tiles[p.east][15],b.tiles[p.east][15]);
@@ -81,6 +103,11 @@ test("renderer includes a directional distant sky pass",async()=>{
   assert.match(source,/function renderDistantSky/);assert.match(source,/distance>72/);assert.match(source,/anchor\.bornAt<=tick/);assert.match(source,/previewFade/);
 });
 
+test("the entrance gate is installed at run creation and rendered as spatial geometry",async()=>{
+  const fs=await import("node:fs/promises"),page=await fs.readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),renderer=await fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8");
+  assert.match(page,/world\.setEntranceCorridor\(1,1/);assert.match(renderer,/world\.isEntranceGate\(ray\.mapX,ray\.mapY\)/);
+});
+
 async function render(){
   const workerUrl=new URL("../dist/server/index.js",import.meta.url);workerUrl.searchParams.set("test",`${process.pid}-${Date.now()}`);
   const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/",{headers:{accept:"text/html"}}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});
@@ -100,8 +127,9 @@ test("companion route works without credentials through the in-world fallback",a
   const route={id:"r1",direction:"straight",knownCells:[[2,1]],targetCell:[2,1],targetRegionId:null,description:"continue straight",instruction:"Keep going.",score:3};
   const belief={id:"b1",objectiveStage:0,junctionId:"start",routeId:"r1",instruction:"Keep going."};
   const perceivedScene={setting:{primaryEnvironment:"neutral",blendedEnvironments:["neutral"],visibleDetails:["the shifting maze"]},geometry:{facingDescription:"MT is facing east",visibleOpenings:[{direction:"straight",description:"an open passage ahead"}],visibleEndAhead:false,visibleJunction:false},objects:[],spectacles:[],objective:{starVisible:false,starDirection:null,starDistance:null},mtAttention:{lookingToward:null,approaching:null,movingAwayFrom:null,pausedNear:null}};
-  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{facing:"east",centerView:"a corridor",openings:["straight"],blocked:["left","right","back"],description:"MT faces an open corridor."},environment:null,perceivedScene,sceneChanges:[],rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:"",companionArc:{phase:"charming",performanceDirection:"You are making a charming first impression.",relationshipContext:"Nothing has happened yet."},objective:{collectedStars:0,currentGoal:"first_star",activeStarVisible:false,latestEvent:"searching"},navigationBelief:belief});
-  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,"r1");assert.equal(body.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
+  const embodiment={currentAction:"You are floating naturally beside MT's right shoulder.",positionRelativeToMT:"beside MT's right shoulder",relationToBelievedRoute:null,mtLookingAtAriadne:false,mtApproachingAriadne:false,mtFollowingHerLead:false,mtLeavingWhileSheWaits:false,mtReturningToHer:false};
+  const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},speechAnchor:{episodeId:null,episodeState:null,speechAct:"passing_companionship",speechEpoch:0},dispositionCard:"You are warmly confident and allowing MT room.",activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{facing:"east",centerView:"a corridor",openings:["straight"],blocked:["left","right","back"],description:"MT faces an open corridor."},environment:null,perceivedScene,sceneChanges:[],rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:"",companionArc:{phase:"charming",performanceDirection:"You are making a charming first impression.",relationshipContext:"Nothing has happened yet."},objective:{collectedStars:0,currentGoal:"first_star",activeStarVisible:false,latestEvent:"searching"},navigationBelief:belief,embodiment});
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,undefined);assert.equal(body.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
 });
 
 test("companion provider is configured for OpenRouter without exposing a key",async()=>{

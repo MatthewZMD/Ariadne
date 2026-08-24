@@ -107,10 +107,10 @@ test("deterministic voice exists only for the required opening greeting",()=>{
   assert.equal(greeting.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
   const environment={id:"frozen",regionId:"frozen:0:0",name:"frozen archive",details:["ice","shelves"]};
   assert.equal(deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null).message,"");
-  assert.match(ARIADNE_SYSTEM_PROMPT,/Speak to MT, never about MT/i);
+  assert.match(ARIADNE_SYSTEM_PROMPT,/Speak directly to MT, never about MT/i);
   assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/PLAYER:/);
   assert.doesNotMatch(greeting.message,/found the exit/i);
-  assert.deepEqual(deterministicReply({type:"dead_end_visible",cell:[1,0]},[route],null,null),{message:"",selectedRouteId:null});
+  assert.deepEqual(deterministicReply({type:"dead_end_visible",cell:[1,0]},[route],null,null),{message:""});
 });
 
 test("recent exact Ariadne lines are suppressed without confusing MT text",()=>{

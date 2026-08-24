@@ -30,6 +30,12 @@ test("new spatial zones create bounded animated encounter episodes",()=>{
   assert.notEqual(first.majorFirstSeen,nextZone.majorFirstSeen);
 });
 
+test("a distant visible zone activates its spatial encounter before MT enters it",()=>{
+  const world={tile(){return 0}},memory=createSceneMemory(),visibleCells=Array.from({length:9},(_,index)=>[2+index,1]);
+  const result=buildPerceivedScene({...args(world,memory,{x:1.5,y:1.5,angle:0}),visibleCells,now:20_000});
+  assert.ok(result.scene.spectacles.some(item=>item.worldPosition[0]>=5.5),"expected an encounter in the farther visible zone");
+});
+
 test("MT attention records approach and turning away without leaking render internals",()=>{
   const world={tile(){return 0}},memory=createSceneMemory();
   buildPerceivedScene(args(world,memory,{x:1.5,y:1.5,angle:0}));
@@ -48,5 +54,5 @@ test("Ariadne receives the same explicit upcoming openings MT sees",()=>{
 
 test("renderer consumes shared perceived objects and spectacle layers",async()=>{
   const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8"));
-  assert.match(source,/perceivedIds/);assert.match(source,/renderSpectacles\(ctx,scene/);assert.match(source,/depths\[rayIndex\]/);assert.match(source,/renderAriadneThread/);assert.match(source,/atlasFrame/);
+  assert.match(source,/perceivedIds/);assert.match(source,/renderSpectacles\(ctx,scene/);assert.match(source,/depths\[rayIndex\]/);assert.match(source,/renderAriadneFairy/);assert.doesNotMatch(source,/renderAriadneThread/);assert.match(source,/atlasFrame/);
 });

@@ -32,12 +32,22 @@ button { font: inherit; }
 .story-continue { position: absolute; z-index: 2; bottom: 18px; left: 50%; transform: translateX(-50%); white-space: nowrap; }
 .story-continue span { display: inline-block; color: var(--amber); animation: story-prompt .8s steps(2) infinite; }
 .story-progress { position: absolute; z-index: 2; right: 24px; bottom: 20px; }
-.story-art { position: relative; z-index: 1; align-self: center; justify-self: center; width: min(800px, 78vw); aspect-ratio: 16 / 9; max-height: 48vh; overflow: hidden; color: #d4b95e; }
+.story-art { position: relative; z-index: 1; align-self: center; justify-self: center; width: min(800px, 78vw, 85.333vh); aspect-ratio: 16 / 9; overflow: hidden; color: #d4b95e; }
 .story-scene-image { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 .animated-story-stars { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .animated-story-stars i { position: absolute; top: -12%; font-style: normal; font-size: clamp(18px, 2.6vw, 38px); text-shadow: 0 0 12px rgba(245,205,81,.85); animation: falling-star 2.8s steps(14) infinite; }
 .animated-story-stars i::after { content: ""; position: absolute; right: 60%; top: 50%; width: 110px; height: 2px; background: linear-gradient(90deg, transparent, #b88737); transform: rotate(-32deg); transform-origin: right; }
 .animated-story-stars i:nth-child(1) { left: 8%; animation-delay: -.3s; }.animated-story-stars i:nth-child(2) { left: 34%; animation-delay: -.9s; }.animated-story-stars i:nth-child(3) { left: 61%; animation-delay: -1.7s; }.animated-story-stars i:nth-child(4) { left: 84%; animation-delay: -2.3s; }
+.story-fairy { position: absolute; z-index: 4; width: 24px; height: 24px; pointer-events: none; filter: drop-shadow(0 0 7px rgba(105,223,249,.9)); animation: story-fairy-hover 2.3s ease-in-out infinite; }
+.story-fairy::before, .story-fairy::after { content: ""; position: absolute; inset: 3px; border: 1px dashed #70e4f5; border-radius: 50%; animation: story-fairy-ring 2.2s steps(12) infinite; }
+.story-fairy::after { inset: 6px 1px; border-color: #e55dce; animation-direction: reverse; animation-duration: 1.45s; }
+.story-fairy-meeting { left: calc(54.8% - 12px); top: calc(52.3% - 12px); }.story-fairy-team { left: calc(53% - 12px); top: calc(54% - 12px); }
+.story-fairy i { position: absolute; display: block; }
+.story-fairy-core { left: 9px; top: 9px; width: 7px; height: 7px; background: #efffff; box-shadow: 0 0 0 2px #70dff4, 0 0 12px 5px rgba(72,172,235,.65); animation: story-fairy-pulse .75s steps(3) infinite; }
+.story-fairy-wing { width: 5px; height: 2px; background: #baf3ff; opacity: .9; animation: story-fairy-vane .8s steps(4) infinite alternate; }
+.story-fairy-wing.wing-a { left: 1px; top: 6px; }.story-fairy-wing.wing-b { right: 0; top: 7px; background: #e55dce; animation-delay: -.2s; }
+.story-fairy-wing.wing-c { left: 3px; top: 17px; background: #efc966; animation-delay: -.4s; }.story-fairy-wing.wing-d { right: 2px; top: 16px; animation-delay: -.6s; }
+.story-fairy-mote { width: 2px; height: 2px; background: #efc966; animation: story-fairy-mote 1.8s linear infinite; }.story-fairy-mote.mote-a { left: 0; top: 12px; }.story-fairy-mote.mote-b { right: 1px; top: 2px; animation-delay: -.6s; }.story-fairy-mote.mote-c { right: 3px; bottom: 0; animation-delay: -1.2s; }
 .story-logo-screen { background: #050706; }.story-title-panel { animation: title-reveal 1s steps(12); }
 .pause-screen { z-index: 40; background: rgba(3,4,3,.76); backdrop-filter: blur(3px); }
 .pause-panel { width: min(380px, 88vw); padding: 38px 34px 34px; display: flex; flex-direction: column; align-items: stretch; gap: 17px; border: 1px solid #71684e; background: #0b0d0b; box-shadow: 0 16px 60px rgba(0,0,0,.7), inset 0 0 0 3px #050605; }
@@ -51,6 +61,11 @@ button { font: inherit; }
 .closure-panel .pixel-button { width: 100%; }
 @keyframes story-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes story-prompt { 50% { transform: translateY(4px); } }
+@keyframes story-fairy-hover { 0%,100% { transform: translate(0,1px); } 42% { transform: translate(2px,-3px); } 72% { transform: translate(-1px,-1px); } }
+@keyframes story-fairy-pulse { 50% { filter: brightness(1.55); transform: scale(1.16); } }
+@keyframes story-fairy-ring { to { transform: rotate(360deg); } }
+@keyframes story-fairy-vane { from { opacity: .45; transform: translateX(-1px); } to { opacity: 1; transform: translateX(2px); } }
+@keyframes story-fairy-mote { from { transform: rotate(0deg) translateX(8px); opacity: .25; } 50% { opacity: 1; } to { transform: rotate(360deg) translateX(8px); opacity: .25; } }
 @keyframes falling-star { from { transform: translate(100px,-20px); opacity: 0; } 18%,72% { opacity: 1; } to { transform: translate(-180px,330px); opacity: 0; } }
 @keyframes title-reveal { from { opacity: 0; filter: brightness(0); } to { opacity: 1; filter: brightness(1); } }
 @keyframes signal-collapse { 0%,35% { background: rgba(0,0,0,0); } 55% { background: rgba(0,0,0,.28); } 72% { background: rgba(0,0,0,.74); } 100% { background: #030403; } }
@@ -156,4 +171,4 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 7; touch-
   .control-copy { grid-column: 1 / -1; }
   .reset { align-self: center; }
 }
-@media (prefers-reduced-motion: reduce) { .blink, .boot-screen::after, .star-pulse .viewport-wrap::after, .story-stage, .story-continue span, .animated-story-stars i, .story-title-panel, .closure-panel { animation: none; } .boot-screen { transition: none; } .closure-screen { animation: none; background: #030403; } }
+@media (prefers-reduced-motion: reduce) { .blink, .boot-screen::after, .star-pulse .viewport-wrap::after, .story-stage, .story-continue span, .animated-story-stars i, .story-title-panel, .story-fairy, .story-fairy i, .closure-panel { animation: none; } .boot-screen { transition: none; } .closure-screen { animation: none; background: #030403; } }

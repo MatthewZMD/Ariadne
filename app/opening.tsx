@@ -63,6 +63,10 @@ function StoryArt({ index }: { index: number }) {
   return <div className="story-art" aria-hidden="true">
     <Image className="story-scene-image" src={`/story/scene-${scene}.png`} alt="" width={320} height={180} unoptimized priority={index<2}/>
     {index===0&&<div className="animated-story-stars"><i>★</i><i>★</i><i>★</i><i>★</i></div>}
+    {(index===6||index===7)&&<div className={`story-fairy story-fairy-${index===6?"meeting":"team"}`}>
+      <i className="story-fairy-wing wing-a"/><i className="story-fairy-wing wing-b"/><i className="story-fairy-wing wing-c"/><i className="story-fairy-wing wing-d"/>
+      <i className="story-fairy-core"/><i className="story-fairy-mote mote-a"/><i className="story-fairy-mote mote-b"/><i className="story-fairy-mote mote-c"/>
+    </div>}
   </div>;
 }
 

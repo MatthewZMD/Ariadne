@@ -164,24 +164,25 @@ export function buildPerceivedScene(args:{
     const prior=memory.previousDistances.get(entity.id);memory.previousDistances.set(entity.id,projection.distance);
     return{id:entity.id,name:text.name,direction:directionFor(projection.delta),distance:distanceFor(projection.distance),action:text.action,firstSeen,_priorDistance:prior};
   });
-  const intensity=Math.max(0,Math.min(1,args.relationshipIntensity)),baseCount=1+Math.floor(intensity*2)+Math.min(1,args.collectedStars),available=SPECTACLES[primary],now=args.now??Date.now();
+  const intensity=Math.max(0,Math.min(1,args.relationshipIntensity)),baseCount=1+Math.floor(intensity*2)+Math.min(1,args.collectedStars),now=args.now??Date.now();
   const spectacles:VisibleSpectacle[]=[];
-  const zoneX=Math.floor(pose.x/5),zoneY=Math.floor(pose.y/5),encounterIndex=hash32(args.seed,primary,zoneX,zoneY,"encounter")%available.length,encounter=available[encounterIndex]!,encounterId=`encounter:${primary}:${zoneX}:${zoneY}:${encounter.visualKind}`;
-  const addSpectacle=(item:{visualKind:string;description:string;direction:RelativeDirection},id:string,theme:ThemeId,salience:SceneSalience,progress:number)=>{
-    const spatial=spectaclePosition({id,preferredDirection:item.direction,visibleCells:args.visibleCells,world,pose,tick,seed:args.seed,memory});if(!spatial)return false;
+  const addSpectacle=(item:{visualKind:string;description:string;direction:RelativeDirection},id:string,theme:ThemeId,salience:SceneSalience,progress:number,candidateCells=args.visibleCells)=>{
+    const spatial=spectaclePosition({id,preferredDirection:item.direction,visibleCells:candidateCells,world,pose,tick,seed:args.seed,memory});if(!spatial)return false;
     const firstSeen=!memory.seen.has(id);if(firstSeen){memory.seen.add(id);changes.push(item.description)}
     spectacles.push({...item,id,theme,direction:directionFor(spatial.projection.delta),firstSeen,salience,progress,worldPosition:spatial.position});return true;
   };
-  const encounterSpatial=spectaclePosition({id:encounterId,preferredDirection:encounter.direction,visibleCells:args.visibleCells,world,pose,tick,seed:args.seed,memory});
-  if(encounterSpatial&&!memory.encounterStarts.has(encounterId))memory.encounterStarts.set(encounterId,now);
-  const encounterAge=memory.encounterStarts.has(encounterId)?now-memory.encounterStarts.get(encounterId)!:Infinity;
-  if(encounterAge<12_000)addSpectacle(encounter,encounterId,primary,"major",encounterAge/12_000);
-  for(let i=0;i<Math.min(baseCount,available.length-1);i++){
-    const index=(encounterIndex+i+1)%available.length,item=available[index]!,id=`atmosphere:${primary}:${zoneX}:${zoneY}:${item.visualKind}`;
-    addSpectacle(item,id,primary,i===0?"noticeable":"ambient",(now%10_000)/10_000);
+  const visibleZones=[...args.visibleCells.filter(([x,y])=>world.tile(x,y,tick)===0).reduce((zones,[x,y])=>{const zoneX=Math.floor(x/5),zoneY=Math.floor(y/5),key=`${zoneX},${zoneY}`,distance=Math.hypot(x+.5-pose.x,y+.5-pose.y),existing=zones.get(key);if(!existing||distance<existing.distance)zones.set(key,{zoneX,zoneY,x,y,distance});return zones},new Map<string,{zoneX:number;zoneY:number;x:number;y:number;distance:number}>()).values()].sort((a,b)=>a.distance-b.distance).slice(0,4);
+  for(const[zoneOrder,zone]of visibleZones.entries()){
+    const zoneCells=args.visibleCells.filter(([x,y])=>Math.floor(x/5)===zone.zoneX&&Math.floor(y/5)===zone.zoneY),zoneTheme=themeAt(args.anchors,zone.x+.5,zone.y+.5).id,available=SPECTACLES[zoneTheme],encounterIndex=hash32(args.seed,zoneTheme,zone.zoneX,zone.zoneY,"encounter")%available.length,encounter=available[encounterIndex]!,encounterId=`encounter:${zoneTheme}:${zone.zoneX}:${zone.zoneY}:${encounter.visualKind}`;
+    const encounterSpatial=spectaclePosition({id:encounterId,preferredDirection:encounter.direction,visibleCells:zoneCells,world,pose,tick,seed:args.seed,memory});
+    if(encounterSpatial&&!memory.encounterStarts.has(encounterId))memory.encounterStarts.set(encounterId,now);
+    const encounterAge=memory.encounterStarts.has(encounterId)?now-memory.encounterStarts.get(encounterId)!:Infinity;
+    if(encounterAge<12_000)addSpectacle(encounter,encounterId,zoneTheme,"major",encounterAge/12_000,zoneCells);
+    const atmosphereCount=zoneOrder===0?Math.min(baseCount,available.length-1):Math.min(1,available.length-1);
+    for(let i=0;i<atmosphereCount;i++){const index=(encounterIndex+i+1)%available.length,item=available[index]!,id=`atmosphere:${zoneTheme}:${zone.zoneX}:${zone.zoneY}:${item.visualKind}`;addSpectacle(item,id,zoneTheme,i===0?"noticeable":"ambient",(now%10_000)/10_000,zoneCells)}
   }
   if((args.phase!=="charming"||args.collectedStars>=2)&&args.anchors.length>1){
-    const foreignThemes=[...new Set(args.anchors.filter(anchor=>anchor.triggered).map(anchor=>anchor.theme))].filter(theme=>theme!==primary),foreign=foreignThemes[hash32(args.seed,tick>>3,"foreign")%Math.max(1,foreignThemes.length)];
+    const zoneX=Math.floor(pose.x/5),zoneY=Math.floor(pose.y/5),foreignThemes=[...new Set(args.anchors.filter(anchor=>anchor.triggered).map(anchor=>anchor.theme))].filter(theme=>theme!==primary),foreign=foreignThemes[hash32(args.seed,tick>>3,"foreign")%Math.max(1,foreignThemes.length)];
     if(foreign){const item=SPECTACLES[foreign][hash32(args.seed,foreign,primary)%SPECTACLES[foreign].length]!,id=`collage:${foreign}:${primary}:${zoneX}:${zoneY}:${item.visualKind}`,description=`Out of place here, ${item.description}`;
       addSpectacle({...item,description},id,foreign,"noticeable",(now%10_000)/10_000);
     }

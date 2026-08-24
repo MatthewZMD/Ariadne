@@ -86,6 +86,8 @@ export class InfiniteWorld {
     this.chunks = new Map();
     this.epochs = new Map();
     this.pinnedChunks = new Map();
+    this.tileOverrides = new Map();
+    this.entranceGate = null;
   }
   coords(x, y) {
     return { cx: floorDiv(x, CHUNK_SIZE), cy: floorDiv(y, CHUNK_SIZE), lx: mod(x, CHUNK_SIZE), ly: mod(y, CHUNK_SIZE) };
@@ -101,8 +103,35 @@ export class InfiniteWorld {
     return chunk;
   }
   tile(x, y, tick = 0) {
+    const override = this.tileOverrides.get(cellKey(x, y));
+    if (override !== undefined) return override;
     const { cx, cy, lx, ly } = this.coords(x, y);
     return this.getChunk(cx, cy, tick).tiles[ly][lx];
+  }
+  setEntranceGate(insideX, insideY, forwardX, forwardY) {
+    const gateX = insideX - Math.sign(forwardX), gateY = insideY - Math.sign(forwardY);
+    this.tileOverrides.set(cellKey(gateX, gateY), 1);
+    this.entranceGate = { inside: [insideX, insideY], cell: [gateX, gateY], facing: [Math.sign(forwardX), Math.sign(forwardY)] };
+    return this.entranceGate;
+  }
+  setEntranceCorridor(insideX, insideY, forwardX, forwardY, length = 3) {
+    const dx = Math.sign(forwardX), dy = Math.sign(forwardY);
+    if (Math.abs(dx) + Math.abs(dy) !== 1) throw new Error("entrance corridor requires one cardinal facing direction");
+    const corridorLength = Math.max(1, Math.floor(length));
+    const sideX = -dy, sideY = dx;
+    const gate = this.setEntranceGate(insideX, insideY, dx, dy);
+    for (let step = 0; step <= corridorLength; step++) {
+      const x = insideX + dx * step, y = insideY + dy * step;
+      this.tileOverrides.set(cellKey(x, y), 0);
+      if (step < corridorLength) {
+        this.tileOverrides.set(cellKey(x + sideX, y + sideY), 1);
+        this.tileOverrides.set(cellKey(x - sideX, y - sideY), 1);
+      }
+    }
+    return gate;
+  }
+  isEntranceGate(x, y) {
+    return this.entranceGate?.cell[0] === x && this.entranceGate?.cell[1] === y;
   }
   ensureAround(x, y, tick = 0) {
     const { cx, cy } = this.coords(x, y);
