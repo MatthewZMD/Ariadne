@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseNavigationBelief, createObjectiveStateAsync, collectStar, createObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStar, starCollectedAt, starRouteIsOpen, starVisible } from "../app/objectives.ts";
+import { chooseNavigationBelief, createObjectiveStateAsync, collectStar, createObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStar, settleObjectiveStreaming, starCollectedAt, starRouteIsOpen, starVisible } from "../app/objectives.ts";
 import { InfiniteWorld, chunkKey } from "../app/world.mjs";
 
 test("the first star is reachable, distant, and protects its generated path",()=>{
@@ -31,6 +31,14 @@ test("active and queued star routes survive distant chunk regeneration",()=>{
   assert.deepEqual(state.activeStar.canonicalPath[0],[1,1]);assert.deepEqual(state.queuedStar.canonicalPath[0],state.activeStar.cell);
   const protectedChunks=objectiveProtectedChunks(state);
   for(let step=0;step<50;step++){const x=9000+step*19,y=6000-step*13;world.ensureAround(x,y,200+step);world.prune(x,y,protectedChunks,200+step)}
+  assert.equal(starRouteIsOpen(world,state.activeStar),true);assert.equal(starRouteIsOpen(world,state.queuedStar),true);
+});
+
+test("objective placement releases distant search debris without releasing either star route",()=>{
+  const world=new InfiniteWorld(917),visited=new Set(["1,1"]);let state=createObjectiveState(world,[1,1],917,new Set(),visited);state=queueNextStar(state,world,917,visited);
+  const before=world.chunks.size,protectedChunks=objectiveProtectedChunks(state);assert.ok(before>49,"placement should exercise distant generation");
+  settleObjectiveStreaming(world,state,[1,1]);
+  assert.ok(world.chunks.size<=49+protectedChunks.size,`retained ${world.chunks.size} chunks for ${protectedChunks.size} protected chunks`);
   assert.equal(starRouteIsOpen(world,state.activeStar),true);assert.equal(starRouteIsOpen(world,state.queuedStar),true);
 });
 

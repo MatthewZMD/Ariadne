@@ -137,3 +137,13 @@ test("embodiment context is qualitative and reflects physical reactions",()=>{
   const context=describeAriadneEmbodiment(body,pose,openWorld,0,null);
   assert.match(context.currentAction,/closer|softened/);assert.equal(context.relationToBelievedRoute,null);assert.equal("position" in context,false);assert.equal("mode" in context,false);
 });
+
+test("contradicted guidance makes Ariadne visibly recoil, approach, lower, and remain apologetic",()=>{
+  const body=createAriadneBody(pose,0);body.position=[3.1,1.5];body.velocity=[1.2,0,.2];const initialDistance=Math.hypot(body.position[0]-pose.x,body.position[1]-pose.y);
+  prepareAriadneForEvent(body,"recommendation_contradicted",1000);
+  assert.equal(body.mode,"apologizing");assert.ok(body.velocity[0]<0,"the leading motion should visibly recoil");
+  for(let frame=1;frame<=75;frame++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+frame*1000/60,reducedMotion:false});
+  assert.equal(body.mode,"apologizing","ordinary visibility recovery must not erase the apology posture");
+  assert.ok(Math.hypot(body.position[0]-pose.x,body.position[1]-pose.y)<initialDistance*.55,"Ariadne should return close to MT");
+  assert.ok(body.height<.55,`Ariadne did not lower enough: ${body.height}`);
+});

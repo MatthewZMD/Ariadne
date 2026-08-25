@@ -5,7 +5,7 @@ import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } 
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
 import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, isRecentCompanionRepeat, markTrajectoryChange, nearestVisibleJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type TrajectorySample } from "./companion";
-import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, releaseStarRoute, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
+import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, releaseStarRoute, settleObjectiveStreaming, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
 import { closureReason, finalAriadneLine, type ClosureReason } from "./closure";
 import { ClosureScreen, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
 import { acceleratedSpeed, advanceInputRamp, MOVE_ACCELERATION, TURN_ACCELERATION, type InputRamp } from "./movement";
@@ -124,6 +124,7 @@ export default function Home(){
     try{
       const objective=await createObjectiveStateAsync(draft.world,[1,1],seed,draft.appearanceProtected,draft.visited,draft.moves,controller.signal);
       if(generationEpochRef.current!==generation)return;
+      settleObjectiveStreaming(draft.world,objective,[1,1],draft.moves);
       applyRun({...draft,objective});setReady(true);
     }catch(error){if(!(error instanceof DOMException&&error.name==="AbortError"))console.warn("ARIADNE signal generation failed",error)}
   },[applyRun]);
@@ -221,7 +222,7 @@ export default function Home(){
       try{
         const objective=await queueNextStarAsync(current.objective,current.world,current.seed,current.visited,current.moves,controller.signal),generated=objective.queuedStar!==current.objective.queuedStar?objective.queuedStar:null;
         if(cancelled||runEpochRef.current!==epoch||runRef.current.objective.activeStar?.id!==activeId||objective===current.objective){if(generated)releaseStarRoute(current.world,generated);return}
-        const latest=runRef.current,next={...latest,objective};runRef.current=next;setRun(next);
+        const latest=runRef.current;settleObjectiveStreaming(latest.world,objective,[latest.player.x,latest.player.y],latest.moves);const next={...latest,objective};runRef.current=next;setRun(next);
       }catch(error){if(!(error instanceof DOMException&&error.name==="AbortError"))console.warn("ARIADNE star preparation failed",error)}};
     const idle=window.requestIdleCallback?.(()=>prepare(),{timeout:1200}),timer=idle===undefined?window.setTimeout(prepare,30):undefined;
     return()=>{cancelled=true;controller.abort();if(idle!==undefined)window.cancelIdleCallback?.(idle);if(timer!==undefined)window.clearTimeout(timer)};
@@ -241,7 +242,8 @@ export default function Home(){
     const currentRoutes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),visibleJunctionRoutes=event.type==="new_junction_visible"?planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited):[];
     const routes=routesForEvent(event,currentRoutes,visibleJunctionRoutes),egocentricView=describeEgocentricView(current.world,pose,current.moves,currentRoutes),intent=guidanceRef.current;
     const activity=analyzePlayerActivity(trajectoryRef.current,now,lastMovementRef.current,lastTurnRef.current,geometry.junctions.length>0),sceneResult=refreshScene(activity.state==="turning_in_place"?"turning":activity.state),sceneAtRequest=sceneResult.scene,sceneChangesAtRequest=sceneChangesRef.current.slice(-8);
-    prepareAriadneForEvent(ariadneBodyRef.current,event.type,now);
+    const bodyEventType=event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted"?"recommendation_contradicted":event.type;
+    prepareAriadneForEvent(ariadneBodyRef.current,bodyEventType,now);
     const evidence=guidanceTraceRef.current?.evidence??null,currentArc=companionArc(journeyRef.current);
     const activeStarVisible=starVisible(current.world,current.objective,pose,current.moves);
     let belief:NavigationBelief|null=null;
@@ -274,7 +276,7 @@ export default function Home(){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now()};
         const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);
         published=true;nextPassingThoughtRef.current=nextPassingThoughtAt(Date.now(),journeyRef.current.phase);
-        messagePulseAtRef.current=Date.now();speakAsAriadne(ariadneBodyRef.current,finalText,event.type,Date.now());sceneChangesRef.current=sceneChangesRef.current.filter(change=>!sceneChangesAtRequest.includes(change));
+        messagePulseAtRef.current=Date.now();speakAsAriadne(ariadneBodyRef.current,finalText,bodyEventType,Date.now());sceneChangesRef.current=sceneChangesRef.current.filter(change=>!sceneChangesAtRequest.includes(change));
       }else if(event.type==="initial_guidance"&&repeated)published=true;
     }catch(error){
       if(requestIsCurrent()){

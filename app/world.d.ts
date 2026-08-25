@@ -10,7 +10,7 @@ export function hash32(...values: unknown[]): number;
 export function seededRandom(seed:number):()=>number;
 export function portalsFor(seed:number,cx:number,cy:number):{north:number;south:number;west:number;east:number};
 export type WorldChunk={cx:number;cy:number;epoch:number;tiles:number[][];lastTouched:number};
-export type EntranceGate={inside:[number,number];cell:[number,number];facing:[number,number]};
+export type EntranceGate={inside:[number,number];cell:[number,number];facing:[number,number];exit?:[number,number]};
 export function generateChunk(seed:number,cx:number,cy:number,epoch?:number):WorldChunk;
 export class InfiniteWorld {
   seed:number; chunks:Map<string,WorldChunk>; epochs:Map<string,number>; pinnedChunks:Map<string,number>; tileOverrides:Map<string,number>; entranceGate:EntranceGate|null;
@@ -19,7 +19,7 @@ export class InfiniteWorld {
   getChunk(cx:number,cy:number,tick?:number):WorldChunk;
   tile(x:number,y:number,tick?:number):number;
   setEntranceGate(insideX:number,insideY:number,forwardX:number,forwardY:number):EntranceGate;
-  setEntranceCorridor(insideX:number,insideY:number,forwardX:number,forwardY:number,length?:number):EntranceGate;
+  setEntranceCorridor(insideX:number,insideY:number,forwardX:number,forwardY:number,minimumLength?:number):EntranceGate;
   isEntranceGate(x:number,y:number):boolean;
   ensureAround(x:number,y:number,tick?:number):void;
   pinChunk(id:string):void;

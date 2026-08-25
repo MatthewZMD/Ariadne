@@ -157,6 +157,17 @@ export function objectiveProtectedChunks(state:ObjectiveState){
   return new Set([...(state.activeStar?.protectedChunks??[]),...(state.queuedStar?.protectedChunks??[])]);
 }
 
+/**
+ * Objective searches deliberately look far beyond MT's streaming radius.
+ * Retain the canonical star routes, but release every search-only chunk as
+ * soon as placement finishes so distant generation cannot stall the live
+ * world's normal recycling.
+ */
+export function settleObjectiveStreaming(world:InfiniteWorld,state:ObjectiveState,focus:Point,tick=0){
+  world.ensureAround(focus[0],focus[1],tick);
+  world.prune(focus[0],focus[1],objectiveProtectedChunks(state),tick);
+}
+
 export function publicObjective(state:ObjectiveState,activeStarVisible:boolean,latestEvent:ObjectiveEventName="searching"):PublicObjectiveContext{
   const goals:PublicGoal[]=["first_star","second_star","third_star","fourth_star","exit"];
   return{collectedStars:state.collectedStars,currentGoal:goals[state.stage],activeStarVisible,latestEvent};

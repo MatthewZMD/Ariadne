@@ -114,11 +114,25 @@ export class InfiniteWorld {
     this.entranceGate = { inside: [insideX, insideY], cell: [gateX, gateY], facing: [Math.sign(forwardX), Math.sign(forwardY)] };
     return this.entranceGate;
   }
-  setEntranceCorridor(insideX, insideY, forwardX, forwardY, length = 3) {
+  setEntranceCorridor(insideX, insideY, forwardX, forwardY, minimumLength = 13) {
     const dx = Math.sign(forwardX), dy = Math.sign(forwardY);
     if (Math.abs(dx) + Math.abs(dy) !== 1) throw new Error("entrance corridor requires one cardinal facing direction");
-    const corridorLength = Math.max(1, Math.floor(length));
+    const requestedLength = Math.max(1, Math.floor(minimumLength));
     const sideX = -dy, sideY = dx;
+    // Do not end the authored entrance at an isolated carved cell. Find an
+    // existing maze cell that has a natural way onward, then join the sealed
+    // approach corridor to it. The default begins beyond the camera range so a
+    // new run cannot present MT with a wall filling the opening view.
+    let corridorLength = requestedLength;
+    for (let step = requestedLength; step <= requestedLength + CHUNK_SIZE * 2; step++) {
+      const x = insideX + dx * step, y = insideY + dy * step;
+      if (this.tile(x, y) !== 0) continue;
+      const continues = [[1,0],[-1,0],[0,1],[0,-1]].some(([nx,ny]) => {
+        if (nx === -dx && ny === -dy) return false;
+        return this.tile(x + nx, y + ny) === 0;
+      });
+      if (continues) { corridorLength = step; break; }
+    }
     const gate = this.setEntranceGate(insideX, insideY, dx, dy);
     for (let step = 0; step <= corridorLength; step++) {
       const x = insideX + dx * step, y = insideY + dy * step;
@@ -128,6 +142,7 @@ export class InfiniteWorld {
         this.tileOverrides.set(cellKey(x - sideX, y - sideY), 1);
       }
     }
+    gate.exit = [insideX + dx * corridorLength, insideY + dy * corridorLength];
     return gate;
   }
   isEntranceGate(x, y) {

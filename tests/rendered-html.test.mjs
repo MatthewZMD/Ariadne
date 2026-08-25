@@ -52,17 +52,29 @@ test("a run-scoped entrance gate seals only the cell behind MT until the world i
   const recycled=new InfiniteWorld(405);assert.equal(recycled.entranceGate,null);assert.equal(recycled.isEntranceGate(0,1),false);
 });
 
-test("the starting corridor has exactly one traversable direction",()=>{
-  const world=new InfiniteWorld(406),gate=world.setEntranceCorridor(1,1,1,0,3);
+test("the starting corridor has exactly one traversable direction and opens beyond the initial view",()=>{
+  const world=new InfiniteWorld(406),gate=world.setEntranceCorridor(1,1,1,0,13);
   assert.deepEqual(gate.facing,[1,0]);
   assert.equal(world.tile(0,1),1,"the entrance gate must seal the route behind MT");
-  for(let step=0;step<3;step++){
+  for(let step=0;step<13;step++){
     assert.equal(world.tile(1+step,0),1,`north side of entrance step ${step} must be a wall`);
     assert.equal(world.tile(1+step,2),1,`south side of entrance step ${step} must be a wall`);
     assert.equal(world.tile(2+step,1),0,`entrance must remain open ahead at step ${step}`);
   }
   const immediateNeighbors=[[2,1],[0,1],[1,0],[1,2]].filter(([x,y])=>world.tile(x,y)===0);
   assert.deepEqual(immediateNeighbors,[[2,1]]);
+});
+
+test("randomized entrances never terminate inside the camera range and join a continuing route",()=>{
+  const directions=[[1,0],[0,1],[-1,0],[0,-1]];
+  for(let seed=1;seed<=256;seed++){
+    const world=new InfiniteWorld(seed),[dx,dy]=directions[seed%directions.length],gate=world.setEntranceCorridor(1,1,dx,dy);
+    const endpoint=gate.exit,distance=Math.abs(endpoint[0]-1)+Math.abs(endpoint[1]-1);
+    assert.ok(distance>=13,`seed ${seed} closed after ${distance} cells`);
+    const onward=[[1,0],[-1,0],[0,1],[0,-1]].filter(([nx,ny])=>!(nx===-dx&&ny===-dy)&&world.tile(endpoint[0]+nx,endpoint[1]+ny)===0);
+    assert.ok(onward.length>0,`seed ${seed} entrance did not join the maze`);
+    assert.deepEqual(gate.facing,[dx,dy]);
+  }
 });
 
 test("regenerated interiors change while stable seam portals survive",()=>{
