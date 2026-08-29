@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHUNK_SIZE, InfiniteWorld, LOGICAL_SPACING, THEME_IDS, chunkTopology, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
+import { MOVE_ACCELERATION } from "../app/movement.ts";
+
+const DECISION_VISIBILITY_DISTANCE=12;
 
 test("shared portals match across positive and negative chunk seams", () => {
   const seed=192837;
@@ -17,8 +20,8 @@ test("every chunk has one connected walkable network containing all portals",()=
     const open=chunk.tiles.flat().filter(x=>x===0).length;
     assert.equal(connectedTileCount(chunk),open);
     const p=portalsFor(seed,cx,cy);
-    assert.equal(chunk.tiles[0][p.north],0);assert.equal(chunk.tiles[15][p.south],0);
-    assert.equal(chunk.tiles[p.west][0],0);assert.equal(chunk.tiles[p.east][15],0);
+    assert.equal(chunk.tiles[0][p.north],0);assert.equal(chunk.tiles[CHUNK_SIZE-1][p.south],0);
+    assert.equal(chunk.tiles[p.west][0],0);assert.equal(chunk.tiles[p.east][CHUNK_SIZE-1],0);
   }
 });
 
@@ -28,7 +31,8 @@ test("long corridors separate decisions while preserving branches and dead ends"
     const topology=chunkTopology(generateChunk(seed,(seed%13)-6,(seed%17)-8,seed%4));
     cells+=topology.logicalCells;deadEnds+=topology.deadEnds;corridors+=topology.corridors;junctions+=topology.junctions;
   }
-  assert.equal(LOGICAL_SPACING,4);
+  assert.equal(LOGICAL_SPACING,14);
+  assert.ok(LOGICAL_SPACING/MOVE_ACCELERATION.maximum>=5,"near-junction episodes must remain at least five seconds apart at maximum speed");
   assert.equal(cells/240,16);
   assert.ok(deadEnds/cells>=.24,`dead-end rate was only ${deadEnds/cells}`);
   assert.ok(corridors/cells<.55,`corridor rate was ${corridors/cells}`);
@@ -44,19 +48,19 @@ test("infinite coordinates stream through a bounded cache",()=>{
 });
 
 test("a run-scoped entrance gate seals only the cell behind MT until the world is recycled",()=>{
-  const world=new InfiniteWorld(404),forwardBefore=world.tile(2,1),gate=world.setEntranceGate(1,1,1,0);
+  const world=new InfiniteWorld(404),forwardBefore=world.tile(2,1),gateBefore=world.tile(0,1),gate=world.setEntranceGate(1,1,1,0);
   assert.deepEqual(gate.cell,[0,1]);assert.deepEqual(gate.inside,[1,1]);assert.equal(world.tile(0,1),1);assert.equal(world.isEntranceGate(0,1),true);
   assert.equal(world.tile(2,1),forwardBefore,"installing the gate must not rewrite the route ahead");
   world.ensureAround(900,900,200);world.prune(900,900,new Set(),200);
-  assert.equal(world.tile(0,1,201),1,"chunk recycling must not reopen the current run's entrance");
+  assert.equal(world.entranceGate,null);assert.equal(world.tile(0,1,201),gateBefore,"recycled entrance geometry returns to normal deterministic world rules");
   const recycled=new InfiniteWorld(405);assert.equal(recycled.entranceGate,null);assert.equal(recycled.isEntranceGate(0,1),false);
 });
 
-test("the starting corridor has exactly one traversable direction and opens beyond the initial view",()=>{
-  const world=new InfiniteWorld(406),gate=world.setEntranceCorridor(1,1,1,0,13);
+test("the starting corridor has exactly one traversable direction and opens after five seconds at maximum speed",()=>{
+  const world=new InfiniteWorld(406),gate=world.setEntranceCorridor(1,1,1,0);
   assert.deepEqual(gate.facing,[1,0]);
   assert.equal(world.tile(0,1),1,"the entrance gate must seal the route behind MT");
-  for(let step=0;step<13;step++){
+  for(let step=0;step<LOGICAL_SPACING+DECISION_VISIBILITY_DISTANCE;step++){
     assert.equal(world.tile(1+step,0),1,`north side of entrance step ${step} must be a wall`);
     assert.equal(world.tile(1+step,2),1,`south side of entrance step ${step} must be a wall`);
     assert.equal(world.tile(2+step,1),0,`entrance must remain open ahead at step ${step}`);
@@ -70,17 +74,17 @@ test("randomized entrances never terminate inside the camera range and join a co
   for(let seed=1;seed<=256;seed++){
     const world=new InfiniteWorld(seed),[dx,dy]=directions[seed%directions.length],gate=world.setEntranceCorridor(1,1,dx,dy);
     const endpoint=gate.exit,distance=Math.abs(endpoint[0]-1)+Math.abs(endpoint[1]-1);
-    assert.ok(distance>=13,`seed ${seed} closed after ${distance} cells`);
+    assert.ok(distance>=LOGICAL_SPACING+DECISION_VISIBILITY_DISTANCE,`seed ${seed} closed after ${distance} cells`);
     const onward=[[1,0],[-1,0],[0,1],[0,-1]].filter(([nx,ny])=>!(nx===-dx&&ny===-dy)&&world.tile(endpoint[0]+nx,endpoint[1]+ny)===0);
     assert.ok(onward.length>0,`seed ${seed} entrance did not join the maze`);
     assert.deepEqual(gate.facing,[dx,dy]);
   }
 });
 
-test("regenerated interiors change while stable seam portals survive",()=>{
+test("pruned interiors reconstruct identically within a run",()=>{
   const seed=8181,cx=-3,cy=5,a=generateChunk(seed,cx,cy,0),b=generateChunk(seed,cx,cy,1),p=portalsFor(seed,cx,cy);
-  assert.equal(a.tiles[0][p.north],b.tiles[0][p.north]);assert.equal(a.tiles[p.east][15],b.tiles[p.east][15]);
-  assert.notDeepEqual(a.tiles,b.tiles);
+  assert.equal(a.tiles[0][p.north],b.tiles[0][p.north]);assert.equal(a.tiles[p.east][CHUNK_SIZE-1],b.tiles[p.east][CHUNK_SIZE-1]);
+  assert.deepEqual(a.tiles,b.tiles);
 });
 
 test("checkpoint cadence is bounded and shuffle bag prevents early repeats",()=>{

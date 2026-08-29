@@ -11,6 +11,8 @@ export type RequestBody={
   actualTrajectory:TrajectorySample[];currentView:EgocentricView;environment:VisibleEnvironment;perceivedScene:PromptPerceivedScene;sceneChanges:string[];rememberedMap:string;
   legalRoutes:RouteOption[];recentMessages:CompanionMessage[];olderContextSummary:string;companionArc:CompanionArc;
   objective:PublicObjectiveContext;navigationBelief:NavigationBelief|null;embodiment:AriadneEmbodimentContext;
+  accomplishment?:{whatMTJustAccomplished:string;whatChangedPermanently:string|null;starVisiblyResponded:boolean;visibleProgress:string}|null;
+  visibleConfigurations?:string[];
   playerMessage?:string;preferredModelId?:string|null;
 };
 
@@ -26,8 +28,8 @@ const trajectoryChanges=["sustained_alignment","sustained_divergence","left_then
 const goalByStars=["first_star","second_star","third_star","fourth_star","exit"] as const;
 const objectiveEvents=["searching","star_visible","star_collected","objective_changed"] as const;
 const embodiedStates=["noticing","committing","waiting","mt_following","mt_diverging","mt_passed","route_contradicted","rejoining","resolved"] as const satisfies readonly EmbodiedDecisionState[];
-const speechActs=["invite_to_visible_choice","confirm_following","respond_to_divergence","catch_up","repair_mistake","celebrate_rejoining","react_to_star","share_visible_discovery","passing_companionship","reply_to_mt"] as const satisfies readonly CompanionSpeechAct[];
-const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free","nvidia/nemotron-nano-9b-v2:free","nvidia/nemotron-nano-12b-v2-vl:free"];
+const speechActs=["invite_to_visible_choice","confirm_following","respond_to_divergence","catch_up","repair_mistake","celebrate_rejoining","react_to_star","celebrate_accomplishment","renew_hope","share_visible_discovery","passing_companionship","reply_to_mt"] as const satisfies readonly CompanionSpeechAct[];
+const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-31b-it:free","minimax/minimax-m3:free","google/gemma-4-26b-a4b-it:free"];
 
 type RecordValue=Record<string,unknown>;
 const isRecord=(value:unknown):value is RecordValue=>!!value&&typeof value==="object"&&!Array.isArray(value);
@@ -72,8 +74,9 @@ function isTrigger(value:unknown):value is CompanionEvent{
   if(value.type==="idle")return isBoolean(value.atChoice);
   if(value.type==="player_message")return isString(value.text,500,1);
   if(value.type==="star_visible"||value.type==="star_collected")return isString(value.starId,200,1)&&isNumber(value.ordinal,1,4,true);
+  if(value.type==="encounter_completed")return isString(value.encounterId,240,1)&&isBoolean(value.starResponded);
   if(value.type==="objective_changed")return isNumber(value.collectedStars,0,4,true);
-  return ["recommendation_contradicted","target_reached","same_target_reached_differently","new_junction_visible","left_ariadne_waiting","passing_thought","revisited_position","sustained_backtrack","repeated_collision","initial_guidance"].includes(value.type);
+  return ["recommendation_contradicted","target_reached","same_target_reached_differently","new_junction_visible","left_ariadne_waiting","passing_thought","revisited_position","sustained_backtrack","repeated_collision","final_direction","initial_guidance"].includes(value.type);
 }
 
 function isActivity(value:unknown):value is PlayerActivity{
@@ -143,6 +146,8 @@ export function parseCompanionRequest(value:unknown):RequestBody|null{
   if(!isString(value.rememberedMap,1800)||!Array.isArray(value.legalRoutes)||value.legalRoutes.length>6||!value.legalRoutes.every(isRoute))return null;
   const legalRoutes=value.legalRoutes as RouteOption[];if(new Set(legalRoutes.map(route=>route.id)).size!==legalRoutes.length)return null;
   if(!Array.isArray(value.recentMessages)||value.recentMessages.length>8||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200)||!isArc(value.companionArc)||!isObjective(value.objective)||!isEmbodiment(value.embodiment))return null;
+  if(!(value.accomplishment===undefined||value.accomplishment===null||isRecord(value.accomplishment)&&isString(value.accomplishment.whatMTJustAccomplished,240,1)&&(value.accomplishment.whatChangedPermanently===null||isString(value.accomplishment.whatChangedPermanently,300,1))&&isBoolean(value.accomplishment.starVisiblyResponded)&&isString(value.accomplishment.visibleProgress,160,1)))return null;
+  if(!(value.visibleConfigurations===undefined||Array.isArray(value.visibleConfigurations)&&value.visibleConfigurations.length<=8&&value.visibleConfigurations.every(item=>isString(item,240,1))))return null;
   if(!isBelief(value.navigationBelief,legalRoutes,value.objective.collectedStars))return null;
   const expectedObjectiveEvent=value.trigger.type==="star_visible"?"star_visible":value.trigger.type==="star_collected"?"star_collected":value.trigger.type==="objective_changed"?"objective_changed":"searching";
   if(value.objective.latestEvent!==expectedObjectiveEvent)return null;
@@ -201,13 +206,21 @@ export function isVerifiedProviderModel(requested:string,actual:string|undefined
 }
 
 let modelCache:{expiresAt:number;models:string[]}|null=null,modelCatalogRequest:Promise<string[]>|null=null;
+const unavailableModels=new Map<string,number>();
+function modelAvailable(model:string,now=Date.now()){
+  const until=unavailableModels.get(model)??0;if(until<=now){unavailableModels.delete(model);return true}return false;
+}
+function temporarilySideline(model:string,error:unknown){
+  if(model==="openrouter/free"||!(error instanceof ProviderAttemptError)||/free-models-per-min|limit_source/i.test(error.message))return;
+  unavailableModels.set(model,Date.now()+(error.retryable?90_000:30_000));
+}
 async function freeModels(apiKey:string){
   if(modelCache&&modelCache.expiresAt>Date.now())return modelCache.models;
   if(modelCatalogRequest)return modelCatalogRequest;
   modelCatalogRequest=(async()=>{try{
       const response=await fetch("https://openrouter.ai/api/v1/models?sort=latency-low-to-high",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(5000)});
       if(!response.ok)throw new Error(`model catalog ${response.status}`);
-      const payload=await response.json() as {data?:OpenRouterModel[]};const models=(payload.data??[]).filter(model=>isFreeCompanionModel(model)).sort((a,b)=>{
+      const payload=await response.json() as {data?:OpenRouterModel[]};const models=(payload.data??[]).filter(model=>isFreeCompanionModel(model)&&!/(?:code|coder|safety|guard|rerank|embedding|audio|poolside)/i.test(model.id)).sort((a,b)=>{
         const ai=FAST_FREE_MODELS.indexOf(a.id),bi=FAST_FREE_MODELS.indexOf(b.id),rank=(ai<0?FAST_FREE_MODELS.length:ai)-(bi<0?FAST_FREE_MODELS.length:bi);return rank||(b.created??0)-(a.created??0);
       }).map(model=>model.id);
       if(models.length)modelCache={expiresAt:Date.now()+15*60_000,models};
@@ -231,7 +244,9 @@ function semanticEvent(event:CompanionEvent){
   if(event.type==="initial_guidance")return`This is your first moment together. Begin exactly with: “Hi, ${PLAYER_NAME}—I’m Ariadne. I’m here to help you find four stars, then the exit.”`;
   if(event.type==="star_visible")return`The ${["first","second","third","fourth"][event.ordinal-1]} star has just become visible to MT. React to the actual sight of it.`;
   if(event.type==="star_collected")return`MT has just collected star ${event.ordinal} of four. Celebrate, while interpreting the journey only through the supplied trajectory facts.`;
+  if(event.type==="encounter_completed")return event.starResponded?"MT completed a visible configuration and the star visibly responded to it.":"MT completed a visible configuration. The location transformed, but the star showed no visible response.";
   if(event.type==="objective_changed")return event.collectedStars===4?"All four stars are collected. You are now certain you can guide MT to the exit.":`The next objective has begun after ${event.collectedStars} collected star${event.collectedStars===1?"":"s"}.`;
+  if(event.type==="final_direction")return"The search has continued through transformed and familiar places. You are forming one more sincere, confident hope and beginning to invite MT onward; you do not know the link is about to cut.";
   if(event.type==="new_junction_visible")return"An intersection is visible. Your body has already chosen and is physically indicating one passage.";
   if(event.type==="embodied_response")return({followed:"MT entered the passage your body indicated.",diverged:"MT entered another passage and you are catching up beside them.",passed:"MT moved past while you waited and you are catching up.",rejoined:"MT has just returned toward you after moving away."})[event.response];
   if(event.type==="left_ariadne_waiting")return"You chose a passage at the intersection and waited there, but MT took another passage. You have now caught up beside MT. React directly to MT from here; do not speak as though you are still waiting behind.";
@@ -261,7 +276,8 @@ function statePrompt(body:RequestBody){
   const goalLabels={first_star:"the first star",second_star:"the second star",third_star:"the third star",fourth_star:"the fourth star",exit:"the exit"};
   const goal=`${body.objective.collectedStars}/4 collected; seeking ${goalLabels[body.objective.currentGoal]}; ${body.objective.activeStarVisible?"star visible":"goal unseen"}`;
   const physical=[body.embodiment.currentAction,body.embodiment.relationToBelievedRoute,body.embodiment.mtLookingAtAriadne&&"MT is looking directly toward your light.",body.embodiment.mtApproachingAriadne&&"MT is moving closer to your light.",body.embodiment.mtFollowingHerLead&&"MT is moving with the passage you physically indicated.",body.embodiment.mtLeavingWhileSheWaits&&"MT moved away while you waited at the passage.",body.embodiment.mtReturningToHer&&"MT has come back toward you after moving away."].filter(Boolean).join(" ");
-  return `<private_stage_card>\nGOAL: ${goal}\nVIEW: ways ${openings}; ahead ${scene.geometry.visibleEndAhead?"ends":"continues"}; setting ${setting}\nVISIBLE OBJECTS: ${objects}\nVISIBLE SPECTACLES: ${spectacles}\nCHANGES: ${changes}\nYOUR BODY: ${physical}\nMT'S ACTION: ${attention}\nLATEST MOMENT: ${semanticEvent(body.trigger)}\nREQUIRED SPEECH ACT: ${speechActDirection(body.speechAnchor.speechAct)}\nYOUR LAST WORDS: ${previous}\nPATH RELATIONSHIP: ${semanticMovement(body.recommendationEvidence)}\nCURRENT DISPOSITION: ${body.dispositionCard}\nPERFORMANCE: ${body.companionArc.performanceDirection} ${body.companionArc.relationshipContext}\n</private_stage_card>`;
+  const accomplishment=body.accomplishment?`${body.accomplishment.whatMTJustAccomplished} ${body.accomplishment.visibleProgress} ${body.accomplishment.whatChangedPermanently??"No permanent change has completed yet."} ${body.accomplishment.starVisiblyResponded?"The star visibly responded.":"The star did not visibly respond."}`:"none currently",configurations=body.visibleConfigurations?.join("; ")||"none";
+  return `<private_stage_card>\nGOAL: ${goal}\nVIEW: ways ${openings}; ahead ${scene.geometry.visibleEndAhead?"ends":"continues"}; setting ${setting}\nVISIBLE OBJECTS: ${objects}\nVISIBLE SPECTACLES: ${spectacles}\nVISIBLE CONFIGURATIONS: ${configurations}\nACCOMPLISHMENT: ${accomplishment}\nCHANGES: ${changes}\nYOUR BODY: ${physical}\nMT'S ACTION: ${attention}\nLATEST MOMENT: ${semanticEvent(body.trigger)}\nREQUIRED SPEECH ACT: ${speechActDirection(body.speechAnchor.speechAct)}\nYOUR LAST WORDS: ${previous}\nPATH RELATIONSHIP: ${semanticMovement(body.recommendationEvidence)}\nCURRENT DISPOSITION: ${body.dispositionCard}\nPERFORMANCE: ${body.companionArc.performanceDirection} ${body.companionArc.relationshipContext}\n</private_stage_card>`;
 }
 
 type ProviderMessage={role:"system"|"user"|"assistant";content:string};
@@ -287,21 +303,20 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
 }
 
 async function openRouter(body:RequestBody,apiKey:string,clientSignal:AbortSignal):Promise<ProviderResult>{
-  const startedAt=Date.now(),deadline=startedAt+9500;
+  const startedAt=Date.now(),deadline=startedAt+14_000;
   const cachedModels=modelCache?.models??[],knownAtStart=new Set([...FAST_FREE_MODELS,...cachedModels]);
-  const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)?body.preferredModelId:null;
-  const attempts=[preferred??FAST_FREE_MODELS[0]!];
+  const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)&&modelAvailable(body.preferredModelId)?body.preferredModelId:null;
+  const primary=preferred??FAST_FREE_MODELS.find(model=>modelAvailable(model))??null,attempts:string[]=[];
   let lastError:unknown=null;
-  for(const model of attempts){
-    const remaining=deadline-Date.now();if(remaining<700)break;
-    try{return await requestOpenRouter(body,apiKey,model,knownAtStart,Math.min(2600,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted||error instanceof Error&&/free-models-per-min|limit_source/i.test(error.message))throw error}
+  if(primary){
+    attempts.push(primary);const remaining=deadline-Date.now();
+    try{return await requestOpenRouter(body,apiKey,primary,knownAtStart,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;temporarilySideline(primary,error);if(clientSignal.aborted||error instanceof Error&&/free-models-per-min|limit_source/i.test(error.message))throw error}
   }
   const available=await freeModels(apiKey),allowed=new Set([...FAST_FREE_MODELS,...available]);
-  const alternate=available.find(model=>!attempts.includes(model));
-  const remaining=deadline-Date.now();
-  if(remaining>=800){
-    const model=alternate??"openrouter/free";
-    try{return await requestOpenRouter(body,apiKey,model,allowed,remaining,clientSignal)}catch(error){lastError=error}
+  const alternate=[...available,...FAST_FREE_MODELS].find(model=>!attempts.includes(model)&&modelAvailable(model));
+  if(alternate){
+    attempts.push(alternate);const remaining=deadline-Date.now();
+    if(remaining>=1000)try{return await requestOpenRouter(body,apiKey,alternate,allowed,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;temporarilySideline(alternate,error);if(clientSignal.aborted)throw error}
   }
   throw lastError??new ProviderAttemptError("no responsive free companion model available",false);
 }
@@ -317,12 +332,13 @@ async function boundedJson(request:Request):Promise<{value:unknown}|{error:"inva
 }
 
 export async function POST(request:Request){
+  const requestStartedAt=Date.now();
   const parsed=await boundedJson(request);if("error" in parsed)return Response.json({error:parsed.error==="too_large"?"companion request too large":"invalid JSON"},{status:parsed.error==="too_large"?413:400});
   const body=parseCompanionRequest(parsed.value);if(!body)return Response.json({error:"invalid companion request"},{status:400});
   const fallback=()=>body.trigger.type==="initial_guidance"?acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0])):{message:""};
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback",modelUsed:null});
-    const result=await openRouter(body,apiKey,request.signal);return Response.json({...acceptReply(result.reply),source:"provider",modelUsed:result.modelUsed});
-  }catch(error){console.error("ARIADNE free provider request failed",error);return Response.json({...fallback(),source:"fallback",modelUsed:null})}
+    const result=await openRouter(body,apiKey,request.signal);console.info("ARIADNE provider reply",{trigger:body.trigger.type,model:result.modelUsed,elapsedMs:Date.now()-requestStartedAt});return Response.json({...acceptReply(result.reply),source:"provider",modelUsed:result.modelUsed});
+  }catch(error){console.error("ARIADNE free provider request failed",{trigger:body.trigger.type,elapsedMs:Date.now()-requestStartedAt,error});return Response.json({...fallback(),source:"fallback",modelUsed:null})}
 }

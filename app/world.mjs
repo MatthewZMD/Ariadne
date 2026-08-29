@@ -1,6 +1,9 @@
-export const CHUNK_SIZE = 16;
+// Junction episodes begin only when MT is near the junction. Fourteen cells
+// leave more than five seconds of maximum-speed travel between adjacent
+// choices without turning the maze into an empty hallway simulator.
+export const LOGICAL_SPACING = 14;
+export const CHUNK_SIZE = LOGICAL_SPACING * 3 + 4;
 export const CACHE_RADIUS = 3;
-export const LOGICAL_SPACING = 4;
 const LOGICAL_MIN = 1;
 const LOGICAL_MAX = CHUNK_SIZE - 3;
 export const THEME_IDS = ["beach", "tornado", "ruins", "frozen", "foundry", "cavern"];
@@ -53,8 +56,10 @@ function carveLine(tiles, ax, ay, bx, by) {
   while (y !== by) { y += Math.sign(by - y); tiles[y][x] = 0; }
 }
 
-export function generateChunk(seed, cx, cy, epoch = 0) {
-  const random = seededRandom(hash32(seed, cx, cy, epoch));
+export function generateChunk(seed, cx, cy) {
+  // A run is a place, not a succession of disposable layouts. A pruned chunk
+  // must therefore reconstruct from the run seed and its coordinate alone.
+  const random = seededRandom(hash32(seed, cx, cy));
   const tiles = Array.from({ length: CHUNK_SIZE }, () => Array(CHUNK_SIZE).fill(1));
   const seen = new Set([cellKey(1, 1)]), frontier = [];
   const addFrontier = (x, y) => {
@@ -74,20 +79,21 @@ export function generateChunk(seed, cx, cy, epoch = 0) {
   }
   const portals = portalsFor(seed, cx, cy);
   carveLine(tiles, portals.north, 0, portals.north, 1);
-  carveLine(tiles, portals.south, 15, portals.south, LOGICAL_MAX);
+  carveLine(tiles, portals.south, CHUNK_SIZE - 1, portals.south, LOGICAL_MAX);
   carveLine(tiles, 0, portals.west, 1, portals.west);
-  carveLine(tiles, 15, portals.east, LOGICAL_MAX, portals.east);
-  return { cx, cy, epoch, tiles, lastTouched: 0 };
+  carveLine(tiles, CHUNK_SIZE - 1, portals.east, LOGICAL_MAX, portals.east);
+  return { cx, cy, tiles, lastTouched: 0 };
 }
 
 export class InfiniteWorld {
   constructor(seed) {
     this.seed = seed >>> 0;
     this.chunks = new Map();
-    this.epochs = new Map();
     this.pinnedChunks = new Map();
     this.tileOverrides = new Map();
     this.entranceGate = null;
+    this.entranceOverrideKeys = new Set();
+    this.entranceChunks = new Set();
   }
   coords(x, y) {
     return { cx: floorDiv(x, CHUNK_SIZE), cy: floorDiv(y, CHUNK_SIZE), lx: mod(x, CHUNK_SIZE), ly: mod(y, CHUNK_SIZE) };
@@ -96,7 +102,7 @@ export class InfiniteWorld {
     const id = chunkKey(cx, cy);
     let chunk = this.chunks.get(id);
     if (!chunk) {
-      chunk = generateChunk(this.seed, cx, cy, this.epochs.get(id) ?? 0);
+      chunk = generateChunk(this.seed, cx, cy);
       this.chunks.set(id, chunk);
     }
     chunk.lastTouched = tick;
@@ -111,10 +117,11 @@ export class InfiniteWorld {
   setEntranceGate(insideX, insideY, forwardX, forwardY) {
     const gateX = insideX - Math.sign(forwardX), gateY = insideY - Math.sign(forwardY);
     this.tileOverrides.set(cellKey(gateX, gateY), 1);
+    this.entranceOverrideKeys.add(cellKey(gateX, gateY));
     this.entranceGate = { inside: [insideX, insideY], cell: [gateX, gateY], facing: [Math.sign(forwardX), Math.sign(forwardY)] };
     return this.entranceGate;
   }
-  setEntranceCorridor(insideX, insideY, forwardX, forwardY, minimumLength = 13) {
+  setEntranceCorridor(insideX, insideY, forwardX, forwardY, minimumLength = LOGICAL_SPACING + 12) {
     const dx = Math.sign(forwardX), dy = Math.sign(forwardY);
     if (Math.abs(dx) + Math.abs(dy) !== 1) throw new Error("entrance corridor requires one cardinal facing direction");
     const requestedLength = Math.max(1, Math.floor(minimumLength));
@@ -136,10 +143,10 @@ export class InfiniteWorld {
     const gate = this.setEntranceGate(insideX, insideY, dx, dy);
     for (let step = 0; step <= corridorLength; step++) {
       const x = insideX + dx * step, y = insideY + dy * step;
-      this.tileOverrides.set(cellKey(x, y), 0);
+      this.tileOverrides.set(cellKey(x, y), 0);this.entranceOverrideKeys.add(cellKey(x,y));this.entranceChunks.add(chunkKey(this.coords(x,y).cx,this.coords(x,y).cy));
       if (step < corridorLength) {
-        this.tileOverrides.set(cellKey(x + sideX, y + sideY), 1);
-        this.tileOverrides.set(cellKey(x - sideX, y - sideY), 1);
+        this.tileOverrides.set(cellKey(x + sideX, y + sideY), 1);this.entranceOverrideKeys.add(cellKey(x+sideX,y+sideY));
+        this.tileOverrides.set(cellKey(x - sideX, y - sideY), 1);this.entranceOverrideKeys.add(cellKey(x-sideX,y-sideY));
       }
     }
     gate.exit = [insideX + dx * corridorLength, insideY + dy * corridorLength];
@@ -162,12 +169,12 @@ export class InfiniteWorld {
     if (count <= 1) this.pinnedChunks.delete(id);
     else this.pinnedChunks.set(id, count - 1);
   }
-  prune(x, y, protectedChunks = new Set(), tick = 0) {
+  prune(x, y, protectedChunks = new Set()) {
     const { cx, cy } = this.coords(x, y);
+    if(this.entranceGate){const start=this.coords(this.entranceGate.inside[0],this.entranceGate.inside[1]),leftStartRegion=Math.abs(start.cx-cx)>CACHE_RADIUS||Math.abs(start.cy-cy)>CACHE_RADIUS;if(leftStartRegion){for(const key of this.entranceOverrideKeys)this.tileOverrides.delete(key);this.entranceOverrideKeys.clear();this.entranceChunks.clear();this.entranceGate=null}}
     for (const [id, chunk] of this.chunks) {
       const far = Math.abs(chunk.cx - cx) > CACHE_RADIUS || Math.abs(chunk.cy - cy) > CACHE_RADIUS;
       if (far && !protectedChunks.has(id) && !this.pinnedChunks.has(id)) {
-        if (tick - chunk.lastTouched > 20) this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
         this.chunks.delete(id);
       }
     }

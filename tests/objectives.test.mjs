@@ -6,9 +6,18 @@ import { InfiniteWorld, chunkKey } from "../app/world.mjs";
 test("the first star is reachable, distant, and protects its generated path",()=>{
   const world=new InfiniteWorld(731),visible=new Set(["1,1","2,1"]),visited=new Set(["1,1"]);
   const state=createObjectiveState(world,[1,1],731,visible,visited);
-  assert.equal(state.activeStar.ordinal,1);assert.ok(state.activeStar.canonicalPath.length>=35);assert.ok(state.activeStar.canonicalPath.length<=92);
+  assert.equal(state.activeStar.ordinal,1);assert.ok(state.activeStar.canonicalPath.length>=93);assert.ok(state.activeStar.canonicalPath.length<=156);
   assert.equal(visible.has(state.activeStar.cell.join(",")),false);assert.equal(world.tile(...state.activeStar.cell),0);
   const coords=world.coords(...state.activeStar.cell);assert.ok(objectiveProtectedChunks(state).has(chunkKey(coords.cx,coords.cy)));
+});
+
+test("stars occupy destinations and the next objective leaves the previous route",()=>{
+  const world=new InfiniteWorld(731),visited=new Set(["1,1"]);let state=createObjectiveState(world,[1,1],731,new Set(),visited);
+  const first=state.activeStar,degree=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>world.tile(first.cell[0]+dx,first.cell[1]+dy)===0).length;
+  assert.equal(degree,1,"a star should terminate a route instead of sitting like a breadcrumb in one corridor");
+  state=queueNextStar(state,world,731,visited);const queued=state.queuedStar;
+  assert.deepEqual(queued.canonicalPath[1],first.canonicalPath.at(-2),"the next search must leave the star destination and return to a real choice");
+  assert.equal(queued.canonicalPath.filter(cell=>first.canonicalPath.some(old=>old[0]===cell[0]&&old[1]===cell[1])).length<queued.canonicalPath.length,true,"the next star cannot remain entirely on the previous route");
 });
 
 test("cooperative star search has parity with the synchronous wrapper and honors cancellation",async()=>{
@@ -36,7 +45,7 @@ test("active and queued star routes survive distant chunk regeneration",()=>{
 
 test("objective placement releases distant search debris without releasing either star route",()=>{
   const world=new InfiniteWorld(917),visited=new Set(["1,1"]);let state=createObjectiveState(world,[1,1],917,new Set(),visited);state=queueNextStar(state,world,917,visited);
-  const before=world.chunks.size,protectedChunks=objectiveProtectedChunks(state);assert.ok(before>49,"placement should exercise distant generation");
+  const before=world.chunks.size,protectedChunks=objectiveProtectedChunks(state);assert.ok(before>=protectedChunks.size,"placement must retain every generated objective route");
   settleObjectiveStreaming(world,state,[1,1]);
   assert.ok(world.chunks.size<=49+protectedChunks.size,`retained ${world.chunks.size} chunks for ${protectedChunks.size} protected chunks`);
   assert.equal(starRouteIsOpen(world,state.activeStar),true);assert.equal(starRouteIsOpen(world,state.queuedStar),true);

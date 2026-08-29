@@ -21,3 +21,10 @@ export function finalAriadneLine(reason: ClosureReason) {
     ? "MT—yes. I know this place now. We’re close. Take the passage on the—"
     : "MT—wait. I know what this means. We’re close. Take the passage on the—";
 }
+
+export function interruptPreparedLine(line: string, reason: ClosureReason) {
+  const clean=line.trim().replace(/[.!?…—-]+$/u,"");
+  if(!clean)return finalAriadneLine(reason);
+  const words=clean.split(/\s+/u),take=Math.max(4,Math.min(words.length-1,Math.ceil(words.length*.68)));
+  return `${words.slice(0,take).join(" ")}—`;
+}

@@ -5,6 +5,7 @@ import { visibleStarProjection, type StarObjective } from "./objectives";
 import type { PerceivedScene, VisualFrameState } from "./scene";
 import { atlasFrame } from "./sprite-atlas";
 import type { AriadneBodyState, AriadneTrailPoint } from "./ariadne-body";
+import type { ResonanceEncounter, ResonanceState } from "./resonance";
 
 export type Pose = { x:number; y:number; angle:number; bob:number };
 type Ray = {distance:number;mapX:number;mapY:number;side:number;u:number};
@@ -116,6 +117,22 @@ function objectiveStar(ctx:CanvasRenderingContext2D,x:number,y:number,size:numbe
   ctx.fillStyle="#fff2ad";ctx.fillRect(-unit,-unit*3,unit,unit*3);ctx.restore();
 }
 
+function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncounter[],pose:Pose,depths:Float32Array,horizon:number,time:number,reducedMotion:boolean){
+  const{width,height}=ctx.canvas;
+  for(const encounter of encounters){
+    for(const [index,element] of encounter.elements.entries()){
+      const dx=element.position[0]-pose.x,dy=element.position[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
+      if(dist<.25||dist>18||Math.abs(rel)>FOV*.59)continue;const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.16)continue;
+      const size=Math.max(4,Math.min(52,height/Math.max(.55,corrected)*.075)),unit=Math.max(1,Math.floor(size/7)),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*.7,accomplishmentColor=encounter.completed&&encounter.relevance==="objective_relevant"?"#f4ce63":encounter.motif.color;
+      ctx.save();ctx.translate(Math.round(sx),Math.round(sy+bob));ctx.globalAlpha=element.active ? 0.95 : 0.4;
+      if(element.active){const halo=ctx.createRadialGradient(0,0,0,0,0,unit*7);halo.addColorStop(0,accomplishmentColor);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*7,-unit*7,unit*14,unit*14)}
+      ctx.fillStyle=element.active?accomplishmentColor:"#565e58";ctx.fillRect(-unit*2,-unit*2,unit*4,unit*4);ctx.fillStyle=element.active?"#fff5bf":"#9aa29b";ctx.fillRect(-unit,-unit*3,unit*2,unit*6);ctx.fillRect(-unit*3,-unit,unit*6,unit*2);ctx.restore();
+    }
+    if(encounter.completed){
+      const x=encounter.center[0]+.5,y=encounter.center[1]+.5,dx=x-pose.x,dy=y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;if(dist<18&&Math.abs(rel)<FOV*.58){const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected<=depths[rayIndex]+.2){const radius=Math.min(100,height/Math.max(.8,corrected)*.2),sy=horizon+height/(dist*3.8),halo=ctx.createRadialGradient(sx,sy,0,sx,sy,radius);halo.addColorStop(0,`${encounter.motif.color}66`);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(sx-radius,sy-radius,radius*2,radius*2)}}}
+  }
+}
+
 function renderSpectacles(ctx:CanvasRenderingContext2D,scene:PerceivedScene,pose:Pose,depths:Float32Array,horizon:number,time:number,intensity:number,reducedMotion:boolean){
   const{width,height}=ctx.canvas,t=reducedMotion?0:time,density=Math.max(4,Math.round(7+intensity*11));ctx.save();ctx.imageSmoothingEnabled=false;
   for(const spectacle of scene.spectacles){
@@ -155,19 +172,21 @@ function projectAriadnePoint(point:{x:number;y:number;height:number},pose:Pose,d
   return{sx,sy,dist,corrected};
 }
 
-function renderAriadneFairy(ctx:CanvasRenderingContext2D,time:number,body:AriadneBodyState,visual:VisualFrameState,pose:Pose,depths:Float32Array,horizon:number){
+function renderAriadneFairy(ctx:CanvasRenderingContext2D,time:number,body:AriadneBodyState,visual:VisualFrameState,pose:Pose,depths:Float32Array,horizon:number,accumulation:ResonanceState|null){
   const{width,height}=ctx.canvas,now=Date.now(),projection=projectAriadnePoint({x:body.position[0],y:body.position[1],height:body.height},pose,depths,horizon,width,height);if(!projection)return;
-  const drawTrail=(point:AriadneTrailPoint)=>{const projected=projectAriadnePoint(point,pose,depths,horizon,width,height);if(!projected)return;const age=(now-point.bornAt)/850;if(age>=1)return;const unit=Math.max(1,Math.round(2.4/projected.corrected)),x=Math.round(projected.sx),y=Math.round(projected.sy),committing=body.mode==="leading"||body.mode==="waiting_ahead",apologizing=body.mode==="apologizing";ctx.globalAlpha=(1-age)*(committing?.82:apologizing?.32:.5);ctx.fillStyle=apologizing?"#a9dfe8":age>.45?"#e5b94f":"#63e4ff";ctx.fillRect(x,y,unit*(committing?3:apologizing?1:2),unit);if(age<.55&&!apologizing){ctx.fillStyle="#e55ecf";ctx.fillRect(x-unit,y+unit*2,unit*(committing?2:1),unit)}};
+  const drawTrail=(point:AriadneTrailPoint)=>{const projected=projectAriadnePoint(point,pose,depths,horizon,width,height);if(!projected)return;const age=(now-point.bornAt)/850;if(age>=1)return;const unit=Math.max(1,Math.round(2.4/projected.corrected)),x=Math.round(projected.sx),y=Math.round(projected.sy),committing=body.mode==="leading"||body.mode==="waiting_ahead",spiraling=body.mode==="apology_spiral",apologizing=body.mode==="apologizing";ctx.globalAlpha=(1-age)*(committing?.82:spiraling?.74:apologizing?.32:.5);ctx.fillStyle=apologizing?"#a9dfe8":spiraling?(age>.45?"#e5b94f":"#8beeff"):age>.45?"#e5b94f":"#63e4ff";ctx.fillRect(x,y,unit*(committing?3:spiraling?2:apologizing?1:2),unit);if(age<.55&&!apologizing){ctx.fillStyle=spiraling?"#f2c65d":"#e55ecf";ctx.fillRect(x-unit,y+unit*2,unit*(committing?2:1),unit)}};
   ctx.save();ctx.imageSmoothingEnabled=false;for(const point of body.trail)drawTrail(point);
-  const size=Math.max(12,Math.min(52,height/Math.max(.55,projection.corrected)*.072)),unit=Math.max(1,Math.round(size/12)),speaking=now<body.speakUntil,thinking=body.thinkingSince!==null,apologizing=body.mode==="apologizing",decisionActive=now<body.decisionEmphasisUntil,decisionSpan=Math.max(1,body.decisionEmphasisUntil-body.decisionEmphasisStartedAt),decisionProgress=Math.max(0,Math.min(1,(now-body.decisionEmphasisStartedAt)/decisionSpan)),apologyProgress=Math.max(0,Math.min(1,(now-body.apologyStartedAt)/900)),pulse=apologizing?.62+.08*Math.sin(time*3.2):speaking?.72+.28*Math.sin(time*11):thinking?.8+.2*Math.sin(time*4.2):1,emphasized=decisionActive||thinking||speaking;
-  const emotionalScale=apologizing?.72:body.mode==="celebrating"?1.18:1,phaseScale=visual.relationshipPhase==="overbearing"?1.08:1;
+  const size=Math.max(12,Math.min(52,height/Math.max(.55,projection.corrected)*.072)),unit=Math.max(1,Math.round(size/12)),speaking=now<body.speakUntil,thinking=body.thinkingSince!==null,spiraling=body.mode==="apology_spiral",apologizing=body.mode==="apologizing",repairing=spiraling||apologizing,decisionActive=now<body.decisionEmphasisUntil,decisionSpan=Math.max(1,body.decisionEmphasisUntil-body.decisionEmphasisStartedAt),decisionProgress=Math.max(0,Math.min(1,(now-body.decisionEmphasisStartedAt)/decisionSpan)),apologyProgress=Math.max(0,Math.min(1,(now-body.apologyStartedAt)/900)),pulse=spiraling?.86+.14*Math.sin(time*12):apologizing?.62+.08*Math.sin(time*3.2):speaking?.72+.28*Math.sin(time*11):thinking?.8+.2*Math.sin(time*4.2):1,emphasized=decisionActive||thinking||speaking||spiraling;
+  const emotionalScale=apologizing?.72:spiraling?.92:body.mode==="celebrating"?1.18:1,phaseScale=visual.relationshipPhase==="overbearing"?1.08:1;
   ctx.translate(projection.sx,projection.sy);const attentionScale=decisionActive?1.28+Math.sin(decisionProgress*Math.PI)*.22:thinking?1.16+Math.sin(time*4.2)*.07:speaking?1.12+Math.sin(time*11)*.06:1;ctx.scale(emotionalScale*phaseScale*attentionScale,emotionalScale*phaseScale*attentionScale);
-  const haloRadius=unit*(apologizing?12:speaking?20:thinking?18:decisionActive?22:9),halo=ctx.createRadialGradient(0,0,0,0,0,haloRadius);halo.addColorStop(0,`rgba(247,255,255,${(apologizing?.7:.92)*pulse})`);halo.addColorStop(.18,`rgba(109,224,245,${(apologizing?.32:emphasized?.7:.48)*pulse})`);halo.addColorStop(.52,`rgba(111,96,231,${apologizing?.1:emphasized?.26:.18})`);halo.addColorStop(1,"rgba(79,164,224,0)");ctx.fillStyle=halo;ctx.fillRect(-haloRadius,-haloRadius,haloRadius*2,haloRadius*2);
+  const haloRadius=unit*(apologizing?12:spiraling?18:speaking?20:thinking?18:decisionActive?22:9),halo=ctx.createRadialGradient(0,0,0,0,0,haloRadius);halo.addColorStop(0,`rgba(247,255,255,${(apologizing?.7:.92)*pulse})`);halo.addColorStop(.18,`rgba(109,224,245,${(apologizing?.32:emphasized?.7:.48)*pulse})`);halo.addColorStop(.52,`rgba(111,96,231,${apologizing?.1:spiraling?.32:emphasized?.26:.18})`);halo.addColorStop(1,"rgba(79,164,224,0)");ctx.fillStyle=halo;ctx.fillRect(-haloRadius,-haloRadius,haloRadius*2,haloRadius*2);
   if(decisionActive){const gather=Math.sin(decisionProgress*Math.PI),radius=unit*(4.5+gather*5),alpha=.45+gather*.45;ctx.globalAlpha=alpha;for(let i=0;i<6;i++){const angle=i/6*Math.PI*2+time*.7,x=Math.round(Math.cos(angle)*radius),y=Math.round(Math.sin(angle)*radius*.65);ctx.fillStyle=i%2?"#f4ca5d":"#79efff";ctx.fillRect(x-unit/2,y-unit/2,unit,unit)}ctx.globalAlpha=1}
-  const rotation=time*(visual.reducedMotion?.35:body.mode==="leading"||body.mode==="catching_up"?3.2:thinking?2.1:apologizing?.18:1.35),ringAlpha=apologizing?.3:.82;
-  ctx.globalAlpha=ringAlpha;for(let i=0;i<10;i++){const angle=rotation+i/10*Math.PI*2,radius=unit*(apologizing?4.2:speaking?6.4:5.6),x=Math.round(Math.cos(angle)*radius),y=Math.round(Math.sin(angle)*radius*.72+(apologizing?apologyProgress*unit*2:0));ctx.fillStyle=apologizing?i%2?"#9cdae5":"#d9f5f7":i%3===0?"#ee62d5":i%2?"#72eaff":"#bff8ff";ctx.fillRect(x-unit,y,unit*2,unit)}
-  const apologyWings=[.55,.98,Math.PI-.55,Math.PI-.98];for(let i=0;i<4;i++){const angle=apologizing?apologyWings[i]:-rotation*.62+i*Math.PI/2,radius=unit*(apologizing?3.2:3.8);ctx.save();ctx.rotate(angle);ctx.fillStyle=apologizing?i===3?"#bd9d57":"#5fa7b4":i===3?"#e8bd58":"#69ddf4";ctx.fillRect(Math.round(radius),-unit,unit*3,unit*2);ctx.fillStyle=apologizing?"#b9dfe4":"#e8fbff";ctx.fillRect(Math.round(radius+unit),-unit,unit,unit);ctx.restore()}
+  const rotation=time*(visual.reducedMotion?.35:spiraling?6.8:body.mode==="leading"||body.mode==="catching_up"?3.2:thinking?2.1:apologizing?.18:1.35),ringAlpha=apologizing?.3:spiraling?1:.82;
+  ctx.globalAlpha=ringAlpha;for(let i=0;i<10;i++){const angle=rotation+i/10*Math.PI*2,radius=unit*(apologizing?4.2:spiraling?7:speaking?6.4:5.6),x=Math.round(Math.cos(angle)*radius),y=Math.round(Math.sin(angle)*radius*.72+(apologizing?apologyProgress*unit*2:0));ctx.fillStyle=apologizing?i%2?"#9cdae5":"#d9f5f7":spiraling?i%2?"#8cecff":"#efc45b":i%3===0?"#ee62d5":i%2?"#72eaff":"#bff8ff";ctx.fillRect(x-unit,y,unit*2,unit)}
+  const apologyWings=[.55,.98,Math.PI-.55,Math.PI-.98];for(let i=0;i<4;i++){const angle=apologizing?apologyWings[i]:-rotation*.62+i*Math.PI/2,radius=unit*(apologizing?3.2:3.8);ctx.save();ctx.rotate(angle);ctx.fillStyle=apologizing?i===3?"#bd9d57":"#5fa7b4":i===3?"#e8bd58":"#69ddf4";ctx.fillRect(Math.round(radius),-unit,unit*3,unit*2);ctx.fillStyle=repairing?"#b9f3f7":"#e8fbff";ctx.fillRect(Math.round(radius+unit),-unit,unit,unit);ctx.restore()}
   ctx.globalAlpha=1;ctx.fillStyle="#69dff5";ctx.fillRect(-unit*2,-unit*2,unit*4,unit*4);ctx.fillStyle="#f7ffff";ctx.fillRect(-unit,-unit*3,unit*2,unit*6);ctx.fillRect(-unit*3,-unit,unit*6,unit*2);ctx.fillStyle="#ffffff";ctx.fillRect(-unit,-unit,unit*2,unit*2);ctx.fillStyle="#e75cd1";ctx.fillRect(unit,unit,unit,unit);ctx.fillStyle="#edc35e";ctx.fillRect(-unit*2,unit*2,unit,unit);
+  const motifs=accumulation?.activeMotifs??[];for(const[index,motif]of motifs.entries()){const angle=time*(visual.reducedMotion?.08:.55)+index/Math.max(1,motifs.length)*Math.PI*2,radius=unit*(8+index%2*2);ctx.fillStyle=motif.color;ctx.fillRect(Math.round(Math.cos(angle)*radius)-unit,Math.round(Math.sin(angle)*radius*.7)-unit,unit*2,unit*2)}
+  for(let index=0;index<(accumulation?.permanentStarFragments??0);index++){const angle=-.8+index*.52,radius=unit*11;ctx.fillStyle="#f4ce63";ctx.fillRect(Math.round(Math.cos(angle)*radius)-unit,Math.round(Math.sin(angle)*radius*.75)-unit,unit*2,unit*3);ctx.fillStyle="#fff3ae";ctx.fillRect(Math.round(Math.cos(angle)*radius),Math.round(Math.sin(angle)*radius*.75),unit,unit)}
   const moteCount=visual.relationshipPhase==="charming"?2:visual.relationshipPhase==="attached"?3:5;for(let i=0;i<moteCount;i++){const angle=-rotation*.35+i*Math.PI*2/moteCount,radius=unit*(apologizing?5:7+i%2*2),fall=apologizing?unit*(2+((time*.8+i*.31)%1)*5):0;ctx.fillStyle=apologizing?i===moteCount-1?"#b89d62":"#8acbd5":i===moteCount-1?"#e8bd58":i%2?"#e962d2":"#8cf0ff";ctx.fillRect(Math.round(Math.cos(angle)*radius),Math.round(Math.sin(angle)*radius*.58+fall),unit,unit)}
   ctx.restore();
 }
@@ -211,7 +230,7 @@ export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor
   }return out;
 }
 
-export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anchors:ThemeAnchor[],entities:AmbientEntity[],appearance:ThemeMemory,protectedCells:Set<string>,pose:Pose,moving:boolean,reducedMotion:boolean,tick:number,activeStar:StarObjective|null=null,scene:PerceivedScene|null=null,visual:VisualFrameState|null=null,ariadne:AriadneBodyState|null=null){
+export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anchors:ThemeAnchor[],entities:AmbientEntity[],appearance:ThemeMemory,protectedCells:Set<string>,pose:Pose,moving:boolean,reducedMotion:boolean,tick:number,activeStar:StarObjective|null=null,scene:PerceivedScene|null=null,visual:VisualFrameState|null=null,ariadne:AriadneBodyState|null=null,resonances:ResonanceEncounter[]=[],accumulation:ResonanceState|null=null){
   const{width,height}=ctx.canvas,time=performance.now()*.001;const here=themeAt(anchors,pose.x,pose.y),neutral=THEMES.neutral;
   const behavior=!reducedMotion?(here.id==="beach"?Math.sin(time*2)*2:here.id==="tornado"?Math.sin(time*5)*1.5:here.id==="frozen"?Math.sin(time)*.7:0):0;
   const bob=moving&&!reducedMotion?Math.sin(pose.bob)*3.2:0,lean=!reducedMotion?(visual?.turnRate??0)*height*.008:0,collision=!reducedMotion?(visual?.collisionPulse??0)*Math.sin(time*22)*3:0,horizon=height*.47+bob+behavior+lean+collision;
@@ -249,13 +268,14 @@ export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anc
     }
   }
   if(scene)renderSpectacles(ctx,scene,pose,depths,horizon,time,visual?.relationshipIntensity??0,reducedMotion);
+  renderResonances(ctx,resonances,pose,depths,horizon,time,reducedMotion);
   const perceivedIds=scene?new Set(scene.objects.map(object=>object.id)):null;
   const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>(!perceivedIds||perceivedIds.has(v.e.id))&&Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<12).sort((a,b)=>b.dist-a.dist).slice(0,28);
   for(const v of visible){const sx=(.5+v.rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS)));if(v.dist>depths[rayIndex]+.2)continue;const size=Math.min(120,height/v.dist*.33*v.e.scale),sy=horizon+height/(v.dist*3.8);sprite(ctx,sx,sy,size,v.e.kind,THEMES[v.e.theme].accent,time,v.e.phase)}
   if(activeStar){const projection=visibleStarProjection(world,activeStar,pose,tick,12,FOV);
     if(projection){const {distance:dist,relativeAngle:rel}=projection,sx=(.5+rel/FOV)*width,size=Math.min(150,height/dist*.42),sy=horizon+height/(dist*3.8);objectiveStar(ctx,sx,sy,size,time)}
   }
-  if(visual&&ariadne)renderAriadneFairy(ctx,time,ariadne,visual,pose,depths,horizon);
+  if(visual&&ariadne)renderAriadneFairy(ctx,time,ariadne,visual,pose,depths,horizon,accumulation);
   const vignette=ctx.createRadialGradient(width/2,horizon,height*.12,width/2,horizon,width*.72);vignette.addColorStop(0,"rgba(0,0,0,0)");vignette.addColorStop(1,"rgba(3,4,3,.43)");ctx.fillStyle=vignette;ctx.fillRect(0,0,width,height);
   ctx.fillStyle="rgba(220,215,194,.45)";ctx.fillRect(width/2-7,horizon,14,1);ctx.fillRect(width/2,horizon-7,1,14);
   ctx.fillStyle="rgba(0,0,0,.05)";for(let y=0;y<height;y+=5)ctx.fillRect(0,y,width,1);

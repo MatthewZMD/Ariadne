@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { POST, acceptReply, buildProviderMessages, extractProviderText, isVerifiedProviderModel, parseCompanionRequest, parseProviderReply, providerReplyRestartsJourney } from "../app/api/companion/route.ts";
+import { createSpeechAnchor, speechAnchorIsCompatible, speechBypassesProviderBackoff } from "../app/embodied-interaction.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
 import { mentionedDirections, messageConflictsWithDirection, messageConflictsWithRoute, messageIdentifiesRoute } from "../app/navigation-contracts.ts";
 
@@ -43,6 +44,13 @@ test("provider replies recover fenced or prefaced JSON without retrying a usable
   const reply=parseProviderReply('Here is the response:\n```json\n{"message":"This way, MT.","selectedRouteId":"left"}\n```');
   assert.deepEqual(reply,{message:"This way, MT."});
   assert.equal(parseProviderReply("The user wants a cheerful navigation response."),null);
+});
+
+test("mistake repair survives a changing junction episode and bypasses transient low-priority backoff",()=>{
+  const episode={id:"embodied:old",junctionId:"old",beliefId:"belief",routeId:"left",openedAt:0,speechEpoch:2,state:"route_contradicted"};
+  const event={type:"dead_end_visible",cell:[2,1]},anchor=createSpeechAnchor(event,episode);
+  assert.equal(anchor.speechAct,"repair_mistake");assert.equal(anchor.episodeId,null);assert.equal(speechAnchorIsCompatible(anchor,{...episode,id:"embodied:new",state:"noticing"}),true);
+  assert.equal(speechBypassesProviderBackoff(event,true),true);assert.equal(speechBypassesProviderBackoff({type:"new_junction_visible"},true),true);assert.equal(speechBypassesProviderBackoff({type:"passing_thought"},true),false);
 });
 
 const requestBody=()=>({
@@ -108,6 +116,26 @@ test("junction speech tries one preferred free model before consulting the catal
   try{
     const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody())})),reply=await response.json();
     assert.equal(reply.source,"provider");assert.equal(calls.filter(url=>url.includes("chat/completions")).length,2);assert.equal(calls.filter(url=>url.includes("/models")).length,1);assert.match(reply.message,/MT/);
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;
+    if(originalKey===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=originalKey;
+  }
+});
+
+test("a failed sticky model gets one distinct curated alternative without request fan-out",async()=>{
+  const originalFetch=globalThis.fetch,originalProvider=process.env.AI_PROVIDER,originalKey=process.env.OPENROUTER_API_KEY,attempted=[];
+  process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
+  globalThis.fetch=async(url,options)=>{
+    if(String(url).includes("/models"))return new Response(JSON.stringify({data:[]}),{status:200,headers:{"content-type":"application/json"}});
+    const model=JSON.parse(String(options?.body)).model;attempted.push(model);
+    if(model!=="google/gemma-4-26b-a4b-it:free")return new Response(JSON.stringify({error:{message:"temporarily rate-limited upstream"}}),{status:429});
+    return new Response(JSON.stringify({model,choices:[{message:{content:"MT, I’m right here—come on, let’s try this together."}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const body={...requestBody(),preferredModelId:"google/gemma-4-31b-it:free"};
+    const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})),reply=await response.json();
+    assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"google/gemma-4-26b-a4b-it:free");assert.equal(new Set(attempted).size,attempted.length);assert.equal(attempted.length,2);
   }finally{
     globalThis.fetch=originalFetch;
     if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;

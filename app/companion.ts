@@ -16,7 +16,7 @@ export type GuidanceIntent = {
 };
 
 export type TrajectoryChange = "sustained_alignment"|"sustained_divergence"|"left_then_rejoined"|"same_waypoint_different_route"|"recommendation_visibly_contradicted";
-export type EncounterKind = "new_junction"|"visible_dead_end"|"new_environment"|"familiar_place"|"route_reconnection"|"star_collected"|TrajectoryChange;
+export type EncounterKind = "new_junction"|"visible_dead_end"|"new_environment"|"familiar_place"|"route_reconnection"|"resonance_completion"|"star_collected"|TrajectoryChange;
 
 export type TrajectorySample = {
   time:number;position:Point;cell:Point;heading:number;newlyVisibleCells:Point[];
@@ -84,7 +84,9 @@ export type CompanionEvent =
   | {type:"player_message";text:string}
   | {type:"star_visible";starId:string;ordinal:1|2|3|4}
   | {type:"star_collected";starId:string;ordinal:1|2|3|4}
+  | {type:"encounter_completed";encounterId:string;starResponded:boolean}
   | {type:"objective_changed";collectedStars:number}
+  | {type:"final_direction"}
   | {type:"initial_guidance"};
 
 export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number};
@@ -95,6 +97,7 @@ export type JourneyState = {
   phase:CompanionPhase;activeWalkSeconds:number;activeWalkSecondsInPhase:number;
   uniqueCellsVisited:number;meaningfulEncounters:number;encounteredKinds:EncounterKind[];
   relationshipDepth:number;recentRelationshipMoments:TrajectoryChange[];
+  starsCollected:number;
 };
 export type CompanionArc = {phase:CompanionPhase;performanceDirection:string;relationshipContext:string};
 export const PLAYER_NAME="MT";
@@ -248,14 +251,15 @@ export function planVisibleJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:num
 }
 
 export function createJourneyState(uniqueCellsVisited=1):JourneyState{
-  return{phase:"charming",activeWalkSeconds:0,activeWalkSecondsInPhase:0,uniqueCellsVisited,meaningfulEncounters:0,encounteredKinds:[],relationshipDepth:uniqueCellsVisited/20,recentRelationshipMoments:[]};
+  return{phase:"charming",activeWalkSeconds:0,activeWalkSecondsInPhase:0,uniqueCellsVisited,meaningfulEncounters:0,encounteredKinds:[],relationshipDepth:uniqueCellsVisited/20,recentRelationshipMoments:[],starsCollected:0};
 }
 
 function phaseForJourney(state:JourneyState):CompanionPhase{
   const kinds=new Set(state.encounteredKinds),hasRelationalFriction=["sustained_divergence","left_then_rejoined","recommendation_visibly_contradicted"].some(kind=>kinds.has(kind as EncounterKind));
   if(state.phase==="overbearing")return"overbearing";
+  if(state.starsCollected>=4)return"overbearing";
   if(state.phase==="attached"&&state.relationshipDepth>=38&&state.activeWalkSeconds>=480&&state.activeWalkSecondsInPhase>=240&&state.uniqueCellsVisited>=120&&state.meaningfulEncounters>=8&&kinds.size>=4&&hasRelationalFriction)return"overbearing";
-  if(state.phase==="attached")return"attached";
+  if(state.phase==="attached"||state.starsCollected>=2)return"attached";
   if(state.relationshipDepth>=15&&state.activeWalkSeconds>=180&&state.uniqueCellsVisited>=40&&state.meaningfulEncounters>=3&&kinds.size>=2)return"attached";
   return"charming";
 }
@@ -270,7 +274,7 @@ export function recordJourneyEncounter(state:JourneyState,kind:EncounterKind):Jo
   const encounteredKinds=state.encounteredKinds.includes(kind)?state.encounteredKinds:[...state.encounteredKinds,kind];
   const moment=(["sustained_alignment","sustained_divergence","left_then_rejoined","same_waypoint_different_route","recommendation_visibly_contradicted"] as string[]).includes(kind)?kind as TrajectoryChange:null;
   const recentRelationshipMoments=moment?[...state.recentRelationshipMoments,moment].slice(-8):state.recentRelationshipMoments;
-  const next={...state,meaningfulEncounters:state.meaningfulEncounters+1,encounteredKinds,recentRelationshipMoments};
+  const next={...state,meaningfulEncounters:state.meaningfulEncounters+1,encounteredKinds,recentRelationshipMoments,starsCollected:state.starsCollected+(kind==="star_collected"?1:0)};
   next.relationshipDepth=next.activeWalkSeconds/30+next.uniqueCellsVisited/20+next.meaningfulEncounters*.75;
   const phase=phaseForJourney(next);return phase===state.phase?next:{...next,phase,activeWalkSecondsInPhase:0};
 }
@@ -303,16 +307,23 @@ export function shouldTriggerPassingThought(activity:PlayerActivity,now:number,d
   return activity.state==="walking"&&now>=dueAt;
 }
 
-export function nextPerceptionCue(geometry:VisibleGeometry,environment:VisibleEnvironment,intent:GuidanceIntent|null,seen:Set<string>):CompanionCue|null{
+export function nextPerceptionCue(geometry:VisibleGeometry,_environment:VisibleEnvironment,intent:GuidanceIntent|null,seen:Set<string>):CompanionCue|null{
   const contradictedEnd=intent?geometry.corridorEnds.find(end=>intent.suggestedCells.some(cell=>same(cell,end))):null;
   const cues:CompanionCue[]=[];
   if(contradictedEnd)cues.push({key:`sight:end:${pointKey(contradictedEnd)}`,event:{type:"recommendation_contradicted"},force:true});
-  if(environment)cues.push({key:`environment:${environment.regionId}`,event:{type:"environment_visible",regionId:environment.regionId,environment:environment.id},force:false});
+  // Environment and spectacle changes enrich the next meaningful response;
+  // they are not autonomous reasons for Ariadne to narrate the scenery.
   return cues.find(cue=>!seen.has(cue.key))??null;
 }
 
 export function nearestVisibleJunction(geometry:VisibleGeometry,pose:Pose){
   return geometry.junctions.slice().sort((a,b)=>Math.hypot(a.cell[0]+.5-pose.x,a.cell[1]+.5-pose.y)-Math.hypot(b.cell[0]+.5-pose.x,b.cell[1]+.5-pose.y))[0]??null;
+}
+
+/** Geometry remains visible at distance, but embodied choices start nearby. */
+export function nearestActionableJunction(geometry:VisibleGeometry,pose:Pose,maxDistance=3){
+  const junction=nearestVisibleJunction(geometry,pose);if(!junction)return null;
+  return Math.hypot(junction.cell[0]+.5-pose.x,junction.cell[1]+.5-pose.y)<=maxDistance?junction:null;
 }
 
 export function centeredDeadEnd(world:InfiniteWorld,geometry:VisibleGeometry,pose:Pose,tick:number,maxDistance=10):Point|null{

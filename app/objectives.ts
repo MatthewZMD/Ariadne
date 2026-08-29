@@ -42,10 +42,10 @@ export type PublicObjectiveContext = {
 type SearchYield = () => Promise<void>;
 
 const STAGES = [
-  { minimum: 34, maximum: 46, junctions: 2, accuracy: .9 },
-  { minimum: 52, maximum: 68, junctions: 3, accuracy: .7 },
-  { minimum: 72, maximum: 92, junctions: 5, accuracy: .45 },
-  { minimum: 96, maximum: 120, junctions: 7, accuracy: .2 },
+  { minimum: 92, maximum: 110, junctions: 4, accuracy: .9 },
+  { minimum: 110, maximum: 140, junctions: 5, accuracy: .7 },
+  { minimum: 160, maximum: 200, junctions: 8, accuracy: .45 },
+  { minimum: 220, maximum: 270, junctions: 12, accuracy: .2 },
 ] as const;
 
 const STEPS:Point[]=[[1,0],[-1,0],[0,1],[0,-1]];
@@ -75,22 +75,23 @@ const yieldSearch:SearchYield=()=>new Promise(resolve=>{
 
 function throwIfCancelled(signal?:AbortSignal){if(signal?.aborted)throw new DOMException("Objective search cancelled","AbortError")}
 
-function* starSearch(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number,protectCell?:(cell:Point)=>void):Generator<void,StarObjective>{
+function* starSearch(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number,protectCell?:(cell:Point)=>void,avoidPath:Point[]=[]):Generator<void,StarObjective>{
   const config=STAGES[ordinal-1],originKey=cellKey(origin[0],origin[1]);
-  const queue:Point[]=[origin],parents=new Map<string,string|null>([[originKey,null]]),distance=new Map<string,number>([[originKey,0]]),junctions=new Map<string,number>([[originKey,0]]);
+  const avoided=new Set(avoidPath.slice(0,-1).map(([x,y])=>cellKey(x,y))),queue:Point[]=[origin],parents=new Map<string,string|null>([[originKey,null]]),distance=new Map<string,number>([[originKey,0]]),junctions=new Map<string,number>([[originKey,0]]),overlap=new Map<string,number>([[originKey,0]]);
   const candidates:Array<{cell:Point;score:number}>=[];let cursor=0;
   const hardLimit=config.maximum+45,nodeLimit=140_000;
   while(cursor<queue.length&&queue.length<nodeLimit){
     const current=queue[cursor++]!,key=cellKey(current[0],current[1]),d=distance.get(key)!;protectCell?.(current);const neighbors=openNeighbors(world,current,tick,protectCell);
     if(d>=config.minimum){
-      const branchCount=junctions.get(key)??0,unseen=!visible.has(key)&&!visited.has(key),degree=neighbors.length;
+      const branchCount=junctions.get(key)??0,unseen=!visible.has(key)&&!visited.has(key),degree=neighbors.length,oldRouteOverlap=overlap.get(key)??0;
       const within=d<=config.maximum,meets=branchCount>=config.junctions,distancePenalty=within?0:Math.abs(d-config.maximum)*3;
-      const score=(unseen?500:0)+(within?350:0)+(meets?300:branchCount*20)-distancePenalty-(degree>=3?18:0)+(hash32(seed,"star",ordinal,key)%100)/100;
+      const destinationBonus=degree===1?520:degree===2?0:-80;
+      const score=(unseen?500:0)+(within?350:0)+(meets?300:branchCount*20)+destinationBonus-oldRouteOverlap*14-distancePenalty+(hash32(seed,"star",ordinal,key)%100)/100;
       candidates.push({cell:current,score});
     }
     if(d<hardLimit){
       const nextJunctions=(junctions.get(key)??0)+(neighbors.length>=3?1:0);
-      for(const next of neighbors){const nextKey=cellKey(next[0],next[1]);if(parents.has(nextKey))continue;parents.set(nextKey,key);distance.set(nextKey,d+1);junctions.set(nextKey,nextJunctions);queue.push(next)}
+      for(const next of neighbors){const nextKey=cellKey(next[0],next[1]);if(parents.has(nextKey))continue;parents.set(nextKey,key);distance.set(nextKey,d+1);junctions.set(nextKey,nextJunctions);overlap.set(nextKey,(overlap.get(key)??0)+(avoided.has(nextKey)?1:0));queue.push(next)}
     }
     yield;
   }
@@ -98,13 +99,14 @@ function* starSearch(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:numbe
   return{id:`star:${seed}:${ordinal}:${cellKey(selected[0],selected[1])}`,ordinal,cell:selected,canonicalPath,protectedChunks:pathChunks(world,canonicalPath),seen:false};
 }
 
-export function placeStar(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible=new Set<string>(),visited=new Set<string>(),tick=0):StarObjective{
-  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick);let step=search.next();while(!step.done)step=search.next();return lockStarRoute(world,step.value);
+export function placeStar(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible=new Set<string>(),visited=new Set<string>(),tick=0,avoidPath:Point[]=[]):StarObjective{
+  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick,undefined,avoidPath);let step=search.next();while(!step.done)step=search.next();return lockStarRoute(world,step.value);
 }
 
-async function placeStarCooperatively(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number,yieldWork:SearchYield,signal?:AbortSignal):Promise<StarObjective>{
+async function placeStarCooperatively(world:InfiniteWorld,origin:Point,ordinal:1|2|3|4,seed:number,visible:Set<string>,visited:Set<string>,tick:number,yieldWork:SearchYield,signal?:AbortSignal,avoidPath:Point[]=[]):Promise<StarObjective>{
+  throwIfCancelled(signal);
   const pinned=new Set<string>(),protectCell=([x,y]:Point)=>{const coords=world.coords(x,y),id=chunkKey(coords.cx,coords.cy);if(pinned.has(id))return;pinned.add(id);world.pinChunk(id)};
-  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick,protectCell);
+  const search=starSearch(world,origin,ordinal,seed,visible,visited,tick,protectCell,avoidPath);
   try{while(true){for(let index=0;index<450;index++){const step=search.next();if(step.done)return lockStarRoute(world,step.value)}await yieldWork();throwIfCancelled(signal)}}
   finally{for(const id of pinned)world.unpinChunk(id)}
 }
@@ -127,14 +129,14 @@ export async function createObjectiveStateAsync(world:InfiniteWorld,origin:Point
 export function queueNextStar(state:ObjectiveState,world:InfiniteWorld,seed:number,visited:Set<string>,tick=0):ObjectiveState{
   if(state.queuedStar||!state.activeStar||state.activeStar.ordinal>=4)return state;
   const ordinal=(state.activeStar.ordinal+1) as 2|3|4;
-  const queued=placeStar(world,state.activeStar.cell,ordinal,seed,new Set(),visited,tick);
+  const queued=placeStar(world,state.activeStar.cell,ordinal,seed,new Set(),visited,tick,state.activeStar.canonicalPath);
   return{...state,queuedStar:queued};
 }
 
 export async function queueNextStarAsync(state:ObjectiveState,world:InfiniteWorld,seed:number,visited:Set<string>,tick=0,signal?:AbortSignal):Promise<ObjectiveState>{
   if(state.queuedStar||!state.activeStar||state.activeStar.ordinal>=4)return state;
   const ordinal=(state.activeStar.ordinal+1) as 2|3|4;
-  const queuedStar=await placeStarCooperatively(world,state.activeStar.cell,ordinal,seed,new Set(),visited,tick,yieldSearch,signal);
+  const queuedStar=await placeStarCooperatively(world,state.activeStar.cell,ordinal,seed,new Set(),visited,tick,yieldSearch,signal,state.activeStar.canonicalPath);
   return{...state,queuedStar};
 }
 
@@ -143,7 +145,7 @@ export function collectStar(state:ObjectiveState,world:InfiniteWorld,seed:number
   const collected=active.ordinal;unlockStarRoute(world,active);
   if(collected===4)return{stage:4,collectedStars:4,activeStar:null,queuedStar:null,decisionSerial:0,accuracyAccumulator:0,recentBeliefs:[]};
   const queuedValid=!!state.queuedStar&&starRouteIsOpen(world,state.queuedStar,tick);if(state.queuedStar&&!queuedValid)unlockStarRoute(world,state.queuedStar);
-  const next=queuedValid?state.queuedStar!:placeStar(world,active.cell,(collected+1) as 2|3|4,seed,new Set(),visited,tick);
+  const next=queuedValid?state.queuedStar!:placeStar(world,active.cell,(collected+1) as 2|3|4,seed,new Set(),visited,tick,active.canonicalPath);
   const stage=collected as ObjectiveStage;
   return{stage,collectedStars:collected,activeStar:next,queuedStar:null,decisionSerial:0,accuracyAccumulator:initialAccumulator(seed,stage),recentBeliefs:[]};
 }
@@ -218,7 +220,16 @@ function beliefFromRankedRoutes(state:ObjectiveState,routes:RouteOption[],juncti
   const best=ranked[0]?.distance,supported=ranked.filter(item=>item.distance===best),unsupported=ranked.filter(item=>item.distance!==(best??item.distance)&&item.route.direction!=="back");
   if(best===undefined||!unsupported.length||routes.length<2||starIsVisible)route=supported[0]?.route??ranked[0]?.route??routes[0];
   else{
-    accuracyAccumulator+=STAGES[Math.min(state.stage,3)]!.accuracy;const useSupported=accuracyAccumulator>=1;if(useSupported)accuracyAccumulator-=1;
+    accuracyAccumulator+=STAGES[Math.min(state.stage,3)]!.accuracy;let useSupported=accuracyAccumulator>=1;
+    // Each run has a legible dramatic contour rather than leaving its entire
+    // early relationship to a lucky streak in the accumulator.
+    if(state.stage===0&&decisionSerial<2)useSupported=true;
+    else if(state.stage===1&&decisionSerial===0)useSupported=true;
+    else if(state.stage===2&&decisionSerial===0)useSupported=true;
+    else if(state.stage===2&&decisionSerial===1)useSupported=false;
+    else if(state.stage===3&&decisionSerial===0)useSupported=true;
+    else if(state.stage===3&&decisionSerial===1)useSupported=false;
+    if(useSupported&&accuracyAccumulator>=1)accuracyAccumulator-=1;
     decisionSerial++;
     route=useSupported?supported[hash32(seed,"supported",state.stage,decisionSerial)%supported.length]?.route:unsupported.slice().sort((a,b)=>(a.distance-b.distance)-((a.route.score-b.route.score)*.15))[hash32(seed,"mistake",state.stage,decisionSerial)%Math.min(2,unsupported.length)]?.route;
   }

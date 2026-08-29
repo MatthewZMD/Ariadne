@@ -44,7 +44,7 @@ function Logo() {
   return <Image className="title-card-image" src="/ariadne-title-card.png" alt="Ariadne" width={1672} height={941} unoptimized priority />;
 }
 
-export function TitleScreen({ onStart }: { onStart: () => void }) {
+export function TitleScreen({ onStart,onStory,ready }: { onStart: () => void;onStory:()=>void;ready:boolean }) {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => { if (event.key === "Enter") { event.preventDefault(); onStart(); } };
     addEventListener("keydown", handle);return () => removeEventListener("keydown", handle);
@@ -52,8 +52,9 @@ export function TitleScreen({ onStart }: { onStart: () => void }) {
   return <section className="front-screen title-screen" aria-label="Ariadne title screen">
     <div className="front-panel title-panel">
       <Logo />
-      <button className="pixel-button primary" type="button" onClick={onStart}>START</button>
-      <p className="front-hint">ENTER</p>
+      <button className="pixel-button primary" type="button" onClick={onStart} disabled={!ready}>{ready?"START":"OPENING THE GATE..."}</button>
+      <button className="text-button" type="button" onClick={onStory}>OPENING STORY</button>
+      <p className="front-hint">ENTER · MOVE TO AWAKEN ARIADNE</p>
     </div>
   </section>;
 }

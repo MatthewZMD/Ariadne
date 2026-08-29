@@ -4,7 +4,7 @@ import {
   analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc,
   companionCooldownMs, createGuidanceTrace, createJourneyState, describeEgocentricView,
   deterministicReply, forwardVisibleGeometry, guidanceTraceExpired,
-  instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestVisibleJunction,
+  instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestActionableJunction, nearestVisibleJunction,
   nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes,
   rebaseSelectedRoute, recordJourneyEncounter, routesForEvent,
   shouldTriggerPassingThought, trajectoryCue, updateJourney,
@@ -216,6 +216,8 @@ test("dead ends are visible before collision and remove invalid guidance",()=>{
 test("perception episodes leave generic corridor endings to the centered POV check",()=>{
   const junction={cells:[[0,0]],junctions:[{id:"junction:0,0",cell:[0,0],open:["1,0","0,1","-1,0"]}],corridorEnds:[],summary:""};
   assert.equal(nearestVisibleJunction(junction,{x:2.5,y:.5,angle:0,bob:0}).id,"junction:0,0");
+  assert.equal(nearestActionableJunction(junction,{x:8.5,y:.5,angle:Math.PI,bob:0}),null,"a distant visible junction is scenery, not yet a decision episode");
+  assert.equal(nearestActionableJunction(junction,{x:3.25,y:.5,angle:Math.PI,bob:0})?.id,"junction:0,0");
   assert.equal(nextPerceptionCue(junction,null,null,new Set()),null);
   const ending={cells:[[1,0]],junctions:[],corridorEnds:[[1,0]],summary:""};
   assert.equal(nextPerceptionCue(ending,null,null,new Set()),null);
