@@ -28,7 +28,7 @@ test("guidance makes Ariadne fly to the supplied route and return when MT enters
   const body=createAriadneBody(pose,0);beginAriadneGuidance(body,intent,1000);
   for(let i=0;i<100;i++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+i*1000/60,reducedMotion:false});
   assert.ok(body.mode==="leading"||body.mode==="waiting_ahead");assert.equal(body.targetRouteId,"second-left");assert.ok(body.position[0]>2.2);
-  const advanced={...pose,x:3.5};updateAriadneBody(body,{world:openWorld,tick:0,pose:advanced,phase:"charming",dt:1/30,now:2900,reducedMotion:false});
+  for(const [index,x] of [2.5,3.5,4.5,5.5].entries())updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x},phase:"charming",dt:1/30,now:2900+index*34,reducedMotion:false});
   assert.ok(["returning","catching_up","celebrating","hovering_beside"].includes(body.mode));assert.equal(body.mtFollowingHerLead,true);
 });
 
@@ -95,7 +95,21 @@ test("Ariadne abandons her waiting place and catches MT after another branch is 
   for(let i=0;i<100;i++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+i*1000/60,reducedMotion:false});
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5},phase:"charming",dt:1/30,now:2750,reducedMotion:false});
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:2.5},phase:"charming",dt:1/30,now:2784,reducedMotion:false});
+  updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:3.5},phase:"charming",dt:1/30,now:2818,reducedMotion:false});
+  updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:4.5},phase:"charming",dt:1/30,now:2852,reducedMotion:false});
   assert.ok(["returning","catching_up"].includes(body.mode));assert.equal(body.mtLeavingWhileSheWaits,true);assert.equal(body.departureRouteId,"second-left");
+});
+
+test("looking around and tentatively entering a branch are not choices",()=>{
+  const body=createAriadneBody(pose,0);beginAriadneGuidance(body,intent,1000);
+  for(let i=0;i<100;i++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+i*1000/60,reducedMotion:false});
+  for(let turn=0;turn<12;turn++)updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,angle:turn*Math.PI/6},phase:"charming",dt:1/30,now:2750+turn*34,reducedMotion:false});
+  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtLeavingWhileSheWaits,false);assert.deepEqual(body.choiceCells,[]);
+  updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:2.5,angle:Math.PI/2},phase:"charming",dt:1/30,now:3200,reducedMotion:false});
+  for(let turn=0;turn<8;turn++)updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:2.5,angle:turn*Math.PI/4},phase:"charming",dt:1/30,now:3234+turn*34,reducedMotion:false});
+  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtLeavingWhileSheWaits,false);assert.equal(body.choiceCells.length,1);
+  updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,angle:Math.PI},phase:"charming",dt:1/30,now:3550,reducedMotion:false});
+  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtLeavingWhileSheWaits,false);assert.deepEqual(body.choiceCells,[]);
 });
 
 test("blocked shoulder space makes Ariadne choose the open side",()=>{

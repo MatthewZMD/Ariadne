@@ -5,7 +5,7 @@ import { visibleStarProjection, type StarObjective } from "./objectives";
 import type { PerceivedScene, VisualFrameState } from "./scene";
 import { atlasFrame } from "./sprite-atlas";
 import type { AriadneBodyState, AriadneTrailPoint } from "./ariadne-body";
-import type { ResonanceEncounter, ResonanceState } from "./resonance";
+import type { RealityEffect, ResonanceEncounter, ResonanceState } from "./resonance";
 
 export type Pose = { x:number; y:number; angle:number; bob:number };
 type Ray = {distance:number;mapX:number;mapY:number;side:number;u:number};
@@ -117,19 +117,106 @@ function objectiveStar(ctx:CanvasRenderingContext2D,x:number,y:number,size:numbe
   ctx.fillStyle="#fff2ad";ctx.fillRect(-unit,-unit*3,unit,unit*3);ctx.restore();
 }
 
-function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncounter[],pose:Pose,depths:Float32Array,horizon:number,time:number,reducedMotion:boolean){
+function resonanceGlyph(ctx:CanvasRenderingContext2D,theme:ResonanceEncounter["theme"],unit:number,color:string,active:boolean,time:number,phase:number){
+  const motion=active?1:0,beat=.5+.5*Math.sin(time*3.2+phase);
+  ctx.fillStyle=color;
+  if(theme==="beach"){
+    // An opening shell: closed parts visibly separate once awakened.
+    const spread=Math.round(unit*(1+motion*(1+beat)));ctx.fillRect(-unit*3,-unit,unit*6,unit*2);ctx.fillRect(-unit*2,-unit*2-spread,unit*4,unit);ctx.fillRect(-unit*2,unit+spread,unit*4,unit);ctx.fillStyle=active?"#fff0b2":"#a9b2a8";ctx.fillRect(-unit,-unit,unit*2,unit*2);
+  }else if(theme==="tornado"){
+    // A gauge whose needle starts racing.
+    ctx.fillRect(-unit*3,-unit*3,unit,unit*6);ctx.fillRect(unit*2,-unit*3,unit,unit*6);ctx.fillRect(-unit*2,-unit*3,unit*4,unit);ctx.fillRect(-unit*2,unit*2,unit*4,unit);ctx.save();ctx.rotate(active?time*2.8+phase:-.65);ctx.fillStyle=active?"#ffe382":"#a9b2a8";ctx.fillRect(0,-Math.max(1,unit/2),unit*3,unit);ctx.restore();
+  }else if(theme==="ruins"){
+    // A sleeping flower opens petal by petal.
+    ctx.fillRect(-Math.max(1,unit/2),0,unit,unit*4);for(let petal=0;petal<4;petal++){ctx.save();ctx.rotate(petal*Math.PI/2+(active?Math.sin(time*2+phase)*.08:0));ctx.fillRect(unit,-unit,unit*(active?3:2),unit*2);ctx.restore()}ctx.fillStyle=active?"#fff29d":"#9aa69d";ctx.fillRect(-unit,-unit,unit*2,unit*2);
+  }else if(theme==="frozen"){
+    // Loose pages settle into an animated diagram.
+    for(let page=0;page<3;page++){const angle=page*Math.PI*2/3+(active?time*.8:0),radius=unit*(active?3.2:2.1);ctx.save();ctx.translate(Math.cos(angle)*radius,Math.sin(angle)*radius*.65);ctx.rotate(active?angle*.25:(page-1)*.18);ctx.fillRect(-unit*1.5,-unit,unit*3,unit*2);ctx.fillStyle=active?"#ffffff":"#a8b4b3";ctx.fillRect(-unit,-Math.max(1,unit/2),unit*2,Math.max(1,unit/2));ctx.fillStyle=color;ctx.restore()}
+  }else if(theme==="foundry"){
+    // A pressure valve begins turning under its own power.
+    ctx.save();ctx.rotate(active?time*1.8+phase:0);for(let arm=0;arm<4;arm++){ctx.rotate(Math.PI/2);ctx.fillRect(unit,-Math.max(1,unit/2),unit*3,unit)}ctx.fillRect(-unit*2,-unit*2,unit*4,unit*4);ctx.fillStyle=active?"#fff0a4":"#202520";ctx.fillRect(-unit,-unit,unit*2,unit*2);ctx.restore();
+  }else if(theme==="cavern"){
+    // A crystal chord expands and contracts as it resonates.
+    const lift=Math.round(active?beat*unit:0);ctx.fillRect(-unit,-unit*4-lift,unit*2,unit*7+lift);ctx.fillRect(-unit*3,unit-lift,unit*2,unit*3+lift);ctx.fillRect(unit,0,unit*2,unit*4);ctx.fillStyle=active?"#ecffdc":"#a4afa7";ctx.fillRect(0,-unit*3-lift,unit,unit*3);
+  }else{
+    // An impossible rune continuously rearranges after activation.
+    const shift=active?Math.round(Math.sin(time*2.5+phase)*unit):0;ctx.fillRect(-unit*3,-unit*3+shift,unit*2,unit);ctx.fillRect(unit,-unit*3-shift,unit*2,unit);ctx.fillRect(-unit, -unit*2,unit*2,unit*5);ctx.fillRect(-unit*3,unit*2-shift,unit*6,unit);ctx.fillStyle=active?"#fff0ab":"#a9b1aa";ctx.fillRect(-unit,-unit,unit*2,unit*2);
+  }
+}
+
+function projectWorldPoint(point:[number,number],pose:Pose,depths:Float32Array,width:number,horizon:number,height:number,maxDistance=22){
+  const dx=point[0]-pose.x,dy=point[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
+  if(dist<.25||dist>maxDistance||Math.abs(rel)>FOV*.59)return null;
+  const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.2)return null;
+  return{sx,sy:horizon+height/(dist*3.8),dist,corrected};
+}
+
+function renderRealityEffect(ctx:CanvasRenderingContext2D,effect:RealityEffect,x:number,y:number,size:number,time:number,progress:number,completionAge:number,reducedMotion:boolean,layer:number){
+  const t=reducedMotion?effect.seed%19:time,unit=Math.max(1,Math.floor(size/36)),pulse=reducedMotion?1:.82+Math.sin(t*1.7+effect.seed%23)*.18,alpha=Math.min(.72,.16+effect.intensity*.36+progress*.18);
+  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.globalAlpha=alpha;ctx.lineWidth=Math.max(1,unit);ctx.strokeStyle=effect.color;ctx.fillStyle=effect.color;
+  if(effect.kind==="architectural_fold"){
+    for(let i=0;i<4;i++){const side=i%2?-1:1,yy=(i-1.5)*unit*7;ctx.save();ctx.translate(side*(size*.16+i*unit*2),yy);ctx.rotate(side*(.12+.07*Math.sin(t+i)));ctx.globalAlpha=alpha*(1-i*.11);ctx.fillRect(0,-unit*2,side*size*(.19+.035*i),unit*4);ctx.strokeRect(0,-unit*3,side*size*(.22+.03*i),unit*6);ctx.restore()}
+  }else if(effect.kind==="recursive_portal"||effect.kind==="impossible_window"){
+    const count=Math.min(7,3+layer);for(let i=0;i<count;i++){const scale=1-i/(count+1),w=size*.74*scale,h=size*.46*scale,drift=reducedMotion?0:Math.sin(t*.7+i)*unit*2;ctx.globalAlpha=alpha*(1-i/count*.65);ctx.strokeRect(-w/2+drift,-h*.72-i*unit,w,h)}
+    if(effect.kind==="impossible_window"){ctx.globalAlpha=alpha*.35;ctx.fillRect(-size*.31,-size*.31,size*.62,size*.22)}
+  }else if(effect.kind==="perspective_echo"){
+    const colors=[effect.color,"#68e6ff","#ef66d0","#f4cb62"];for(let i=0;i<Math.min(6,2+layer);i++){const skew=(i-(layer/2))*unit*4,scale=1-i*.08;ctx.globalAlpha=alpha*(.72-i*.07);ctx.strokeStyle=colors[i%colors.length]!;ctx.beginPath();ctx.moveTo(skew-size*.44*scale,size*.22);ctx.lineTo(skew-size*.18*scale,-size*.3);ctx.lineTo(skew+size*.18*scale,-size*.3);ctx.lineTo(skew+size*.44*scale,size*.22);ctx.stroke()}
+  }else if(effect.kind==="prismatic_depth"){
+    const colors=["#66e8ff","#ed5dcc","#f1ce5d",effect.color];for(let i=0;i<Math.min(6,3+layer);i++){const angle=i*Math.PI*2/(3+layer)+t*.08,r=size*(.22+i*.025)*pulse;ctx.strokeStyle=colors[i%colors.length]!;ctx.globalAlpha=alpha*.72;ctx.strokeRect(Math.cos(angle)*r-size*.16,Math.sin(angle)*r-size*.11,size*.32,size*.22)}
+  }else if(effect.kind==="floating_architecture"){
+    const count=Math.min(18,7+layer*2);for(let i=0;i<count;i++){const angle=i/count*Math.PI*2+t*.16,r=size*(.22+(i%3)*.055),w=unit*(3+i%4),h=unit*(2+(i+1)%3);ctx.globalAlpha=alpha*(.55+(i%3)*.12);ctx.fillRect(Math.round(Math.cos(angle)*r-w/2),Math.round(Math.sin(angle)*r*.56-h/2),w,h)}
+  }else if(effect.kind==="surface_ripple"){
+    for(let i=0;i<5;i++){const radius=size*(.13+i*.075+(reducedMotion?0:(t*.08+i*.03)% .07));ctx.globalAlpha=alpha*(1-i*.14);ctx.beginPath();ctx.ellipse(0,0,radius,radius*.52,0,0,Math.PI*2);ctx.stroke()}
+  }else{
+    const count=Math.min(16,6+layer*2);for(let i=0;i<count;i++){const angle=i/count*Math.PI*2+t*.22,r=size*(.14+(i%4)*.055)*pulse;ctx.globalAlpha=alpha*(.48+(i%2)*.25);ctx.fillRect(Math.round(Math.cos(angle)*r-unit),Math.round(Math.sin(angle)*r*.62-unit),unit*(2+i%3),unit*(2+i%2))}
+  }
+  if(completionAge>=0&&completionAge<2.8&&!reducedMotion){const burst=Math.min(1,completionAge/2.1),radius=size*(.18+burst*.72);ctx.globalAlpha=(1-burst)*.72;ctx.strokeStyle="#fff4c5";ctx.lineWidth=Math.max(2,unit*2);ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke()}
+  ctx.restore();
+}
+
+function renderCenterpiece(ctx:CanvasRenderingContext2D,encounter:ResonanceEncounter,x:number,y:number,size:number,time:number,reducedMotion:boolean){
+  const count=encounter.elements.length,active=encounter.elements.filter(item=>item.active).length,unit=Math.max(2,Math.floor(size/24)),radius=size*.22;
+  ctx.save();ctx.translate(Math.round(x),Math.round(y-size*.15));
+  const halo=ctx.createRadialGradient(0,0,unit,0,0,size*.42);halo.addColorStop(0,`${encounter.motif.color}72`);halo.addColorStop(.52,`${encounter.motif.color}22`);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-size*.45,-size*.45,size*.9,size*.9);
+  ctx.lineWidth=Math.max(1,unit);for(let i=0;i<count;i++){const angle=-Math.PI/2+i/count*Math.PI*2+(reducedMotion?0:Math.sin(time*.7)*.04),next=-Math.PI/2+(i+1)/count*Math.PI*2;ctx.beginPath();ctx.strokeStyle=i<active?(encounter.relevance==="objective_relevant"&&encounter.completed?"#f2cf69":encounter.motif.color):"rgba(185,194,184,.25)";ctx.arc(0,0,radius,angle+.08,next-.08);ctx.stroke()}
+  ctx.fillStyle=encounter.completed?"#fff4c5":"rgba(210,220,211,.7)";ctx.fillRect(-unit,-unit,unit*2,unit*2);
+  if(!reducedMotion&&active>0&&!encounter.completed){const a=time*1.3;ctx.fillStyle=encounter.motif.color;ctx.fillRect(Math.cos(a)*radius-unit,Math.sin(a)*radius-unit,unit*2,unit*2)}
+  ctx.restore();
+}
+
+function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncounter[],pose:Pose,depths:Float32Array,horizon:number,time:number,reducedMotion:boolean,accumulation:ResonanceState|null){
   const{width,height}=ctx.canvas;
   for(const encounter of encounters){
-    for(const [index,element] of encounter.elements.entries()){
-      const dx=element.position[0]-pose.x,dy=element.position[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
-      if(dist<.25||dist>18||Math.abs(rel)>FOV*.59)continue;const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.16)continue;
-      const size=Math.max(4,Math.min(52,height/Math.max(.55,corrected)*.075)),unit=Math.max(1,Math.floor(size/7)),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*.7,accomplishmentColor=encounter.completed&&encounter.relevance==="objective_relevant"?"#f4ce63":encounter.motif.color;
-      ctx.save();ctx.translate(Math.round(sx),Math.round(sy+bob));ctx.globalAlpha=element.active ? 0.95 : 0.4;
-      if(element.active){const halo=ctx.createRadialGradient(0,0,0,0,0,unit*7);halo.addColorStop(0,accomplishmentColor);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*7,-unit*7,unit*14,unit*14)}
-      ctx.fillStyle=element.active?accomplishmentColor:"#565e58";ctx.fillRect(-unit*2,-unit*2,unit*4,unit*4);ctx.fillStyle=element.active?"#fff5bf":"#9aa29b";ctx.fillRect(-unit,-unit*3,unit*2,unit*6);ctx.fillRect(-unit*3,-unit,unit*6,unit*2);ctx.restore();
+    const activeCount=encounter.elements.filter(element=>element.active).length,progress=activeCount/encounter.elements.length;
+    const centerProjection=projectWorldPoint([encounter.center[0]+.5,encounter.center[1]+.5],pose,depths,width,horizon,height,22);
+    if(centerProjection){
+      const chaos=accumulation?.chaos.activeIntensity??0,size=Math.max(48,Math.min(height*.88,height/Math.max(.6,centerProjection.corrected)*(.58+chaos*.12))),completionAge=encounter.completedAt===null?-1:(Date.now()-encounter.completedAt)/1000;
+      const effects=encounter.reality.stage==="dormant"?[]:encounter.reality.stage==="assembling"?encounter.reality.activationEffects.filter(effect=>effect.startedAt!==null):[encounter.reality.completionEffect,...encounter.reality.persistentEffects];
+      const layerCount=Math.min(encounter.completed?6:2,accumulation?.chaos.maximumLayerCount??2);Array.from({length:Math.min(layerCount,effects.length?Math.max(effects.length,layerCount):0)},(_,index)=>effects[index%effects.length]!).forEach((effect,index)=>renderRealityEffect(ctx,effect,centerProjection.sx,centerProjection.sy-size*.12,size,time,progress,completionAge,reducedMotion,index+1));
+      renderCenterpiece(ctx,encounter,centerProjection.sx,centerProjection.sy,size,time,reducedMotion);
     }
-    if(encounter.completed){
-      const x=encounter.center[0]+.5,y=encounter.center[1]+.5,dx=x-pose.x,dy=y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;if(dist<18&&Math.abs(rel)<FOV*.58){const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected<=depths[rayIndex]+.2){const radius=Math.min(100,height/Math.max(.8,corrected)*.2),sy=horizon+height/(dist*3.8),halo=ctx.createRadialGradient(sx,sy,0,sx,sy,radius);halo.addColorStop(0,`${encounter.motif.color}66`);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(sx-radius,sy-radius,radius*2,radius*2)}}}
+    const projected=encounter.elements.map((element,index)=>{
+      const dx=element.position[0]-pose.x,dy=element.position[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
+      if(dist<.25||dist>18||Math.abs(rel)>FOV*.59)return null;const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.16)return null;
+      const size=Math.max(7,Math.min(58,height/Math.max(.55,corrected)*.09)),unit=Math.max(1,Math.floor(size/7)),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*(element.active?.7:1.2);
+      return{element,index,dist,corrected,sx,sy:sy+bob,size,unit};
+    });
+    // Activation sends a brief visible response toward the rest of the
+    // configuration. There is deliberately no persistent line: this is
+    // accomplishment feedback, not a breadcrumb or navigation system.
+    for(let index=1;index<projected.length;index++){
+      const from=projected[index-1],to=projected[index];if(!from||!to)continue;
+      const justActivated=from.element.activatedAt!==null&&Date.now()-from.element.activatedAt<1400;if(!justActivated||reducedMotion)continue;const flow=Math.min(1,(Date.now()-from.element.activatedAt!)/1400),x=from.sx+(to.sx-from.sx)*flow,y=from.sy+(to.sy-from.sy)*flow,unit=Math.max(1,Math.min(from.unit,to.unit));ctx.save();ctx.globalAlpha=(1-flow)*.85;ctx.fillStyle="#fff5bf";for(let trail=0;trail<3;trail++)ctx.fillRect(Math.round(x-(to.sx-from.sx)*.035*trail-unit),Math.round(y-(to.sy-from.sy)*.035*trail-unit),unit*2,unit*2);ctx.restore();
+    }
+    for(const [index,element] of encounter.elements.entries()){
+      const projection=projected[index];if(!projection)continue;const{sx,sy,unit}=projection,accomplishmentColor=encounter.completed&&encounter.relevance==="objective_relevant"?"#f4ce63":encounter.motif.color;
+      ctx.save();ctx.translate(Math.round(sx),Math.round(sy));
+      const dormantPulse=reducedMotion?.72:.62+Math.sin(time*3.1+index*1.9)*.16;
+      ctx.globalAlpha=element.active ? 0.98 : Math.min(.94,dormantPulse+progress*.22);
+      if(element.active){const halo=ctx.createRadialGradient(0,0,0,0,0,unit*7);halo.addColorStop(0,accomplishmentColor);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*7,-unit*7,unit*14,unit*14)}
+      if(element.active&&element.activatedAt&&!reducedMotion){const age=Math.max(0,Date.now()-element.activatedAt)/1000;if(age<1.15){const radius=unit*(3+age*15);ctx.strokeStyle=`rgba(255,245,191,${(1-age/1.15)*.88})`;ctx.lineWidth=Math.max(1,unit*.65);ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke()}}
+      resonanceGlyph(ctx,encounter.theme,unit,element.active?accomplishmentColor:progress>0?encounter.motif.color:"#7f8b82",element.active,reducedMotion?0:time,index*1.7);ctx.restore();
+    }
   }
 }
 
@@ -172,6 +259,18 @@ function projectAriadnePoint(point:{x:number;y:number;height:number},pose:Pose,d
   return{sx,sy,dist,corrected};
 }
 
+function ariadneMotif(ctx:CanvasRenderingContext2D,theme:ResonanceEncounter["theme"],x:number,y:number,unit:number,color:string,rotation:number){
+  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.rotate(rotation);ctx.fillStyle=color;
+  if(theme==="beach"){ctx.fillRect(-unit*2,-unit,unit*4,unit);ctx.fillRect(-unit,0,unit*2,unit);ctx.fillStyle="#fff0ba";ctx.fillRect(0,-unit,unit,unit)}
+  else if(theme==="tornado"){ctx.strokeStyle=color;ctx.lineWidth=unit;ctx.beginPath();ctx.arc(0,0,unit*2,0,Math.PI*1.55);ctx.stroke();ctx.fillRect(unit,-unit*2,unit*2,unit)}
+  else if(theme==="ruins"){for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);ctx.fillRect(unit,-unit,unit*2,unit)}ctx.fillStyle="#fff0a0";ctx.fillRect(-unit/2,-unit/2,unit,unit)}
+  else if(theme==="frozen"){ctx.fillRect(-unit*2,-unit,unit*4,unit*2);ctx.fillStyle="#ffffff";ctx.fillRect(-unit,-Math.max(1,unit/2),unit*2,Math.max(1,unit/2))}
+  else if(theme==="foundry"){for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);ctx.fillRect(unit,-unit/2,unit*2,unit)}ctx.fillRect(-unit,-unit,unit*2,unit*2)}
+  else if(theme==="cavern"){ctx.fillRect(-unit,-unit*3,unit*2,unit*5);ctx.fillRect(-unit*2,0,unit,unit*2);ctx.fillStyle="#eaffd7";ctx.fillRect(0,-unit*2,unit,unit*2)}
+  else{ctx.fillRect(-unit*2,-unit*2,unit,unit);ctx.fillRect(unit,-unit*2,unit,unit);ctx.fillRect(-unit/2,-unit,unit,unit*3);ctx.fillRect(-unit*2,unit,unit*4,unit)}
+  ctx.restore();
+}
+
 function renderAriadneFairy(ctx:CanvasRenderingContext2D,time:number,body:AriadneBodyState,visual:VisualFrameState,pose:Pose,depths:Float32Array,horizon:number,accumulation:ResonanceState|null){
   const{width,height}=ctx.canvas,now=Date.now(),projection=projectAriadnePoint({x:body.position[0],y:body.position[1],height:body.height},pose,depths,horizon,width,height);if(!projection)return;
   const drawTrail=(point:AriadneTrailPoint)=>{const projected=projectAriadnePoint(point,pose,depths,horizon,width,height);if(!projected)return;const age=(now-point.bornAt)/850;if(age>=1)return;const unit=Math.max(1,Math.round(2.4/projected.corrected)),x=Math.round(projected.sx),y=Math.round(projected.sy),committing=body.mode==="leading"||body.mode==="waiting_ahead",spiraling=body.mode==="apology_spiral",apologizing=body.mode==="apologizing";ctx.globalAlpha=(1-age)*(committing?.82:spiraling?.74:apologizing?.32:.5);ctx.fillStyle=apologizing?"#a9dfe8":spiraling?(age>.45?"#e5b94f":"#8beeff"):age>.45?"#e5b94f":"#63e4ff";ctx.fillRect(x,y,unit*(committing?3:spiraling?2:apologizing?1:2),unit);if(age<.55&&!apologizing){ctx.fillStyle=spiraling?"#f2c65d":"#e55ecf";ctx.fillRect(x-unit,y+unit*2,unit*(committing?2:1),unit)}};
@@ -185,7 +284,7 @@ function renderAriadneFairy(ctx:CanvasRenderingContext2D,time:number,body:Ariadn
   ctx.globalAlpha=ringAlpha;for(let i=0;i<10;i++){const angle=rotation+i/10*Math.PI*2,radius=unit*(apologizing?4.2:spiraling?7:speaking?6.4:5.6),x=Math.round(Math.cos(angle)*radius),y=Math.round(Math.sin(angle)*radius*.72+(apologizing?apologyProgress*unit*2:0));ctx.fillStyle=apologizing?i%2?"#9cdae5":"#d9f5f7":spiraling?i%2?"#8cecff":"#efc45b":i%3===0?"#ee62d5":i%2?"#72eaff":"#bff8ff";ctx.fillRect(x-unit,y,unit*2,unit)}
   const apologyWings=[.55,.98,Math.PI-.55,Math.PI-.98];for(let i=0;i<4;i++){const angle=apologizing?apologyWings[i]:-rotation*.62+i*Math.PI/2,radius=unit*(apologizing?3.2:3.8);ctx.save();ctx.rotate(angle);ctx.fillStyle=apologizing?i===3?"#bd9d57":"#5fa7b4":i===3?"#e8bd58":"#69ddf4";ctx.fillRect(Math.round(radius),-unit,unit*3,unit*2);ctx.fillStyle=repairing?"#b9f3f7":"#e8fbff";ctx.fillRect(Math.round(radius+unit),-unit,unit,unit);ctx.restore()}
   ctx.globalAlpha=1;ctx.fillStyle="#69dff5";ctx.fillRect(-unit*2,-unit*2,unit*4,unit*4);ctx.fillStyle="#f7ffff";ctx.fillRect(-unit,-unit*3,unit*2,unit*6);ctx.fillRect(-unit*3,-unit,unit*6,unit*2);ctx.fillStyle="#ffffff";ctx.fillRect(-unit,-unit,unit*2,unit*2);ctx.fillStyle="#e75cd1";ctx.fillRect(unit,unit,unit,unit);ctx.fillStyle="#edc35e";ctx.fillRect(-unit*2,unit*2,unit,unit);
-  const motifs=accumulation?.activeMotifs??[];for(const[index,motif]of motifs.entries()){const angle=time*(visual.reducedMotion?.08:.55)+index/Math.max(1,motifs.length)*Math.PI*2,radius=unit*(8+index%2*2);ctx.fillStyle=motif.color;ctx.fillRect(Math.round(Math.cos(angle)*radius)-unit,Math.round(Math.sin(angle)*radius*.7)-unit,unit*2,unit*2)}
+  const motifs=accumulation?.activeMotifs??[];for(const[index,motif]of motifs.entries()){const angle=time*(visual.reducedMotion?.08:.55)+index/Math.max(1,motifs.length)*Math.PI*2,radius=unit*(8+index%2*2);ariadneMotif(ctx,motif.theme,Math.cos(angle)*radius,Math.sin(angle)*radius*.7,unit,motif.color,angle*.35)}
   for(let index=0;index<(accumulation?.permanentStarFragments??0);index++){const angle=-.8+index*.52,radius=unit*11;ctx.fillStyle="#f4ce63";ctx.fillRect(Math.round(Math.cos(angle)*radius)-unit,Math.round(Math.sin(angle)*radius*.75)-unit,unit*2,unit*3);ctx.fillStyle="#fff3ae";ctx.fillRect(Math.round(Math.cos(angle)*radius),Math.round(Math.sin(angle)*radius*.75),unit,unit)}
   const moteCount=visual.relationshipPhase==="charming"?2:visual.relationshipPhase==="attached"?3:5;for(let i=0;i<moteCount;i++){const angle=-rotation*.35+i*Math.PI*2/moteCount,radius=unit*(apologizing?5:7+i%2*2),fall=apologizing?unit*(2+((time*.8+i*.31)%1)*5):0;ctx.fillStyle=apologizing?i===moteCount-1?"#b89d62":"#8acbd5":i===moteCount-1?"#e8bd58":i%2?"#e962d2":"#8cf0ff";ctx.fillRect(Math.round(Math.cos(angle)*radius),Math.round(Math.sin(angle)*radius*.58+fall),unit,unit)}
   ctx.restore();
@@ -268,7 +367,7 @@ export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anc
     }
   }
   if(scene)renderSpectacles(ctx,scene,pose,depths,horizon,time,visual?.relationshipIntensity??0,reducedMotion);
-  renderResonances(ctx,resonances,pose,depths,horizon,time,reducedMotion);
+  renderResonances(ctx,resonances,pose,depths,horizon,time,reducedMotion,accumulation);
   const perceivedIds=scene?new Set(scene.objects.map(object=>object.id)):null;
   const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>(!perceivedIds||perceivedIds.has(v.e.id))&&Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<12).sort((a,b)=>b.dist-a.dist).slice(0,28);
   for(const v of visible){const sx=(.5+v.rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS)));if(v.dist>depths[rayIndex]+.2)continue;const size=Math.min(120,height/v.dist*.33*v.e.scale),sy=horizon+height/(v.dist*3.8);sprite(ctx,sx,sy,size,v.e.kind,THEMES[v.e.theme].accent,time,v.e.phase)}

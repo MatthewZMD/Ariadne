@@ -22,7 +22,7 @@ export type AriadneEmotion="curious"|"delighted"|"encouraging"|"apologetic"|"rel
 export type AriadneTrailPoint={x:number;y:number;height:number;bornAt:number};
 export type AriadneBodyState={
   position:[number,number];height:number;velocity:[number,number,number];mode:AriadneBodyMode;emotion:AriadneEmotion;
-  side:-1|1;targetRouteId:string|null;routeCells:Point[];decisionCell:Point|null;expectedChoiceCell:Point|null;reachedDecision:boolean;leadStartedAt:number;waitStartedAt:number;speakUntil:number;emotionUntil:number;
+  side:-1|1;targetRouteId:string|null;routeCells:Point[];decisionCell:Point|null;approachCell:Point|null;expectedChoiceCell:Point|null;choiceCells:Point[];reachedDecision:boolean;leadStartedAt:number;waitStartedAt:number;speakUntil:number;emotionUntil:number;
   thinkingSince:number|null;decisionEmphasisStartedAt:number;decisionEmphasisUntil:number;decisionOrigin:[number,number];decisionArcSign:-1|1;
   apologyStartedAt:number;apologyOrigin:[number,number];apologyReady:boolean;
   lastTrailAt:number;trail:AriadneTrailPoint[];lastPlayerPosition:[number,number];lastPlayerAngle:number;approachingUntil:number;departureRouteId:string|null;wasLeftWhileWaiting:boolean;mtFollowingHerLead:boolean;mtLeavingWhileSheWaits:boolean;mtReturningToHer:boolean;
@@ -69,20 +69,25 @@ function phaseWait(phase:RelationshipPhase){return phase==="charming"?4.5:phase=
 export function createAriadneBody(pose:BodyPose,now=0,world?:InfiniteWorld,tick=0):AriadneBodyState{
   const right=shoulderPoint(pose,1,phaseDistance("charming")),left=shoulderPoint(pose,-1,phaseDistance("charming")),side:-1|1=world&&!openAt(world,right[0],right[1],tick)&&openAt(world,left[0],left[1],tick)?-1:1;
   const candidate=side===1?right:left,position:[number,number]=world&&!openAt(world,candidate[0],candidate[1],tick)?[pose.x,pose.y]:candidate;
-  return{position,height:.76,velocity:[0,0,0],mode:"hovering_beside",emotion:"curious",side,targetRouteId:null,routeCells:[],decisionCell:null,expectedChoiceCell:null,reachedDecision:false,leadStartedAt:0,waitStartedAt:0,speakUntil:0,emotionUntil:now,thinkingSince:null,decisionEmphasisStartedAt:0,decisionEmphasisUntil:0,decisionOrigin:[...position],decisionArcSign:-side,apologyStartedAt:0,apologyOrigin:[...position],apologyReady:false,lastTrailAt:now,trail:[],lastPlayerPosition:[pose.x,pose.y],lastPlayerAngle:pose.angle,approachingUntil:0,departureRouteId:null,wasLeftWhileWaiting:false,mtFollowingHerLead:false,mtLeavingWhileSheWaits:false,mtReturningToHer:false};
+  return{position,height:.76,velocity:[0,0,0],mode:"hovering_beside",emotion:"curious",side,targetRouteId:null,routeCells:[],decisionCell:null,approachCell:null,expectedChoiceCell:null,choiceCells:[],reachedDecision:false,leadStartedAt:0,waitStartedAt:0,speakUntil:0,emotionUntil:now,thinkingSince:null,decisionEmphasisStartedAt:0,decisionEmphasisUntil:0,decisionOrigin:[...position],decisionArcSign:-side,apologyStartedAt:0,apologyOrigin:[...position],apologyReady:false,lastTrailAt:now,trail:[],lastPlayerPosition:[pose.x,pose.y],lastPlayerAngle:pose.angle,approachingUntil:0,departureRouteId:null,wasLeftWhileWaiting:false,mtFollowingHerLead:false,mtLeavingWhileSheWaits:false,mtReturningToHer:false};
+}
+
+function routeApproachCell(cells:Point[],decisionCell:Point|null,fallback:Point){
+  if(!decisionCell)return fallback;const index=cells.findIndex(cell=>sameCell(cell,decisionCell));return index>0?cells[index-1]!:fallback;
 }
 
 export function beginAriadneRoute(body:AriadneBodyState,route:Pick<RouteOption,"id"|"knownCells"|"decisionCell"|"targetCell"|"decisionPoint">,pose:BodyPose,now:number){
   body.targetRouteId=route.id;body.routeCells=route.knownCells.slice(0,20);body.decisionCell=route.decisionCell??pointCell([pose.x,pose.y]);body.expectedChoiceCell=route.decisionPoint==="upcoming"?route.targetCell:route.knownCells[0]??null;
+  body.approachCell=routeApproachCell(body.routeCells,body.decisionCell,pointCell([pose.x,pose.y]));
   body.reachedDecision=body.decisionCell?sameCell(pointCell([pose.x,pose.y]),body.decisionCell):false;body.leadStartedAt=now;body.waitStartedAt=0;body.mode="noticing_choice";body.emotion="encouraging";body.emotionUntil=now+5000;
   const destination=body.expectedChoiceCell??route.targetCell??route.knownCells.at(-1)??pointCell([pose.x+Math.cos(pose.angle),pose.y+Math.sin(pose.angle)]),relative=wrap(Math.atan2(destination[1]+.5-pose.y,destination[0]+.5-pose.x)-pose.angle);
   body.decisionOrigin=[...body.position];body.decisionArcSign=Math.abs(relative)>.1?(relative<0?-1:1):-body.side;
   body.decisionEmphasisStartedAt=now;body.decisionEmphasisUntil=now+2800;
-  body.wasLeftWhileWaiting=false;body.mtFollowingHerLead=false;body.mtLeavingWhileSheWaits=false;body.mtReturningToHer=false;
+  body.choiceCells=[];body.wasLeftWhileWaiting=false;body.mtFollowingHerLead=false;body.mtLeavingWhileSheWaits=false;body.mtReturningToHer=false;
 }
 
 export function noticeAriadneChoice(body:AriadneBodyState,now:number){
-  body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.expectedChoiceCell=null;body.reachedDecision=false;
+  body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.reachedDecision=false;
   body.leadStartedAt=now;body.waitStartedAt=0;body.mode="noticing_choice";body.emotion="curious";body.emotionUntil=now+2400;body.thinkingSince=now;
   body.decisionOrigin=[...body.position];body.decisionArcSign=-body.side;body.decisionEmphasisStartedAt=now;body.decisionEmphasisUntil=now+3200;
 }
@@ -95,15 +100,16 @@ export function cancelAriadneChoiceNotice(body:AriadneBodyState){
 export function beginAriadneGuidance(body:AriadneBodyState,intent:GuidanceIntent,now:number){
   const continuingSameChoice=!!intent.expectedChoiceCell&&!!body.expectedChoiceCell&&sameCell(intent.expectedChoiceCell,body.expectedChoiceCell)&&(body.mode==="noticing_choice"||body.mode==="leading"||body.mode==="waiting_ahead");
   body.targetRouteId=intent.suggestedRouteId;body.routeCells=intent.suggestedCells.slice(0,20);body.decisionCell=intent.decisionCell;body.expectedChoiceCell=intent.expectedChoiceCell;
+  body.approachCell=routeApproachCell(body.routeCells,body.decisionCell,pointCell(body.decisionOrigin));
   if(!continuingSameChoice){body.leadStartedAt=now;body.waitStartedAt=0;body.mode="noticing_choice";body.decisionEmphasisStartedAt=now;body.decisionEmphasisUntil=now+2400}body.emotion="encouraging";body.emotionUntil=now+5000;
-  body.wasLeftWhileWaiting=false;body.mtFollowingHerLead=false;body.mtLeavingWhileSheWaits=false;body.mtReturningToHer=false;
+  body.choiceCells=[];body.wasLeftWhileWaiting=false;body.mtFollowingHerLead=false;body.mtLeavingWhileSheWaits=false;body.mtReturningToHer=false;
 }
 
 export function prepareAriadneForEvent(body:AriadneBodyState,eventType:string,now:number){
   body.thinkingSince=now;
   if(eventType==="player_message"){body.mode="looking_around";body.emotion="curious";body.emotionUntil=now+2400;return}
   if(eventType==="recommendation_contradicted"||eventType==="dead_end_visible"){
-    body.mode="apology_spiral";body.emotion="apologetic";body.apologyStartedAt=now;body.apologyOrigin=[...body.position];body.apologyReady=false;body.emotionUntil=now+7000;body.velocity[0]*=-.45;body.velocity[1]*=-.45;body.velocity[2]=Math.min(body.velocity[2],-.22);body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.expectedChoiceCell=null;body.decisionEmphasisUntil=now;return;
+    body.mode="apology_spiral";body.emotion="apologetic";body.apologyStartedAt=now;body.apologyOrigin=[...body.position];body.apologyReady=false;body.emotionUntil=now+7000;body.velocity[0]*=-.45;body.velocity[1]*=-.45;body.velocity[2]=Math.min(body.velocity[2],-.22);body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.decisionEmphasisUntil=now;return;
   }
   if(eventType==="star_collected"||eventType==="same_target_reached_differently"||eventType==="encounter_completed"){
     body.mode="celebrating";body.emotion="delighted";body.emotionUntil=now+2600;
@@ -162,25 +168,36 @@ export function updateAriadneBody(body:AriadneBodyState,args:{world:InfiniteWorl
   if(!preferredVisible&&otherVisible)body.side=body.side===1?-1:1;
   const shoulder=visibleCompanionPoint(world,pose,tick,body.side===1?preferred:other,body.side===1?other:preferred);
   if(!openAt(world,body.position[0],body.position[1],tick)){body.position=[...shoulder];body.velocity=[0,0,0];body.trail=[]}
-  const targetOnRoute=routeTarget(body,pose,world,tick),expectedPoint=body.expectedChoiceCell?[body.expectedChoiceCell[0]+.5,body.expectedChoiceCell[1]+.5] as [number,number]:null,elapsed=(now-body.leadStartedAt)/1000,atDecision=!!body.decisionCell&&sameCell(playerCell,body.decisionCell),onChosenBranch=!!body.expectedChoiceCell&&sameCell(playerCell,body.expectedChoiceCell);
+  const targetOnRoute=routeTarget(body,pose,world,tick),expectedPoint=body.expectedChoiceCell?[body.expectedChoiceCell[0]+.5,body.expectedChoiceCell[1]+.5] as [number,number]:null,elapsed=(now-body.leadStartedAt)/1000,atDecision=!!body.decisionCell&&sameCell(playerCell,body.decisionCell),onApproach=!!body.approachCell&&sameCell(playerCell,body.approachCell),adjacentToDecision=!!body.decisionCell&&Math.abs(playerCell[0]-body.decisionCell[0])+Math.abs(playerCell[1]-body.decisionCell[1])===1;
   if(body.mode==="noticing_choice"&&body.targetRouteId&&elapsed>=(reducedMotion?.14:.18))body.mode="leading";
-  if(atDecision)body.reachedDecision=true;
-  if((body.mode==="leading"||body.mode==="waiting_ahead")&&targetOnRoute){
-    if(onChosenBranch&&elapsed>.7){body.mtFollowingHerLead=true;if(body.wasLeftWhileWaiting)body.mtReturningToHer=true;body.mode=body.mtReturningToHer?"celebrating":"returning";body.emotion=body.mtReturningToHer?"relieved":"delighted";body.emotionUntil=now+2200}
-    else if(body.reachedDecision&&!atDecision&&!onChosenBranch){body.wasLeftWhileWaiting=true;body.mtLeavingWhileSheWaits=true;body.departureRouteId=body.targetRouteId;body.mode="returning";body.emotion="clingy";body.emotionUntil=now+3200}
-    else if(body.mode==="leading"&&expectedPoint&&distance(body.position,expectedPoint)<.3){body.mode="waiting_ahead";body.waitStartedAt=now}
-    else if(body.mode==="waiting_ahead"){
-      const playerToTarget=distance(player,targetOnRoute);if(playerToTarget>3.8){body.wasLeftWhileWaiting=true;body.mtLeavingWhileSheWaits=true}
-      if((now-body.waitStartedAt)/1000>phaseWait(phase)||playerToTarget>3.15){body.mode="returning"}
+  if(atDecision){body.reachedDecision=true;body.choiceCells=[]}
+  if(body.reachedDecision){
+    if(atDecision||onApproach)body.choiceCells=[];
+    else{
+      const last=body.choiceCells.at(-1);
+      if(!last&&adjacentToDecision)body.choiceCells=[playerCell];
+      else if(last&&!sameCell(last,playerCell)&&Math.abs(last[0]-playerCell[0])+Math.abs(last[1]-playerCell[1])===1){
+        const earlier=body.choiceCells.findIndex(cell=>sameCell(cell,playerCell));body.choiceCells=earlier>=0?body.choiceCells.slice(0,earlier+1):[...body.choiceCells,playerCell].slice(-4);
+      }
     }
-  }else if((body.mode==="leading"||body.mode==="waiting_ahead")&&!targetOnRoute)body.mode="returning";
+  }
+  const committedBranch=body.choiceCells.length>=3?body.choiceCells[0]??null:null,followedChoice=!!committedBranch&&!!body.expectedChoiceCell&&sameCell(committedBranch,body.expectedChoiceCell),divergedChoice=!!committedBranch&&!followedChoice;
+  if(followedChoice&&elapsed>.7){body.mtFollowingHerLead=true;if(body.wasLeftWhileWaiting)body.mtReturningToHer=true;body.mode=body.mtReturningToHer?"celebrating":"returning";body.emotion=body.mtReturningToHer?"relieved":"delighted";body.emotionUntil=now+2200}
+  else if(divergedChoice){body.wasLeftWhileWaiting=true;body.mtLeavingWhileSheWaits=true;body.departureRouteId=body.targetRouteId;body.mode="returning";body.emotion="clingy";body.emotionUntil=now+3200}
+  else if((body.mode==="leading"||body.mode==="waiting_ahead")&&targetOnRoute){
+    if(body.mode==="leading"&&expectedPoint&&distance(body.position,expectedPoint)<.3){body.mode="waiting_ahead";body.waitStartedAt=now}
+    else if(body.mode==="waiting_ahead"){
+      const playerToTarget=distance(player,targetOnRoute);
+      if(!body.choiceCells.length&&((now-body.waitStartedAt)/1000>phaseWait(phase)||playerToTarget>3.15)){body.mode="returning"}
+    }
+  }else if((body.mode==="leading"||body.mode==="waiting_ahead")&&!targetOnRoute&&!body.choiceCells.length)body.mode="returning";
   if(body.mode==="celebrating"&&now>body.emotionUntil)body.mode="returning";
   if((body.mode==="examining_object"||body.mode==="looking_around")&&now>body.emotionUntil)body.mode="hovering_beside";
   if(body.mode==="apology_spiral"&&now-body.apologyStartedAt>=(reducedMotion?650:1450))body.mode="apologizing";
   if(body.mode==="apologizing"&&now>body.emotionUntil)body.mode="returning";
   if(body.mode==="speaking"&&now>body.speakUntil)body.mode="hovering_beside";
   const atShoulder=distance(body.position,shoulder)<.2;
-  if(body.mode==="returning"&&atShoulder){body.mode="hovering_beside";body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.expectedChoiceCell=null;body.reachedDecision=false}
+  if(body.mode==="returning"&&atShoulder){body.mode="hovering_beside";body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.reachedDecision=false}
   const hoverTime=now*.001,hoverScale=reducedMotion?.28:1,hoverOffset=(Math.sin(hoverTime*1.37)*.105+Math.sin(hoverTime*.61+1.4)*.055+Math.sin(hoverTime*2.17+.3)*.022)*hoverScale;
   const celebrationOffset=body.mode==="celebrating"&&!reducedMotion?[Math.cos(hoverTime*7)*.42,Math.sin(hoverTime*7)*.42] as [number,number]:[0,0] as [number,number];
   const waitingOffset=body.mode==="waiting_ahead"&&!reducedMotion?[Math.sin(hoverTime*1.8)*.07,Math.sin(hoverTime*3.6)*.035] as [number,number]:[0,0] as [number,number];
@@ -190,7 +207,7 @@ export function updateAriadneBody(body:AriadneBodyState,args:{world:InfiniteWorl
     const lateral=(Math.sin(hoverTime*1.09+1.2)*.105+Math.sin(hoverTime*.47+.15)*.04)*hoverScale*scale;
     return[Math.cos(pose.angle)*forward-Math.sin(pose.angle)*lateral,Math.sin(pose.angle)*forward+Math.cos(pose.angle)*lateral] as [number,number]
   })():[0,0] as [number,number];
-  let target=body.mode==="leading"||body.mode==="waiting_ahead"?targetOnRoute??shoulder:shoulder;
+  let target=body.mode==="leading"||body.mode==="waiting_ahead"?targetOnRoute??(body.choiceCells.length?[...body.position] as [number,number]:shoulder):shoulder;
   if(body.mode==="apology_spiral"){
     const progress=clamp((now-body.apologyStartedAt)/(reducedMotion?650:1450),0,1),angle=progress*Math.PI*(reducedMotion?2:4),radius=reducedMotion?.2:.43;
     target=[body.apologyOrigin[0]+Math.cos(angle)*radius,body.apologyOrigin[1]+Math.sin(angle)*radius];
@@ -214,7 +231,7 @@ export function updateAriadneBody(body:AriadneBodyState,args:{world:InfiniteWorl
   body.trail=body.trail.filter(point=>now-point.bornAt<850).slice(-14);
   if(body.mode==="apologizing"&&distance(body.position,player)<.72&&body.height<.58)body.apologyReady=true;
   const settledBearing=wrap(Math.atan2(body.position[1]-pose.y,body.position[0]-pose.x)-pose.angle),visiblyRejoined=distance(body.position,player)<1.35&&Math.abs(settledBearing)<CAMERA_FOV*.42&&lineOpen(world,player,body.position,tick);
-  if(body.mode==="catching_up"&&(distance(body.position,shoulder)<.3||visiblyRejoined)){body.mode="hovering_beside";if(body.mtLeavingWhileSheWaits||body.mtFollowingHerLead){body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.expectedChoiceCell=null;body.reachedDecision=false}}
+  if(body.mode==="catching_up"&&(distance(body.position,shoulder)<.3||visiblyRejoined)){body.mode="hovering_beside";if(body.mtLeavingWhileSheWaits||body.mtFollowingHerLead){body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.reachedDecision=false}}
   return body;
 }
 

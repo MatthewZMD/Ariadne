@@ -133,7 +133,7 @@ test("a failed sticky model gets one distinct curated alternative without reques
     return new Response(JSON.stringify({model,choices:[{message:{content:"MT, I’m right here—come on, let’s try this together."}}]}),{status:200,headers:{"content-type":"application/json"}});
   };
   try{
-    const body={...requestBody(),preferredModelId:"google/gemma-4-31b-it:free"};
+    const body={...requestBody(),preferredModelId:"google/gemma-4-31b-it:free",providerFailureCount:1};
     const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})),reply=await response.json();
     assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"google/gemma-4-26b-a4b-it:free");assert.equal(new Set(attempted).size,attempted.length);assert.equal(attempted.length,2);
   }finally{

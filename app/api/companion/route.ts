@@ -5,6 +5,7 @@ import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
 import type { PromptPerceivedScene } from "../../scene.ts";
 import type { AriadneEmbodimentContext } from "../../ariadne-body.ts";
 import { speechActDirection, speechActForEvent, type CompanionSpeechAct, type EmbodiedDecisionState, type SpeechAnchor } from "../../embodied-interaction.ts";
+import type { ExperienceBeat, SharedMoment, SocialStrategy } from "../../experience.ts";
 
 export type RequestBody={
   sessionId:string;trigger:CompanionEvent;speechAnchor:SpeechAnchor;dispositionCard:string;activity:PlayerActivity;recommendation:GuidanceIntent|null;recommendationEvidence:GuidanceEvidence|null;
@@ -13,7 +14,8 @@ export type RequestBody={
   objective:PublicObjectiveContext;navigationBelief:NavigationBelief|null;embodiment:AriadneEmbodimentContext;
   accomplishment?:{whatMTJustAccomplished:string;whatChangedPermanently:string|null;starVisiblyResponded:boolean;visibleProgress:string}|null;
   visibleConfigurations?:string[];
-  playerMessage?:string;preferredModelId?:string|null;
+  experienceBeat?:ExperienceBeat;sharedMoment?:SharedMoment|null;relationshipExpression?:string;socialStrategy?:SocialStrategy;
+  playerMessage?:string;preferredModelId?:string|null;providerFailureCount?:number;
 };
 
 type OpenRouterModel={id:string;created?:number;context_length?:number;expiration_date?:string|null;architecture?:{input_modalities?:string[];output_modalities?:string[]};pricing?:{prompt?:string;completion?:string;request?:string};supported_parameters?:string[];reasoning?:{mandatory?:boolean;default_enabled?:boolean}};
@@ -30,6 +32,9 @@ const objectiveEvents=["searching","star_visible","star_collected","objective_ch
 const embodiedStates=["noticing","committing","waiting","mt_following","mt_diverging","mt_passed","route_contradicted","rejoining","resolved"] as const satisfies readonly EmbodiedDecisionState[];
 const speechActs=["invite_to_visible_choice","confirm_following","respond_to_divergence","catch_up","repair_mistake","celebrate_rejoining","react_to_star","celebrate_accomplishment","renew_hope","share_visible_discovery","passing_companionship","reply_to_mt"] as const satisfies readonly CompanionSpeechAct[];
 const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-31b-it:free","minimax/minimax-m3:free","google/gemma-4-26b-a4b-it:free"];
+const beatKinds=["guidance","accomplishment","repair","objective","relational","ambient"] as const;
+const socialStrategies=["curious_wonder","playful_confidence","concrete_praise","grateful_closeness","tender_apology","relieved_reconnection","admiring_correction","hopeful_reinterpretation","reassurance_seeking","possessive_shared_meaning"] as const;
+const momentKinds=["followed_commitment","diverged_from_commitment","corrected_ariadne","rejoined_ariadne","shared_accomplishment","proxy_accomplishment","ariadne_mistake","star_collected"] as const;
 
 type RecordValue=Record<string,unknown>;
 const isRecord=(value:unknown):value is RecordValue=>!!value&&typeof value==="object"&&!Array.isArray(value);
@@ -148,6 +153,10 @@ export function parseCompanionRequest(value:unknown):RequestBody|null{
   if(!Array.isArray(value.recentMessages)||value.recentMessages.length>8||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200)||!isArc(value.companionArc)||!isObjective(value.objective)||!isEmbodiment(value.embodiment))return null;
   if(!(value.accomplishment===undefined||value.accomplishment===null||isRecord(value.accomplishment)&&isString(value.accomplishment.whatMTJustAccomplished,240,1)&&(value.accomplishment.whatChangedPermanently===null||isString(value.accomplishment.whatChangedPermanently,300,1))&&isBoolean(value.accomplishment.starVisiblyResponded)&&isString(value.accomplishment.visibleProgress,160,1)))return null;
   if(!(value.visibleConfigurations===undefined||Array.isArray(value.visibleConfigurations)&&value.visibleConfigurations.length<=8&&value.visibleConfigurations.every(item=>isString(item,240,1))))return null;
+  if(!(value.experienceBeat===undefined||isRecord(value.experienceBeat)&&isString(value.experienceBeat.id,300,1)&&isEnum(value.experienceBeat.kind,beatKinds)&&Array.isArray(value.experienceBeat.facts)&&value.experienceBeat.facts.length<=4&&value.experienceBeat.facts.every(item=>isString(item,320,1))&&isNumber(value.experienceBeat.createdAt,0,10_000_000_000_000)&&isNumber(value.experienceBeat.priority,0,20)&&isBoolean(value.experienceBeat.durable)&&(value.experienceBeat.commitmentId===null||isString(value.experienceBeat.commitmentId,200,1))&&(value.experienceBeat.momentId===null||isString(value.experienceBeat.momentId,300,1))))return null;
+  if(!(value.sharedMoment===undefined||value.sharedMoment===null||isRecord(value.sharedMoment)&&isString(value.sharedMoment.id,300,1)&&isNumber(value.sharedMoment.objectiveStage,0,4,true)&&isEnum(value.sharedMoment.kind,momentKinds)&&isString(value.sharedMoment.concreteFact,400,1)&&(value.sharedMoment.ariadneBelieved===null||isString(value.sharedMoment.ariadneBelieved,320,1))&&isString(value.sharedMoment.observableOutcome,400,1)&&isNumber(value.sharedMoment.emotionalWeight,0,1)&&isNumber(value.sharedMoment.referencedInSpeech,0,20,true)))return null;
+  if(value.relationshipExpression!==undefined&&!isString(value.relationshipExpression,500,1))return null;
+  if(value.socialStrategy!==undefined&&!isEnum(value.socialStrategy,socialStrategies))return null;
   if(!isBelief(value.navigationBelief,legalRoutes,value.objective.collectedStars))return null;
   const expectedObjectiveEvent=value.trigger.type==="star_visible"?"star_visible":value.trigger.type==="star_collected"?"star_collected":value.trigger.type==="objective_changed"?"objective_changed":"searching";
   if(value.objective.latestEvent!==expectedObjectiveEvent)return null;
@@ -157,6 +166,7 @@ export function parseCompanionRequest(value:unknown):RequestBody|null{
   if(value.playerMessage!==undefined&&!isString(value.playerMessage,500,1))return null;
   if(value.trigger.type==="player_message"&&value.playerMessage!==value.trigger.text)return null;
   if(value.preferredModelId!==undefined&&value.preferredModelId!==null&&!isString(value.preferredModelId,160,1))return null;
+  if(value.providerFailureCount!==undefined&&!isNumber(value.providerFailureCount,0,20,true))return null;
   return value as RequestBody;
 }
 
@@ -206,14 +216,6 @@ export function isVerifiedProviderModel(requested:string,actual:string|undefined
 }
 
 let modelCache:{expiresAt:number;models:string[]}|null=null,modelCatalogRequest:Promise<string[]>|null=null;
-const unavailableModels=new Map<string,number>();
-function modelAvailable(model:string,now=Date.now()){
-  const until=unavailableModels.get(model)??0;if(until<=now){unavailableModels.delete(model);return true}return false;
-}
-function temporarilySideline(model:string,error:unknown){
-  if(model==="openrouter/free"||!(error instanceof ProviderAttemptError)||/free-models-per-min|limit_source/i.test(error.message))return;
-  unavailableModels.set(model,Date.now()+(error.retryable?90_000:30_000));
-}
 async function freeModels(apiKey:string){
   if(modelCache&&modelCache.expiresAt>Date.now())return modelCache.models;
   if(modelCatalogRequest)return modelCatalogRequest;
@@ -277,6 +279,7 @@ function statePrompt(body:RequestBody){
   const goal=`${body.objective.collectedStars}/4 collected; seeking ${goalLabels[body.objective.currentGoal]}; ${body.objective.activeStarVisible?"star visible":"goal unseen"}`;
   const physical=[body.embodiment.currentAction,body.embodiment.relationToBelievedRoute,body.embodiment.mtLookingAtAriadne&&"MT is looking directly toward your light.",body.embodiment.mtApproachingAriadne&&"MT is moving closer to your light.",body.embodiment.mtFollowingHerLead&&"MT is moving with the passage you physically indicated.",body.embodiment.mtLeavingWhileSheWaits&&"MT moved away while you waited at the passage.",body.embodiment.mtReturningToHer&&"MT has come back toward you after moving away."].filter(Boolean).join(" ");
   const accomplishment=body.accomplishment?`${body.accomplishment.whatMTJustAccomplished} ${body.accomplishment.visibleProgress} ${body.accomplishment.whatChangedPermanently??"No permanent change has completed yet."} ${body.accomplishment.starVisiblyResponded?"The star visibly responded.":"The star did not visibly respond."}`:"none currently",configurations=body.visibleConfigurations?.join("; ")||"none";
+  if(body.experienceBeat){const moment=body.sharedMoment?`${body.sharedMoment.concreteFact} Observable outcome: ${body.sharedMoment.observableOutcome}`:"No earlier moment needs to be invoked.";return `<private_stage_card>\nCURRENT EXPERIENTIAL BEAT: ${body.experienceBeat.facts.join(" ")}\nREALITY TRANSFORMATION MT CAN SEE: ${accomplishment!=="none currently"?accomplishment:spectacles}\nONE RELEVANT SHARED MOMENT: ${moment}\nCURRENT RELATIONSHIP EXPRESSION: ${body.relationshipExpression??body.dispositionCard}\nSELECTED SOCIAL STRATEGY: ${body.socialStrategy??"curious_wonder"}\nYOUR BODY: ${physical}\nREQUIRED SPEECH ACT: ${speechActDirection(body.speechAnchor.speechAct)}\nRECENT VISIBLE CHANGE: ${changes}\nCURRENT GOAL: ${goal}\n</private_stage_card>`}
   return `<private_stage_card>\nGOAL: ${goal}\nVIEW: ways ${openings}; ahead ${scene.geometry.visibleEndAhead?"ends":"continues"}; setting ${setting}\nVISIBLE OBJECTS: ${objects}\nVISIBLE SPECTACLES: ${spectacles}\nVISIBLE CONFIGURATIONS: ${configurations}\nACCOMPLISHMENT: ${accomplishment}\nCHANGES: ${changes}\nYOUR BODY: ${physical}\nMT'S ACTION: ${attention}\nLATEST MOMENT: ${semanticEvent(body.trigger)}\nREQUIRED SPEECH ACT: ${speechActDirection(body.speechAnchor.speechAct)}\nYOUR LAST WORDS: ${previous}\nPATH RELATIONSHIP: ${semanticMovement(body.recommendationEvidence)}\nCURRENT DISPOSITION: ${body.dispositionCard}\nPERFORMANCE: ${body.companionArc.performanceDirection} ${body.companionArc.relationshipContext}\n</private_stage_card>`;
 }
 
@@ -305,18 +308,18 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
 async function openRouter(body:RequestBody,apiKey:string,clientSignal:AbortSignal):Promise<ProviderResult>{
   const startedAt=Date.now(),deadline=startedAt+14_000;
   const cachedModels=modelCache?.models??[],knownAtStart=new Set([...FAST_FREE_MODELS,...cachedModels]);
-  const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)&&modelAvailable(body.preferredModelId)?body.preferredModelId:null;
-  const primary=preferred??FAST_FREE_MODELS.find(model=>modelAvailable(model))??null,attempts:string[]=[];
+  const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)?body.preferredModelId:null;
+  const primary=preferred??FAST_FREE_MODELS[0]??null,attempts:string[]=[];
   let lastError:unknown=null;
   if(primary){
     attempts.push(primary);const remaining=deadline-Date.now();
-    try{return await requestOpenRouter(body,apiKey,primary,knownAtStart,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;temporarilySideline(primary,error);if(clientSignal.aborted||error instanceof Error&&/free-models-per-min|limit_source/i.test(error.message))throw error}
+    try{return await requestOpenRouter(body,apiKey,primary,knownAtStart,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted||preferred&&(body.providerFailureCount??0)<1||error instanceof Error&&/free-models-per-min|limit_source/i.test(error.message))throw error}
   }
   const available=await freeModels(apiKey),allowed=new Set([...FAST_FREE_MODELS,...available]);
-  const alternate=[...available,...FAST_FREE_MODELS].find(model=>!attempts.includes(model)&&modelAvailable(model));
+  const alternate=[...available,...FAST_FREE_MODELS].find(model=>!attempts.includes(model));
   if(alternate){
     attempts.push(alternate);const remaining=deadline-Date.now();
-    if(remaining>=1000)try{return await requestOpenRouter(body,apiKey,alternate,allowed,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;temporarilySideline(alternate,error);if(clientSignal.aborted)throw error}
+    if(remaining>=1000)try{return await requestOpenRouter(body,apiKey,alternate,allowed,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted)throw error}
   }
   throw lastError??new ProviderAttemptError("no responsive free companion model available",false);
 }
