@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://ariadne-game.matthewzmd.workers.dev"),
   title: "Ariadne",
   description: "Follow Ariadne and find the exit!",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
