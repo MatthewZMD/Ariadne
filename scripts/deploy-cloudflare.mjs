@@ -46,19 +46,29 @@ function variableNames(source) {
 }
 
 const devVars = resolve(root, ".dev.vars");
-const localVariableSource = await readFile(devVars, "utf8");
+let localVariableSource = "";
+let devVarsPresent = false;
+try {
+  localVariableSource = await readFile(devVars, "utf8");
+  devVarsPresent = true;
+} catch (error) {
+  if (error?.code !== "ENOENT") throw error;
+}
 const buildEnvironment = { ...process.env };
 for (const name of variableNames(localVariableSource)) delete buildEnvironment[name];
+for (const name of Object.keys(buildEnvironment)) {
+  if (/(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name) || name === "CLOUDFLARE_ACCOUNT_ID") delete buildEnvironment[name];
+}
 for (const generatedDirectory of [dist, resolve(root, ".next"), resolve(root, ".vinext"), resolve(root, "node_modules/.vite"), resolve(root, "node_modules/.vite-temp")]) {
   await rm(generatedDirectory, { recursive: true, force: true });
 }
 const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "ariadne-deploy-"));
 const heldDevVars = resolve(temporaryDirectory, ".dev.vars");
-await rename(devVars, heldDevVars);
+if (devVarsPresent) await rename(devVars, heldDevVars);
 try {
   run(resolve(root, "node_modules/.bin/vinext"), ["build"], root, buildEnvironment);
 } finally {
-  await rename(heldDevVars, devVars);
+  if (devVarsPresent) await rename(heldDevVars, devVars);
   await rm(temporaryDirectory, { recursive: true });
 }
 
@@ -67,7 +77,8 @@ for (const file of generated) {
   if (file.endsWith("/.dev.vars") || file.endsWith("/.env")) await rm(file);
 }
 
-const localSecrets = secretValues(localVariableSource);
+const environmentSecrets = Object.entries(process.env).flatMap(([name, value]) => /(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name) && value && value.length >= 8 ? [value] : []);
+const localSecrets = [...new Set([...secretValues(localVariableSource), ...environmentSecrets])];
 for (const file of await filesBelow(dist)) {
   const bytes = await readFile(file);
   if (localSecrets.some((secret) => bytes.includes(Buffer.from(secret)))) {
