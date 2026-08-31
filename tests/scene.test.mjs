@@ -36,6 +36,14 @@ test("a distant visible zone activates its spatial encounter before MT enters it
   assert.ok(result.scene.spectacles.some(item=>item.worldPosition[0]>=5.5),"expected an encounter in the farther visible zone");
 });
 
+test("spatial objects, spectacles, and stars remain perceptible in a long unobstructed view",()=>{
+  const world={tile(){return 0}},memory=createSceneMemory(),visibleCells=Array.from({length:25},(_,index)=>[2+index,1]),distant={id:"entity:22:1:crab",x:22.5,y:1.5,kind:"crab",theme:"beach",phase:0,scale:1};
+  const result=buildPerceivedScene({...args(world,memory),entities:[distant],visibleCells,activeStar:{id:"distant-star",ordinal:1,cell:[24,1],canonicalPath:visibleCells,protectedChunks:[],seen:false},now:30_000});
+  assert.equal(result.scene.objects[0]?.id,distant.id,"distant entity popped out of shared perception");
+  assert.equal(result.scene.objective.starVisible,true,"distant unobstructed star should already be visible");
+  assert.ok(result.scene.spectacles.some(item=>item.worldPosition[0]>12),"expected a distant spectacle silhouette in the FOV");
+});
+
 test("MT attention records approach and turning away without leaking render internals",()=>{
   const world={tile(){return 0}},memory=createSceneMemory();
   buildPerceivedScene(args(world,memory,{x:1.5,y:1.5,angle:0}));

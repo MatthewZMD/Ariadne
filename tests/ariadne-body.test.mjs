@@ -63,6 +63,31 @@ test("a distant junction is approached inside a bounded moving lead envelope",()
   assert.ok(maxSeparation<3.05,`Ariadne abandoned MT for a distant junction: ${maxSeparation}`);
 });
 
+test("a side turn is previewed in MT's forward view before the intersection",()=>{
+  const body=createAriadneBody(pose,0),route={id:"left-ahead",knownCells:[[2,1],[3,1],[4,1],[5,1],[6,1],[6,0]],decisionCell:[6,1],targetCell:[6,0],decisionPoint:"upcoming"};
+  beginAriadneRoute(body,route,pose,0);
+  for(let frame=1;frame<=75;frame++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:frame*1000/60,reducedMotion:false});
+  const bearing=Math.atan2(body.position[1]-pose.y,body.position[0]-pose.x),relative=Math.atan2(Math.sin(bearing-pose.angle),Math.cos(bearing-pose.angle));
+  assert.ok(body.position[1]<1.48,`Ariadne did not lean toward the upcoming left branch: ${body.position[1]}`);
+  assert.ok(Math.abs(relative)<Math.PI/5,`Ariadne previewed the turn outside MT's forward view: ${relative}`);
+});
+
+test("Ariadne visibly crosses to the actual side passage instead of collapsing to shoulder hover",()=>{
+  const route={id:"left-now",knownCells:[[2,1],[3,1],[4,1],[4,0]],decisionCell:[4,1],targetCell:[4,0],decisionPoint:"upcoming"},body=createAriadneBody(pose,0);beginAriadneRoute(body,route,pose,0);
+  let currentPose={...pose};for(let frame=1;frame<=90;frame++){currentPose={...currentPose,x:Math.min(4.5,currentPose.x+.045)};updateAriadneBody(body,{world:openWorld,tick:0,pose:currentPose,phase:"charming",playerSpeed:2.65,dt:1/60,now:frame*1000/60,reducedMotion:false})}
+  assert.ok(body.position[1]<1.05,`Ariadne did not fly into the chosen left entrance: ${body.position[1]}`);
+  assert.ok(body.mode==="leading"||body.mode==="waiting_ahead",`Ariadne abandoned the visible commitment: ${body.mode}`);
+});
+
+test("a side-passage commitment remains active when its entrance begins outside the narrow camera cone",()=>{
+  const junctionPose={x:4.5,y:1.5,angle:0},route={id:"left-now",knownCells:[[4,1],[4,0]],decisionCell:[4,1],targetCell:[4,0],decisionPoint:"upcoming"},body=createAriadneBody(junctionPose,0);
+  beginAriadneRoute(body,route,junctionPose,0);const initialDistance=Math.hypot(body.position[0]-4.5,body.position[1]-.5);
+  for(let frame=1;frame<=70;frame++)updateAriadneBody(body,{world:openWorld,tick:0,pose:junctionPose,phase:"charming",dt:1/60,now:frame*1000/60,reducedMotion:false});
+  const finalDistance=Math.hypot(body.position[0]-4.5,body.position[1]-.5);
+  assert.ok(finalDistance<initialDistance*.45,`Ariadne failed to traverse to the selected entrance: ${initialDistance} -> ${finalDistance}`);
+  assert.ok(body.mode==="leading"||body.mode==="waiting_ahead",`side guidance was cancelled: ${body.mode}`);
+});
+
 test("a junction belief sends Ariadne ahead before the spoken reply arrives",()=>{
   const body=createAriadneBody(pose,0),route={id:"second-left",knownCells:[[2,1],[3,1],[4,1]],decisionCell:[2,1],targetCell:[3,1],decisionPoint:"upcoming"};
   beginAriadneRoute(body,route,pose,1000);
@@ -163,4 +188,11 @@ test("contradicted guidance makes Ariadne visibly recoil, approach, lower, and r
   assert.ok(Math.hypot(body.position[0]-pose.x,body.position[1]-pose.y)<initialDistance*.55,"Ariadne should return close to MT");
   assert.ok(body.height<.55,`Ariadne did not lower enough: ${body.height}`);
   assert.equal(body.apologyReady,true,"speech should be released only after Ariadne returns to MT");
+});
+
+test("a delayed speech request cannot restart an already visible dead-end apology",()=>{
+  const body=createAriadneBody(pose,0);prepareAriadneForEvent(body,"dead_end_visible",1000);const origin=[...body.apologyOrigin];
+  updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:.4,now:1400,reducedMotion:false});
+  prepareAriadneForEvent(body,"dead_end_visible",1800);
+  assert.equal(body.apologyStartedAt,1000);assert.deepEqual(body.apologyOrigin,origin);assert.equal(body.mode,"apology_spiral");
 });

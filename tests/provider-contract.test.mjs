@@ -123,19 +123,19 @@ test("junction speech tries one preferred free model before consulting the catal
   }
 });
 
-test("a failed sticky model gets one distinct curated alternative without request fan-out",async()=>{
+test("a failed sticky model immediately gets one distinct curated alternative without losing a line",async()=>{
   const originalFetch=globalThis.fetch,originalProvider=process.env.AI_PROVIDER,originalKey=process.env.OPENROUTER_API_KEY,attempted=[];
   process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
   globalThis.fetch=async(url,options)=>{
     if(String(url).includes("/models"))return new Response(JSON.stringify({data:[]}),{status:200,headers:{"content-type":"application/json"}});
     const model=JSON.parse(String(options?.body)).model;attempted.push(model);
-    if(model!=="google/gemma-4-26b-a4b-it:free")return new Response(JSON.stringify({error:{message:"temporarily rate-limited upstream"}}),{status:429});
+    if(model!=="dots-studio/dots-3-note-preview:free")return new Response(JSON.stringify({error:{message:"temporarily rate-limited upstream"}}),{status:429});
     return new Response(JSON.stringify({model,choices:[{message:{content:"MT, I’m right here—come on, let’s try this together."}}]}),{status:200,headers:{"content-type":"application/json"}});
   };
   try{
-    const body={...requestBody(),preferredModelId:"google/gemma-4-31b-it:free",providerFailureCount:1};
+    const body={...requestBody(),preferredModelId:"google/gemma-4-31b-it:free",providerFailureCount:0};
     const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})),reply=await response.json();
-    assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"google/gemma-4-26b-a4b-it:free");assert.equal(new Set(attempted).size,attempted.length);assert.equal(attempted.length,2);
+    assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"dots-studio/dots-3-note-preview:free");assert.equal(new Set(attempted).size,attempted.length);assert.equal(attempted.length,2);
   }finally{
     globalThis.fetch=originalFetch;
     if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;
@@ -143,7 +143,27 @@ test("a failed sticky model gets one distinct curated alternative without reques
   }
 });
 
-test("provider identity cannot escape the free allowlist",()=>{
+test("a durable star moment reaches the free router after two concrete free models are rate-limited",async()=>{
+  const originalFetch=globalThis.fetch,originalProvider=process.env.AI_PROVIDER,originalKey=process.env.OPENROUTER_API_KEY,attempted=[];
+  process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
+  globalThis.fetch=async(url,options)=>{
+    if(String(url).includes("/models"))return new Response(JSON.stringify({data:[{id:"new/free-voice:free",created:9,context_length:32768,architecture:{input_modalities:["text"],output_modalities:["text"]},pricing:{prompt:"0",completion:"0",request:"0"},reasoning:{mandatory:false,default_enabled:false}}]}),{status:200,headers:{"content-type":"application/json"}});
+    const model=JSON.parse(String(options?.body)).model;attempted.push(model);
+    if(model!=="openrouter/free")return new Response(JSON.stringify({error:{message:"temporarily rate-limited upstream"}}),{status:429});
+    return new Response(JSON.stringify({model:"new/free-voice:free",choices:[{message:{content:"MT, you found it—oh my god, look at what we’ve made glow together."}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const base=requestBody(),body={...base,trigger:{type:"star_collected",starId:"star-one",ordinal:1},speechAnchor:{episodeId:null,episodeState:null,speechAct:"react_to_star",speechEpoch:0},objective:{collectedStars:1,currentGoal:"second_star",activeStarVisible:false,latestEvent:"star_collected"},navigationBelief:null,experienceBeat:{id:"beat:star",kind:"objective",facts:["MT collected star 1."],createdAt:Date.now(),priority:12,durable:true,commitmentId:null,momentId:null}};
+    const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})),reply=await response.json();
+    assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"new/free-voice:free");assert.deepEqual(attempted,["dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","openrouter/free"]);
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;
+    if(originalKey===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=originalKey;
+  }
+});
+
+test("provider identity is limited to free models or the exact server-owned paid fallbacks",()=>{
   const allowed=new Set(["free/model-a","free/model-b"]);
   assert.equal(isVerifiedProviderModel("free/model-a","free/model-a",allowed),true);
   assert.equal(isVerifiedProviderModel("free/model-a","paid/model",allowed),false);
@@ -151,6 +171,51 @@ test("provider identity cannot escape the free allowlist",()=>{
   assert.equal(isVerifiedProviderModel("openrouter/free","free/model-b",allowed),true);
   assert.equal(isVerifiedProviderModel("openrouter/free","paid/model",allowed),false);
   assert.equal(isVerifiedProviderModel("openrouter/free","free/unlisted",new Set()),true);
+  assert.equal(isVerifiedProviderModel("xiaomi/mimo-v2.5","xiaomi/mimo-v2.5",allowed),true);
+  assert.equal(isVerifiedProviderModel("openai/gpt-5.6-luna","openai/gpt-5.6-luna",allowed),true);
+  assert.equal(isVerifiedProviderModel("xiaomi/mimo-v2.5","openai/gpt-5.6-luna",allowed),false);
+  assert.equal(isVerifiedProviderModel("paid/arbitrary","paid/arbitrary",allowed),false);
+});
+
+test("MiMo V2.5 is the first paid fallback after the complete free ladder",async()=>{
+  const originalFetch=globalThis.fetch,originalProvider=process.env.AI_PROVIDER,originalKey=process.env.OPENROUTER_API_KEY,attempted=[];
+  process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
+  globalThis.fetch=async(url,options)=>{
+    if(String(url).includes("/models"))return new Response(JSON.stringify({data:[]}),{status:200,headers:{"content-type":"application/json"}});
+    const model=JSON.parse(String(options?.body)).model;attempted.push(model);
+    if(model!=="xiaomi/mimo-v2.5")return new Response(JSON.stringify({error:{message:"unavailable"}}),{status:429});
+    return new Response(JSON.stringify({model,choices:[{message:{content:"MT, come with me—I still believe in this."}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const base=requestBody(),text="Why do you think that passage matters?",body={...base,trigger:{type:"player_message",text},speechAnchor:{episodeId:null,episodeState:null,speechAct:"reply_to_mt",speechEpoch:0},navigationBelief:null,playerMessage:text,recentMessages:[{id:"mt-question",role:"player",text,time:Date.now()}]};
+    const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})),reply=await response.json();
+    assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"xiaomi/mimo-v2.5");
+    assert.deepEqual(attempted.slice(-2),["openrouter/free","xiaomi/mimo-v2.5"]);assert.equal(attempted.includes("openai/gpt-5.6-luna"),false);
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;
+    if(originalKey===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=originalKey;
+  }
+});
+
+test("GPT-5.6 Luna is used only after MiMo V2.5 also fails",async()=>{
+  const originalFetch=globalThis.fetch,originalProvider=process.env.AI_PROVIDER,originalKey=process.env.OPENROUTER_API_KEY,attempted=[];
+  process.env.AI_PROVIDER="openrouter";process.env.OPENROUTER_API_KEY="test-key";
+  globalThis.fetch=async(url,options)=>{
+    if(String(url).includes("/models"))return new Response(JSON.stringify({data:[]}),{status:200,headers:{"content-type":"application/json"}});
+    const model=JSON.parse(String(options?.body)).model;attempted.push(model);
+    if(model!=="openai/gpt-5.6-luna")return new Response(JSON.stringify({error:{message:"unavailable"}}),{status:429});
+    return new Response(JSON.stringify({model,choices:[{message:{content:"MT, I’m here—let’s keep going together."}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const response=await POST(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody())})),reply=await response.json();
+    assert.equal(reply.source,"provider");assert.equal(reply.modelUsed,"openai/gpt-5.6-luna");
+    assert.deepEqual(attempted.slice(-3),["openrouter/free","xiaomi/mimo-v2.5","openai/gpt-5.6-luna"]);
+  }finally{
+    globalThis.fetch=originalFetch;
+    if(originalProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=originalProvider;
+    if(originalKey===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=originalKey;
+  }
 });
 
 test("conversation history is sent as real provider roles instead of flattened prompt text",()=>{
@@ -169,10 +234,23 @@ test("conversation history is sent as real provider roles instead of flattened p
   assert.doesNotMatch(ARIADNE_SYSTEM_PROMPT,/Begin the first response exactly/i);
 });
 
+test("a typed MT message remains the final conversational turn instead of being buried beneath game context",()=>{
+  const text="Why were you so sure about that passage?",base=requestBody(),body={...base,trigger:{type:"player_message",text},speechAnchor:{episodeId:null,episodeState:null,speechAct:"reply_to_mt",speechEpoch:0},navigationBelief:null,playerMessage:text,recentMessages:[
+    {id:"a",role:"ariadne",text:"I really thought this way would open up.",time:1},
+    {id:"m",role:"player",text,time:2},
+  ]};
+  const messages=buildProviderMessages(body);
+  assert.deepEqual(messages.map(message=>message.role),["system","assistant","user"]);
+  assert.match(messages.at(-1).content,/^Why were you so sure about that passage\?/);
+  assert.match(messages.at(-1).content,/Answer MT's exact message first/);
+  assert.equal(messages.filter(message=>message.content.includes(text)).length,1);
+});
+
 test("the opening greeting exists only in the initial scene event",()=>{
   const initial=buildProviderMessages({...requestBody(),trigger:{type:"initial_guidance"}}).at(-1).content;
   const later=buildProviderMessages({...requestBody(),trigger:{type:"passing_thought"},navigationBelief:null}).at(-1).content;
-  assert.match(initial,/Hi, MT—I’m Ariadne\. I’m here to help you find four stars, then the exit\./);
+  assert.match(initial,/visible incomplete configuration ahead/);
+  assert.match(initial,/shared dare/);
   assert.doesNotMatch(later,/Hi, MT—I’m Ariadne|first moment together/i);
 });
 

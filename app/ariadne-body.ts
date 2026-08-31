@@ -109,6 +109,7 @@ export function prepareAriadneForEvent(body:AriadneBodyState,eventType:string,no
   body.thinkingSince=now;
   if(eventType==="player_message"){body.mode="looking_around";body.emotion="curious";body.emotionUntil=now+2400;return}
   if(eventType==="recommendation_contradicted"||eventType==="dead_end_visible"){
+    if(body.mode==="apology_spiral"||body.mode==="apologizing"){body.emotion="apologetic";body.emotionUntil=Math.max(body.emotionUntil,now+4200);return}
     body.mode="apology_spiral";body.emotion="apologetic";body.apologyStartedAt=now;body.apologyOrigin=[...body.position];body.apologyReady=false;body.emotionUntil=now+7000;body.velocity[0]*=-.45;body.velocity[1]*=-.45;body.velocity[2]=Math.min(body.velocity[2],-.22);body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.decisionEmphasisUntil=now;return;
   }
   if(eventType==="star_collected"||eventType==="same_target_reached_differently"||eventType==="encounter_completed"){
@@ -134,13 +135,33 @@ export function speakAsAriadne(body:AriadneBodyState,text:string,eventType:strin
 export function settleAriadneThinking(body:AriadneBodyState){body.thinkingSince=null}
 
 function routeTarget(body:AriadneBodyState,pose:BodyPose,world:InfiniteWorld,tick:number):[number,number]|null{
-  const player:[number,number]=[pose.x,pose.y],points=body.routeCells.map(([x,y])=>[x+.5,y+.5] as [number,number]).filter(point=>openAt(world,point[0],point[1],tick)&&lineOpen(world,player,point,tick));
-  if(!points.length)return null;
+  const player:[number,number]=[pose.x,pose.y],inForwardView=(point:[number,number],margin=.44)=>Math.abs(wrap(Math.atan2(point[1]-pose.y,point[0]-pose.x)-pose.angle))<=CAMERA_FOV*margin;
+  // A guidance commitment is spatial, not a HUD gesture. Once Ariadne has
+  // chosen an opening, the entrance remains her target even when it lies at
+  // the edge of (or briefly outside) MT's current camera view. Requiring the
+  // target itself to remain in the forward cone made side choices collapse
+  // back into ordinary shoulder hovering.
+  const points=body.routeCells.map(([x,y])=>[x+.5,y+.5] as [number,number]).filter(point=>openAt(world,point[0],point[1],tick)&&lineOpen(world,player,point,tick));
   const expected=body.expectedChoiceCell?[body.expectedChoiceCell[0]+.5,body.expectedChoiceCell[1]+.5] as [number,number]:null;
-  const leadEnvelope=2.45;
+  const leadEnvelope=2.9;
   if(expected&&openAt(world,expected[0],expected[1],tick)&&lineOpen(world,player,expected,tick)&&distance(expected,player)<=leadEnvelope)return expected;
   const useful=points.filter(point=>{const d=distance(point,[pose.x,pose.y]);return d>=1.05&&d<=leadEnvelope});
-  return useful.at(-1)??points.find(point=>distance(point,[pose.x,pose.y])>.65)??points[0]!;
+  let target=useful.at(-1)??points.find(point=>distance(point,[pose.x,pose.y])>.65)??points[0]??null;
+  const decision=body.decisionCell?[body.decisionCell[0]+.5,body.decisionCell[1]+.5] as [number,number]:null;
+  const branch=decision&&expected?[Math.sign(expected[0]-decision[0]),Math.sign(expected[1]-decision[1])] as [number,number]:null;
+  const decisionDistance=decision?distance(decision,player):Infinity;
+  // A distant side choice starts reading before the corner. At the junction,
+  // the exact entrance above takes over so the gesture cannot be mistaken for
+  // decorative hovering.
+  if(target&&branch&&decisionDistance<=5.75){
+    const strength=clamp((5.75-decisionDistance)/4.25,0,1)*.3,candidate:[number,number]=[target[0]+branch[0]*strength,target[1]+branch[1]*strength];
+    if(openAt(world,candidate[0],candidate[1],tick)&&lineOpen(world,player,candidate,tick)&&inForwardView(candidate,.46))target=candidate;
+  }
+  if(!target&&decision&&branch&&decisionDistance<=1.65){
+    const candidate:[number,number]=[pose.x+Math.cos(pose.angle)*.72+branch[0]*.24,pose.y+Math.sin(pose.angle)*.72+branch[1]*.24];
+    if(openAt(world,candidate[0],candidate[1],tick)&&lineOpen(world,player,candidate,tick))target=candidate;
+  }
+  return target;
 }
 
 function collisionAwareStep(body:AriadneBodyState,target:[number,number],world:InfiniteWorld,tick:number,dt:number,speed:number){
@@ -220,7 +241,7 @@ export function updateAriadneBody(body:AriadneBodyState,args:{world:InfiniteWorl
   const decisionSpan=Math.max(1,body.decisionEmphasisUntil-body.decisionEmphasisStartedAt),decisionProgress=clamp((now-body.decisionEmphasisStartedAt)/decisionSpan,0,1),decisionActive=now<body.decisionEmphasisUntil;
   if(body.mode==="leading"&&decisionActive&&decisionProgress<.2){const gather=decisionProgress/.2,back=.18*(1-gather);target=[shoulder[0]-Math.cos(pose.angle)*back,shoulder[1]-Math.sin(pose.angle)*back]}
   else if(body.mode==="leading"&&targetOnRoute){const flightProgress=clamp((now-body.leadStartedAt)/1250,0,1),arc=Math.sin(flightProgress*Math.PI)*(reducedMotion?.16:.5),dx=targetOnRoute[0]-body.decisionOrigin[0],dy=targetOnRoute[1]-body.decisionOrigin[1],length=Math.max(.001,Math.hypot(dx,dy));target=[target[0]-dy/length*arc*body.decisionArcSign,target[1]+dx/length*arc*body.decisionArcSign]}
-  const bodyAngle=wrap(Math.atan2(body.position[1]-pose.y,body.position[0]-pose.x)-pose.angle),guiding=body.mode==="leading"||body.mode==="waiting_ahead",farFromPlayer=distance(body.position,player)>(guiding?3.05:1.7),bodyOccluded=!lineOpen(world,player,body.position,tick),shouldReacquire=(Math.abs(bodyAngle)>CAMERA_FOV*.48||bodyOccluded)&&!guiding;
+  const bodyAngle=wrap(Math.atan2(body.position[1]-pose.y,body.position[0]-pose.x)-pose.angle),guiding=body.mode==="leading"||body.mode==="waiting_ahead",farFromPlayer=distance(body.position,player)>(guiding?3.25:1.7),bodyOccluded=!lineOpen(world,player,body.position,tick),shouldReacquire=(Math.abs(bodyAngle)>CAMERA_FOV*.48||bodyOccluded)&&!guiding;
   if(farFromPlayer||shouldReacquire){target=repairing?target:shoulder;if(!repairing)body.mode="catching_up"}
   const insistence=disposition?.insistence??0,leadSpeed=Math.max(reducedMotion?3.2:4.15,playerSpeed*(reducedMotion?1.35:1.8)+(reducedMotion?.2:1.05)),noticeSpeed=Math.max(reducedMotion?1.8:2.25,playerSpeed*(reducedMotion?1.18:1.4)),companionSpeed=Math.max(reducedMotion?1.35:2.05,playerSpeed*(reducedMotion?1.18:1.32)+(reducedMotion?.18:.48)),speed=body.mode==="apology_spiral"?Math.max(3.1,playerSpeed*1.45+.6):body.mode==="leading"?leadSpeed:body.mode==="noticing_choice"?noticeSpeed:body.mode==="catching_up"?Math.max(3.35+insistence*.55,playerSpeed*1.55+.7):body.mode==="returning"?Math.max(2.55+insistence*.35,playerSpeed*1.38+.5):body.mode==="celebrating"?Math.max(2.4,playerSpeed*1.3+.4):companionSpeed;
   collisionAwareStep(body,target,world,tick,dt,speed);

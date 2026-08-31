@@ -9,11 +9,13 @@ export type RealityEffectKind="surface_ripple"|"architectural_fold"|"recursive_p
 export type RealityEffect={kind:RealityEffectKind;seed:number;intensity:number;startedAt:number|null;color:string};
 export type RealityTransformation={
   id:string;encounterId:string;theme:ThemeId;origin:Point;stage:"dormant"|"assembling"|"completing"|"persistent";progress:number;
+  completionPosition:[number,number]|null;
   relevance:AccomplishmentRelevance;activationEffects:RealityEffect[];completionEffect:RealityEffect;persistentEffects:RealityEffect[];semanticDescription:string;
 };
 export type ChaosState={completedEncounters:number;collectedStars:number;activeIntensity:number;persistentMotifs:EncounterMotif[];maximumLayerCount:number};
 export type ResonanceEncounter={
   id:string;objectiveId:string;theme:ThemeId;center:Point;elements:ResonanceElement[];
+  teaching:boolean;
   relevance:AccomplishmentRelevance;completed:boolean;completedAt:number|null;
   transformation:string;motif:EncounterMotif;reality:RealityTransformation;
 };
@@ -77,12 +79,18 @@ function nearbyOpen(world:InfiniteWorld,center:Point,count:number,tick:number,se
   while(chosen.length<count)chosen.push([center[0]+.5+(chosen.length%2?.24:-.24),center[1]+.5+(chosen.length%3-1)*.18]);
   return chosen;
 }
-function makeEncounter(world:InfiniteWorld,args:{seed:number;objectiveId:string;index:number;center:Point;relevance:AccomplishmentRelevance;tick:number;fixedPositions?:Array<[number,number]>}){
+function makeEncounter(world:InfiniteWorld,args:{seed:number;objectiveId:string;index:number;center:Point;relevance:AccomplishmentRelevance;tick:number;teaching?:boolean;fixedPositions?:Array<[number,number]>}){
   const id=`resonance:${args.objectiveId}:${args.index}:${cellKey(...args.center)}`,theme=themeFor(args.seed,id),random=seededRandom(hash32(args.seed,id)),count=3+Math.floor(random()*Math.min(4,args.index+1)),kind=KINDS[theme][hash32(args.seed,id,"kind")%KINDS[theme].length]!,positions=args.fixedPositions??nearbyOpen(world,args.center,count,args.tick,hash32(args.seed,id,"elements"));
   const elements=positions.map((position,index)=>({id:`${id}:element:${index}`,position,active:false,activatedAt:null}));
   const transformation=TRANSFORMATIONS[theme][hash32(args.seed,id,"transform")%TRANSFORMATIONS[theme].length]!;
-  const reality:RealityTransformation={id:`reality:${id}`,encounterId:id,theme,origin:args.center,stage:"dormant",progress:0,relevance:args.relevance,activationEffects:elements.map((_,index)=>makeEffect(theme,hash32(args.seed,id),index,.45)),completionEffect:makeEffect(theme,hash32(args.seed,id),elements.length,1),persistentEffects:[makeEffect(theme,hash32(args.seed,id),elements.length+1,.62),makeEffect(theme,hash32(args.seed,id),elements.length+2,.42)],semanticDescription:transformation};
-  return{id,objectiveId:args.objectiveId,theme,center:args.center,elements,relevance:args.relevance,completed:false,completedAt:null,transformation,motif:{id:`motif:${id}`,theme,kind,color:COLORS[theme],acquiredAt:0},reality} satisfies ResonanceEncounter;
+  const reality:RealityTransformation={id:`reality:${id}`,encounterId:id,theme,origin:args.center,stage:"dormant",progress:0,completionPosition:null,relevance:args.relevance,activationEffects:elements.map((_,index)=>makeEffect(theme,hash32(args.seed,id),index,.45)),completionEffect:makeEffect(theme,hash32(args.seed,id),elements.length,1),persistentEffects:[makeEffect(theme,hash32(args.seed,id),elements.length+1,.62),makeEffect(theme,hash32(args.seed,id),elements.length+2,.42)],semanticDescription:transformation};
+  return{id,objectiveId:args.objectiveId,theme,center:args.center,elements,teaching:args.teaching??false,relevance:args.relevance,completed:false,completedAt:null,transformation,motif:{id:`motif:${id}`,theme,kind,color:COLORS[theme],acquiredAt:0},reality} satisfies ResonanceEncounter;
+}
+
+function teachingPosition(path:Point[],pathIndex:number,side:-1|1):[number,number]{
+  const cell=path[Math.min(pathIndex,path.length-2)]??path.at(-1)??[1,1],before=path[Math.max(0,pathIndex-1)]??cell,after=path[Math.min(path.length-1,pathIndex+1)]??cell;
+  const dx=Math.sign(after[0]-before[0]),dy=Math.sign(after[1]-before[1]),offset=.22*side;
+  return[cell[0]+.5-dy*offset,cell[1]+.5+dx*offset];
 }
 
 export function ensureObjectiveJourney(state:ResonanceState,world:InfiniteWorld,args:{seed:number;objectiveId:string;ordinal:1|2|3|4;path:Point[];tick:number;activeSeconds:number}){
@@ -91,14 +99,12 @@ export function ensureObjectiveJourney(state:ResonanceState,world:InfiniteWorld,
   const encounters:ResonanceEncounter[]=[];
   for(let index=0;index<requiredCount;index++){
     const teachingOpening=args.ordinal===1&&index===0;
-    const centerIndex=teachingOpening?Math.min(6,args.path.length-2):Math.max(2,Math.min(args.path.length-3,Math.floor((args.path.length-1)*(fractions[index]??(.3+index*.3))))),center=args.path[centerIndex]??pathPoint(args.path,fractions[index]??.3);
+    const centerIndex=teachingOpening?Math.min(5,args.path.length-2):Math.max(2,Math.min(args.path.length-3,Math.floor((args.path.length-1)*(fractions[index]??(.3+index*.3))))),center=args.path[centerIndex]??pathPoint(args.path,fractions[index]??.3);
     // The opening teaches the loop as three readable accomplishments rather
     // than a cluster that fires in a single step. Every part remains on the
     // only intended route, so it cannot become a hidden prerequisite.
-    const fixedPositions=teachingOpening?[2,6,10]
-      .map(pathIndex=>args.path[Math.min(pathIndex,args.path.length-2)]??center)
-      .map(([x,y])=>[x+.5,y+.5] as [number,number]):undefined;
-    encounters.push(makeEncounter(world,{...args,index,center,relevance:"objective_relevant",fixedPositions}));
+    const fixedPositions=teachingOpening?[2,6,10].map((pathIndex,positionIndex)=>teachingPosition(args.path,pathIndex,positionIndex%2===0?-1:1)):undefined;
+    encounters.push(makeEncounter(world,{...args,index,center,relevance:"objective_relevant",teaching:teachingOpening,fixedPositions}));
   }
   for(let index=0;index<proxyCount;index++){
     const base=pathPoint(args.path,.2+(index+1)/(proxyCount+2)*.65),center=proxyCenter(world,base,args.path,args.tick,hash32(args.seed,args.objectiveId,"proxy",index));
@@ -124,13 +130,21 @@ export function ensureExitEncountersAround(state:ResonanceState,world:InfiniteWo
 export function activateNearbyResonance(state:ResonanceState,position:[number,number],now:number,threshold=.68):ResonanceActivation[]{
   const changes:ResonanceActivation[]=[];
   for(const encounter of state.encounters.values()){
-    if(encounter.completed||Math.hypot(encounter.center[0]+.5-position[0],encounter.center[1]+.5-position[1])>5)continue;
-    for(const [index,element] of encounter.elements.entries()){if(element.active||Math.hypot(element.position[0]-position[0],element.position[1]-position[1])>threshold)continue;element.active=true;element.activatedAt=now;encounter.reality.activationEffects[index]!.startedAt=now;encounter.reality.progress=encounter.elements.filter(item=>item.active).length/encounter.elements.length;encounter.reality.stage="assembling";const completed=encounter.elements.every(item=>item.active);if(completed){encounter.completed=true;encounter.completedAt=now;encounter.reality.stage="completing";encounter.reality.completionEffect.startedAt=now;for(const effect of encounter.reality.persistentEffects)effect.startedAt=now;encounter.motif.acquiredAt=now;state.activeMotifs=[...state.activeMotifs,encounter.motif].slice(-6);state.completedEncounterCount++;state.chaos.completedEncounters++;state.chaos.activeIntensity=Math.min(1,.12+state.chaos.completedEncounters*.09+state.chaos.collectedStars*.11);state.chaos.maximumLayerCount=Math.min(6,1+Math.floor(state.chaos.completedEncounters/2)+state.chaos.collectedStars);state.chaos.persistentMotifs=[...state.chaos.persistentMotifs,encounter.motif].slice(-12)}state.revision++;changes.push({encounterId:encounter.id,elementId:element.id,completed,description:completed?encounter.transformation:`A visible segment of the ${encounter.motif.kind} awakened and sent light into its centerpiece.`,starResponded:completed&&encounter.relevance==="objective_relevant"});}
+    const activationReach=Math.max(5,...encounter.elements.map(element=>Math.hypot(element.position[0]-(encounter.center[0]+.5),element.position[1]-(encounter.center[1]+.5))+1));
+    if(encounter.completed||Math.hypot(encounter.center[0]+.5-position[0],encounter.center[1]+.5-position[1])>activationReach)continue;
+    for(const [index,element] of encounter.elements.entries()){if(element.active||Math.hypot(element.position[0]-position[0],element.position[1]-position[1])>threshold)continue;element.active=true;element.activatedAt=now;encounter.reality.activationEffects[index]!.startedAt=now;encounter.reality.progress=encounter.elements.filter(item=>item.active).length/encounter.elements.length;encounter.reality.stage="assembling";const completed=encounter.elements.every(item=>item.active);if(completed){encounter.completed=true;encounter.completedAt=now;encounter.reality.stage="completing";encounter.reality.completionPosition=[element.position[0],element.position[1]];encounter.reality.completionEffect.startedAt=now;for(const effect of encounter.reality.persistentEffects)effect.startedAt=now;encounter.motif.acquiredAt=now;state.activeMotifs=[...state.activeMotifs,encounter.motif].slice(-6);state.completedEncounterCount++;state.chaos.completedEncounters++;state.chaos.activeIntensity=Math.min(1,.12+state.chaos.completedEncounters*.09+state.chaos.collectedStars*.11);state.chaos.maximumLayerCount=Math.min(6,1+Math.floor(state.chaos.completedEncounters/2)+state.chaos.collectedStars);state.chaos.persistentMotifs=[...state.chaos.persistentMotifs,encounter.motif].slice(-12)}state.revision++;changes.push({encounterId:encounter.id,elementId:element.id,completed,description:completed?encounter.transformation:`A visible segment of the ${encounter.motif.kind} awakened and sent light into its centerpiece.`,starResponded:completed&&encounter.relevance==="objective_relevant"});}
   }
   return changes;
 }
 
 export function condenseStarFragment(state:ResonanceState){state.permanentStarFragments=Math.min(4,state.permanentStarFragments+1) as 0|1|2|3|4;state.activeMotifs=[];state.chaos.collectedStars=state.permanentStarFragments;state.chaos.activeIntensity=Math.min(1,state.chaos.activeIntensity+.12);state.chaos.maximumLayerCount=Math.min(6,state.chaos.maximumLayerCount+1);state.revision++}
 export function settleRealityTransformations(state:ResonanceState,now:number){for(const encounter of state.encounters.values())if(encounter.reality.stage==="completing"&&encounter.completedAt!==null&&now-encounter.completedAt>2800)encounter.reality.stage="persistent"}
-export function encountersForRender(state:ResonanceState,objectiveId:string|null,position:[number,number],radius=18){return[...state.encounters.values()].filter(item=>(objectiveId==="exit"?item.objectiveId.startsWith("exit:"):item.objectiveId===objectiveId||item.completed)&&Math.hypot(item.center[0]+.5-position[0],item.center[1]+.5-position[1])<=radius)}
+export function encountersForRender(state:ResonanceState,objectiveId:string|null,position:[number,number],radius=28){return[...state.encounters.values()].filter(item=>(objectiveId==="exit"?item.objectiveId.startsWith("exit:"):item.objectiveId===objectiveId||item.completed)&&Math.hypot(item.center[0]+.5-position[0],item.center[1]+.5-position[1])<=radius)}
 export function encounterContext(state:ResonanceState,id:string|null){const encounter=id?state.encounters.get(id):null;if(!encounter)return null;return{whatMTJustAccomplished:encounter.completed?`MT completed the ${encounter.motif.kind}.`:`MT activated part of the ${encounter.motif.kind}.`,whatChangedPermanently:encounter.completed?encounter.transformation:null,starVisiblyResponded:encounter.completed&&encounter.relevance==="objective_relevant",visibleProgress:`${encounter.elements.filter(item=>item.active).length} of ${encounter.elements.length} parts are active.`}}
+export function openingEncounter(state:ResonanceState,objectiveId:string|null){
+  if(!objectiveId)return null;const journey=state.journeys.get(objectiveId),id=journey?.requiredEncounterIds[0];return id?state.encounters.get(id)??null:null;
+}
+export function openingGreeting(state:ResonanceState,objectiveId:string|null){
+  const encounter=openingEncounter(state,objectiveId),subject=encounter?.motif.kind??"sleeping configuration";
+  return`MT—hi! I’m Ariadne, and the ${subject} ahead is practically begging us to wake it. Come on—four stars, then we make this maze give us its exit.`;
+}

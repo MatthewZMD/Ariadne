@@ -4,15 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CACHE_RADIUS, InfiniteWorld, cellKey, chunkKey, createThemeScheduler } from "./world.mjs";
 import { entitiesNear, renderWorld, type Pose } from "./renderer";
 import { THEMES, retainThemeMemory, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory } from "./themes";
-import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, isRecentCompanionRepeat, markTrajectoryChange, nearestActionableJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type TrajectorySample } from "./companion";
+import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, DEAD_END_REACTION_DISTANCE, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, isRecentCompanionRepeat, JUNCTION_COMMIT_DISTANCE, markTrajectoryChange, nearbyJunction, nearestActionableJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, updateJunctionHesitation, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type JunctionHesitation, type TrajectorySample } from "./companion";
 import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, releaseStarRoute, settleObjectiveStreaming, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
 import { closureReason, finalAriadneLine, interruptPreparedLine, type ClosureReason } from "./closure";
 import { ClosureScreen, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
 import { acceleratedSpeed, advanceInputRamp, MOVE_ACCELERATION, TURN_ACCELERATION, type InputRamp } from "./movement";
-import { buildPerceivedScene, createSceneMemory, sceneForPrompt, type PerceivedScene, type VisualFrameState } from "./scene";
+import { buildPerceivedScene, createSceneMemory, sceneForPrompt, SPATIAL_VISIBILITY_DISTANCE, type PerceivedScene, type VisualFrameState } from "./scene";
 import { beginAriadneRoute, cancelAriadneChoiceNotice, createAriadneBody, describeAriadneEmbodiment, noticeAriadneChoice, prepareAriadneForEvent, reactAriadneToResonance, settleAriadneThinking, speakAsAriadne, updateAriadneBody, type AriadneBodyState } from "./ariadne-body";
 import { advanceAriadneDisposition, createAriadneDisposition, createEmbodiedEpisode, createSpeechAnchor, dispositionCard, recordDispositionMoment, speechAnchorIsCompatible, speechBypassesProviderBackoff, transitionEmbodiedEpisode, type EmbodiedDecisionEpisode, type SpeechAnchor } from "./embodied-interaction";
-import { activateNearbyResonance, condenseStarFragment, createResonanceState, encounterContext, encountersForRender, ensureExitEncountersAround, ensureObjectiveJourney, objectiveResonanceReady, settleRealityTransformations, type ResonanceState } from "./resonance";
+import { activateNearbyResonance, condenseStarFragment, createResonanceState, encounterContext, encountersForRender, ensureExitEncountersAround, ensureObjectiveJourney, objectiveResonanceReady, openingGreeting, settleRealityTransformations, type ResonanceState } from "./resonance";
 import { advanceRelationship, advanceRelationshipTime, beatForEvent, createRelationshipMemory, enqueueBeat, markMomentReferenced, recordStrategy, relationshipBand, relationshipExpression, rememberMoment, strategyForBeat, type ExperienceBeat, type RelationshipMemory, type SharedMomentKind } from "./experience";
 
 const PLAYER_RADIUS=.18;
@@ -25,7 +25,6 @@ type Run={
 };
 
 const wrap=(a:number)=>(a+Math.PI*2)%(Math.PI*2);
-const bearing=(a:number)=>["E","S","W","N"][Math.round(wrap(a)/(Math.PI/2))%4];
 const MIN_PROVIDER_INTERVAL_MS=4200;
 const EVENT_PRIORITY:Record<CompanionEvent["type"],number>={initial_guidance:15,player_message:14,star_collected:13,encounter_completed:12,star_visible:12,objective_changed:11,final_direction:11,recommendation_contradicted:10,dead_end_visible:10,embodied_response:10,left_ariadne_waiting:9,new_junction_visible:8,trajectory_relationship_changed:7,scene_changed:7,environment_visible:6,environment_entered:6,target_reached:5,same_target_reached_differently:5,revisited_position:2,sustained_backtrack:2,repeated_collision:2,idle:2,passing_thought:1};
 const eventPriority=(event:CompanionEvent)=>EVENT_PRIORITY[event.type];
@@ -87,11 +86,10 @@ export default function Home(){
   const heldRef=useRef(new Set<string>()),lastCellRef=useRef("1,1"),touchDriveRef=useRef(0),touchControlsRef=useRef(new Map<number,{kind:"move"|"look";startX:number;startY:number;lastX:number}>());
   const moveRampRef=useRef<InputRamp>({heldSeconds:0,direction:0}),turnRampRef=useRef<InputRamp>({heldSeconds:0,direction:0});
   const schedulerRef=useRef<ReturnType<typeof createThemeScheduler>>(createThemeScheduler(run.seed));
-  const[heading,setHeading]=useState(()=>bearing(run.spawnAngle));
   const[ready,setReady]=useState(false),bootedRef=useRef(false);
   const ariadneAwakeRef=useRef(false);
   const[companionMessages,setCompanionMessages]=useState<CompanionMessage[]>([]),messagesRef=useRef<CompanionMessage[]>([]);
-  const[companionStatus,setCompanionStatus]=useState<"LISTENING"|"THINKING"|"LINK STABLE"|"LINK LOST">("LISTENING"),[companionInput,setCompanionInput]=useState(""),[chatOpen,setChatOpen]=useState(false);
+  const[companionInput,setCompanionInput]=useState(""),[chatOpen,setChatOpen]=useState(false);
   const[starPulse,setStarPulse]=useState(false),[reducedMotion,setReducedMotion]=useState(false),[closureRevealed,setClosureRevealed]=useState(false);
   const guidanceRef=useRef<GuidanceIntent|null>(null),guidanceTraceRef=useRef<GuidanceTrace|null>(null),trajectoryRef=useRef<TrajectorySample[]>([]),observedAfterGuidanceRef=useRef(new Set<string>()),newlyRevealedRef=useRef(new Set<string>());
   const seenPerceptionCuesRef=useRef(new Set<string>()),lastCompanionCallRef=useRef(0),nextPassingThoughtRef=useRef(0),requestInFlightRef=useRef(false),pendingEventsRef=useRef<Array<{event:CompanionEvent;force:boolean;playerMessage?:string}>>([]),lastMovementRef=useRef(0),lastTurnRef=useRef(0),pauseObservedRef=useRef(false),collisionRef=useRef(0),providerFailureRef=useRef(0),providerBackoffUntilRef=useRef(0);
@@ -104,6 +102,7 @@ export default function Home(){
   const activeJunctionRef=useRef<string|null>(null);
   const lastCommitmentWalkRef=useRef(-30);
   const junctionRetryRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const junctionHesitationRef=useRef<JunctionHesitation|null>(null);
   const seenStarEventsRef=useRef(new Set<string>()),collectingStarRef=useRef(false);
   const generationEpochRef=useRef(0),runEpochRef=useRef(0),objectiveEpochRef=useRef(0),greetingCompleteRef=useRef(false);
   const generationControllerRef=useRef<AbortController|null>(null),planningControllerRef=useRef<{controller:AbortController;priority:number}|null>(null);
@@ -113,6 +112,7 @@ export default function Home(){
   const finalPreparedRef=useRef<string|null>(null),finalPreparationRequestedRef=useRef(false);
   const sceneRef=useRef<PerceivedScene|null>(null),sceneMemoryRef=useRef(createSceneMemory()),sceneChangesRef=useRef<string[]>([]),seenMajorScenesRef=useRef(new Set<string>()),lastSceneBuildRef=useRef(0),messagePulseAtRef=useRef(0);
   const latestAccomplishmentRef=useRef<ReturnType<typeof encounterContext>>(null);
+  const accomplishmentPulseRef=useRef<{startedAt:number;gold:boolean;completed:boolean}|null>(null);
   const relationshipMemoryRef=useRef<RelationshipMemory>(createRelationshipMemory()),pendingBeatsRef=useRef<ExperienceBeat[]>([]);
   const setExperienceState=useCallback((next:ExperienceState)=>{experienceRef.current=next;setExperience(next)},[]);
   const applyRun=useCallback((next:Run)=>{
@@ -123,9 +123,9 @@ export default function Home(){
     const scheduler=createThemeScheduler(next.seed);next.anchors=[plantCheckpoint(next.world,1,1,scheduler.nextTheme() as ThemeId,scheduler.nextAt,next.spawnAngle)];
     next.entities=entitiesNear(next.seed,next.world,next.anchors,next.appearance,1.5,1.5);runRef.current=next;schedulerRef.current=scheduler;heldRef.current.clear();
     poseRef.current={x:1.5,y:1.5,angle:next.spawnAngle,bob:0};ariadneBodyRef.current=createAriadneBody(poseRef.current,performance.now(),next.world,next.moves);lastCellRef.current="1,1";
-    guidanceRef.current=null;guidanceTraceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenPerceptionCuesRef.current=new Set();seenStarEventsRef.current=new Set();collectingStarRef.current=false;pendingEventsRef.current=[];activeDeadEndRef.current=null;activeJunctionRef.current=null;lastCommitmentWalkRef.current=-30;if(junctionRetryRef.current)clearTimeout(junctionRetryRef.current);junctionRetryRef.current=null;embodiedEpisodeRef.current=null;embodiedReactionRef.current=new Set();dispositionRef.current=createAriadneDisposition();journeyRef.current=createJourneyState();journeyEncounterKeysRef.current=new Set();activeTravelAccumulatorRef.current=0;traceTravelAccumulatorRef.current=0;preferredModelRef.current=null;quietUntilRef.current=0;providerFailureRef.current=0;providerBackoffUntilRef.current=0;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;nextPassingThoughtRef.current=nextPassingThoughtAt(lastMovementRef.current,"charming");pauseObservedRef.current=false;exitSearchStartedAtRef.current=null;closureStartedRef.current=false;finalPreparedRef.current=null;finalPreparationRequestedRef.current=false;sceneRef.current=null;sceneMemoryRef.current=createSceneMemory();sceneChangesRef.current=[];seenMajorScenesRef.current=new Set();lastSceneBuildRef.current=0;messagePulseAtRef.current=0;
-    latestAccomplishmentRef.current=null;relationshipMemoryRef.current=createRelationshipMemory();pendingBeatsRef.current=[];if(closureTimerRef.current)clearTimeout(closureTimerRef.current);closureTimerRef.current=null;
-    setCompanionMessages([]);setCompanionStatus("LISTENING");setCompanionInput("");setChatOpen(false);setStarPulse(false);setClosureRevealed(false);setHeading(bearing(next.spawnAngle));setRun(next);
+    guidanceRef.current=null;guidanceTraceRef.current=null;trajectoryRef.current=[];observedAfterGuidanceRef.current=new Set();newlyRevealedRef.current=new Set();seenFamiliarPlacesRef.current=new Set();seenPerceptionCuesRef.current=new Set();seenStarEventsRef.current=new Set();collectingStarRef.current=false;pendingEventsRef.current=[];activeDeadEndRef.current=null;activeJunctionRef.current=null;junctionHesitationRef.current=null;lastCommitmentWalkRef.current=-30;if(junctionRetryRef.current)clearTimeout(junctionRetryRef.current);junctionRetryRef.current=null;embodiedEpisodeRef.current=null;embodiedReactionRef.current=new Set();dispositionRef.current=createAriadneDisposition();journeyRef.current=createJourneyState();journeyEncounterKeysRef.current=new Set();activeTravelAccumulatorRef.current=0;traceTravelAccumulatorRef.current=0;preferredModelRef.current=null;quietUntilRef.current=0;providerFailureRef.current=0;providerBackoffUntilRef.current=0;lastCompanionCallRef.current=0;lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;nextPassingThoughtRef.current=nextPassingThoughtAt(lastMovementRef.current,"charming");pauseObservedRef.current=false;exitSearchStartedAtRef.current=null;closureStartedRef.current=false;finalPreparedRef.current=null;finalPreparationRequestedRef.current=false;sceneRef.current=null;sceneMemoryRef.current=createSceneMemory();sceneChangesRef.current=[];seenMajorScenesRef.current=new Set();lastSceneBuildRef.current=0;messagePulseAtRef.current=0;
+    latestAccomplishmentRef.current=null;accomplishmentPulseRef.current=null;relationshipMemoryRef.current=createRelationshipMemory();pendingBeatsRef.current=[];if(closureTimerRef.current)clearTimeout(closureTimerRef.current);closureTimerRef.current=null;
+    setCompanionMessages([]);setCompanionInput("");setChatOpen(false);setStarPulse(false);setClosureRevealed(false);setRun(next);
   },[]);
   const initializeRun=useCallback(async(seed:number)=>{
     const generation=++generationEpochRef.current,controller=new AbortController();generationControllerRef.current?.abort();generationControllerRef.current=controller;runEpochRef.current++;objectiveEpochRef.current++;greetingCompleteRef.current=false;heldRef.current.clear();setReady(false);
@@ -192,10 +192,13 @@ export default function Home(){
   },[]);
 
   const refreshScene=useCallback((movementState:"walking"|"turning"|"stationary"="stationary")=>{
-    const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves),routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),visibleRoutes=planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited),sceneRoutes=visibleRoutes.length?visibleRoutes:routes,journey=journeyRef.current;
-    const result=buildPerceivedScene({seed:current.seed,world:current.world,anchors:current.anchors,entities:current.entities,pose,tick:current.moves,visibleCells:geometry.cells,routeDirections:sceneRoutes.map(route=>route.direction),visibleRoutes:sceneRoutes.map(route=>({direction:route.direction,instruction:route.instruction})),visibleJunction:visibleRoutes.length>0,visibleEndAhead:!!centeredDeadEnd(current.world,geometry,pose,current.moves),activeStar:objectiveResonanceReady(current.resonance,current.objective.activeStar?.id??null)?current.objective.activeStar:null,phase:journey.phase,relationshipIntensity:relationshipMemoryRef.current.position,collectedStars:current.objective.collectedStars,movementState,memory:sceneMemoryRef.current,reducedMotion});
+    // One long-view ray sample feeds both grounded perception and nearby
+    // decision checks. Distance-gated consumers still ignore far junctions,
+    // while avoiding a second full ray pass every scene refresh.
+    const current=runRef.current,pose=poseRef.current,geometry=forwardVisibleGeometry(current.world,pose,current.moves,SPATIAL_VISIBILITY_DISTANCE),routes=planRoutes(current.world,pose,current.moves,current.memory,current.visited),visibleRoutes=planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited),sceneRoutes=visibleRoutes.length?visibleRoutes:routes,journey=journeyRef.current;
+    const result=buildPerceivedScene({seed:current.seed,world:current.world,anchors:current.anchors,entities:current.entities,pose,tick:current.moves,visibleCells:geometry.cells,routeDirections:sceneRoutes.map(route=>route.direction),visibleRoutes:sceneRoutes.map(route=>({direction:route.direction,instruction:route.instruction})),visibleJunction:visibleRoutes.length>0,visibleEndAhead:!!centeredDeadEnd(current.world,geometry,pose,current.moves,DEAD_END_REACTION_DISTANCE),activeStar:objectiveResonanceReady(current.resonance,current.objective.activeStar?.id??null)?current.objective.activeStar:null,phase:journey.phase,relationshipIntensity:relationshipMemoryRef.current.position,collectedStars:current.objective.collectedStars,movementState,memory:sceneMemoryRef.current,reducedMotion});
     sceneRef.current=result.scene;if(result.changes.length)sceneChangesRef.current=[...new Set([...sceneChangesRef.current,...result.changes])].slice(-12);
-    return{...result,visibleJunction:nearestActionableJunction(geometry,pose,10)};
+    return{...result,visibleGeometry:geometry,visibleJunction:nearestActionableJunction(geometry,pose,JUNCTION_COMMIT_DISTANCE)??nearbyJunction(current.world,pose,current.moves)};
   },[reducedMotion]);
 
   const collectActiveStar=useCallback(()=>{
@@ -216,15 +219,16 @@ export default function Home(){
     if(existing?.junctionId===junctionId&&existing.state!=="resolved")return;
     if(planningControllerRef.current){planningControllerRef.current.controller.abort();planningControllerRef.current=null}
     const startedRunEpoch=runEpochRef.current,startedObjectiveEpoch=objectiveEpochRef.current,current=runRef.current,pose=poseRef.current;
-    const geometry=forwardVisibleGeometry(current.world,pose,current.moves),junction=nearestActionableJunction(geometry,pose,10);
+    let geometry=forwardVisibleGeometry(current.world,pose,current.moves);const junction=nearestActionableJunction(geometry,pose,JUNCTION_COMMIT_DISTANCE)??nearbyJunction(current.world,pose,current.moves);
     if(junction?.id!==junctionId)return;
-    const routes=planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited);
+    if(!geometry.junctions.some(item=>item.id===junction.id))geometry={...geometry,junctions:[junction,...geometry.junctions]};
+    const visibleRoutes=planVisibleJunctionRoutes(current.world,pose,current.moves,geometry,current.memory,current.visited),routesAtThisJunction=visibleRoutes.filter(route=>route.decisionCell?.[0]===junction.cell[0]&&route.decisionCell?.[1]===junction.cell[1]),routes=routesAtThisJunction.length?routesAtThisJunction:visibleRoutes;
     if(!routes.length)return;
     noticeAriadneChoice(ariadneBodyRef.current,Date.now());
     const token={controller:new AbortController(),priority:eventPriority({type:"new_junction_visible"})};planningControllerRef.current=token;
     try{
       const visible=activeStarIsVisible(current,pose),chosen=await chooseNavigationBeliefAsync(current.objective,routes,junctionId,current.world,current.seed,visible,current.moves,token.controller.signal);
-      const latest=runRef.current,latestPose=poseRef.current,latestJunction=nearestActionableJunction(forwardVisibleGeometry(latest.world,latestPose,latest.moves),latestPose,10);
+      const latest=runRef.current,latestPose=poseRef.current,latestGeometry=forwardVisibleGeometry(latest.world,latestPose,latest.moves),latestJunction=nearestActionableJunction(latestGeometry,latestPose,JUNCTION_COMMIT_DISTANCE)??nearbyJunction(latest.world,latestPose,latest.moves);
       if(runEpochRef.current!==startedRunEpoch||objectiveEpochRef.current!==startedObjectiveEpoch||latestJunction?.id!==junctionId){cancelAriadneChoiceNotice(ariadneBodyRef.current);return}
       const belief=chosen.belief,route=belief&&routes.find(item=>item.id===belief.routeId);if(!belief||!route){cancelAriadneChoiceNotice(ariadneBodyRef.current);return}
       if(chosen.state!==latest.objective){const next={...latest,objective:chosen.state};runRef.current=next;setRun(next)}
@@ -255,10 +259,17 @@ export default function Home(){
     const now=Date.now();
     const eventFacts=event.type==="encounter_completed"&&latestAccomplishmentRef.current?[latestAccomplishmentRef.current.whatMTJustAccomplished,latestAccomplishmentRef.current.whatChangedPermanently??"The configuration is still changing.",latestAccomplishmentRef.current.starVisiblyResponded?"A restrained gold response connected the change to the star.":"No gold objective response appeared."]:sceneChangesRef.current.slice(-2);
     const incomingBeat=beatForEvent(event,now,eventFacts);pendingBeatsRef.current=enqueueBeat(pendingBeatsRef.current,incomingBeat);
-    const eventKey=(value:CompanionEvent)=>value.type==="trajectory_relationship_changed"?`${value.type}:${value.change}`:value.type==="embodied_response"?`${value.type}:${value.response}`:value.type==="star_visible"||value.type==="star_collected"?`${value.type}:${value.starId}`:value.type==="encounter_completed"?`${value.type}:${value.encounterId}`:value.type==="scene_changed"?`${value.type}:${value.sceneId}`:value.type;
-    const queue=()=>{const key=eventKey(event),index=pendingEventsRef.current.findIndex(item=>eventKey(item.event)===key),queued={event,force,playerMessage};if(index>=0)pendingEventsRef.current[index]={...pendingEventsRef.current[index],...queued,force:pendingEventsRef.current[index].force||force};else pendingEventsRef.current.push(queued);pendingEventsRef.current.sort((a,b)=>eventPriority(b.event)-eventPriority(a.event));pendingEventsRef.current=pendingEventsRef.current.slice(0,3)};
+    const eventKey=(value:CompanionEvent)=>value.type==="trajectory_relationship_changed"?`${value.type}:${value.change}`:value.type==="embodied_response"?`${value.type}:${value.response}`:value.type==="star_visible"||value.type==="star_collected"?`${value.type}:${value.starId}`:value.type==="encounter_completed"?`${value.type}:${value.encounterId}`:value.type==="scene_changed"?`${value.type}:${value.sceneId}`:value.type==="player_message"?`${value.type}:${value.text}`:value.type;
+    const queue=(queuedForce=force)=>{const key=eventKey(event),index=pendingEventsRef.current.findIndex(item=>eventKey(item.event)===key),queued={event,force:queuedForce,playerMessage};if(index>=0)pendingEventsRef.current[index]={...pendingEventsRef.current[index],...queued,force:pendingEventsRef.current[index].force||queuedForce};else pendingEventsRef.current.push(queued);pendingEventsRef.current.sort((a,b)=>eventPriority(b.event)-eventPriority(a.event));pendingEventsRef.current=pendingEventsRef.current.slice(0,3)};
     if(requestInFlightRef.current){
-      queue();const planning=planningControllerRef.current;if(force&&planning&&eventPriority(event)>planning.priority)planning.controller.abort();return
+      queue();const planning=planningControllerRef.current;if(force&&planning&&eventPriority(event)>planning.priority)planning.controller.abort();
+      const factualContradiction=event.type==="dead_end_visible"||event.type==="recommendation_contradicted"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted",active=activeRequestRef.current;
+      // Direct conversation takes precedence over autonomous commentary. The
+      // player's line remains in history, and the queued reply begins as soon
+      // as the lower-priority request has actually yielded.
+      if(event.type==="player_message"&&active&&eventPriority(event)>active.priority){active.preempted=true;active.controller.abort()}
+      if(force&&factualContradiction&&active&&eventPriority(event)>active.priority){active.preempted=true;active.controller.abort()}
+      return
     }
     if(event.type!=="player_message"&&now-lastCompanionCallRef.current<MIN_PROVIDER_INTERVAL_MS){queue();return}
     if(event.type!=="initial_guidance"&&event.type!=="player_message"&&now<providerBackoffUntilRef.current&&!speechBypassesProviderBackoff(event,force)){queue();return}
@@ -287,7 +298,7 @@ export default function Home(){
     // Continuous movement changes the next conversational context; it never erases speech already in flight.
     const requestIsCurrent=()=>experienceRef.current==="playing"&&!requestToken.preempted&&activeRequestRef.current===requestToken&&runEpochRef.current===requestToken.runEpoch&&(requestToken.survivesObjectiveChange||objectiveEpochRef.current===requestToken.objectiveEpoch&&objectiveIdentity(runRef.current)===requestToken.objectiveIdentity);
     let published=false;
-    requestInFlightRef.current=true;lastCompanionCallRef.current=now;nextPassingThoughtRef.current=nextPassingThoughtAt(now,currentArc.phase);setCompanionStatus("THINKING");
+    requestInFlightRef.current=true;lastCompanionCallRef.current=now;nextPassingThoughtRef.current=nextPassingThoughtAt(now,currentArc.phase);
     try{
       const visibleCellIds=new Set(geometry.cells.map(([x,y])=>cellKey(x,y))),visibleConfigurations=encountersForRender(current.resonance,current.objective.activeStar?.id??"exit",[pose.x,pose.y],18).filter(item=>visibleCellIds.has(cellKey(item.center[0],item.center[1]))||item.elements.some(element=>visibleCellIds.has(cellKey(Math.floor(element.position[0]),Math.floor(element.position[1]))))).map(item=>`${item.motif.kind}: ${item.elements.filter(element=>element.active).length} of ${item.elements.length} parts active${item.completed?`; the visible reality now persists as: ${item.reality.semanticDescription}`:""}`).slice(0,8);
       const beat=pendingBeatsRef.current.find(item=>item.id===incomingBeat.id)??incomingBeat,relevantMoment=relationshipMemoryRef.current.moments.filter(item=>item.referencedInSpeech<2).at(-1)??relationshipMemoryRef.current.moments.at(-1)??null,strategy=strategyForBeat(beat,relationshipMemoryRef.current.position,relationshipMemoryRef.current.lastStrategies);
@@ -297,7 +308,15 @@ export default function Home(){
       const reply=await response.json() as CompanionReply&{source?:"provider"|"fallback";modelUsed?:string|null};
       if(!requestIsCurrent())return;
       if(reply.source==="provider"){providerFailureRef.current=0;providerBackoffUntilRef.current=0;if(junctionRetryRef.current)clearTimeout(junctionRetryRef.current);junctionRetryRef.current=null;if(reply.modelUsed)preferredModelRef.current=reply.modelUsed}
-      else{providerFailureRef.current++;if(providerFailureRef.current>=2)preferredModelRef.current=null;providerBackoffUntilRef.current=Date.now()+Math.min(45_000,8_000*providerFailureRef.current);nextPassingThoughtRef.current=providerBackoffUntilRef.current;if(event.type!=="initial_guidance")return}
+      else{
+        providerFailureRef.current++;preferredModelRef.current=null;
+        providerBackoffUntilRef.current=Date.now()+Math.min(24_000,4_000*providerFailureRef.current);nextPassingThoughtRef.current=providerBackoffUntilRef.current;
+        // Durability must include delivery, not only conversational memory.
+        // Keep completed facts queued, without force, so the normal interval
+        // retries them after backoff instead of spinning immediately.
+        if(beat.durable&&event.type!=="initial_guidance")queue(false);
+        if(event.type!=="initial_guidance")return
+      }
       if(speechAnchor.speechAct==="repair_mistake"&&!ariadneBodyRef.current.apologyReady){
         const waitStarted=performance.now();await new Promise<void>(resolve=>{const check=()=>{if(ariadneBodyRef.current.apologyReady||!requestIsCurrent()||performance.now()-waitStarted>4500)resolve();else requestAnimationFrame(check)};check()});
         if(!requestIsCurrent())return;
@@ -308,7 +327,9 @@ export default function Home(){
         published=!!finalText;
         return;
       }
-      const repeated=isRecentCompanionRepeat(finalText,messagesRef.current);
+      // Repetition filtering controls autonomous noise; it must never swallow
+      // a direct answer to something MT deliberately typed.
+      const repeated=event.type!=="player_message"&&isRecentCompanionRepeat(finalText,messagesRef.current);
       if(finalText&&!repeated){
         const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text:finalText,time:Date.now()};
         const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);
@@ -327,7 +348,7 @@ export default function Home(){
     }finally{
       if(!published)settleAriadneThinking(ariadneBodyRef.current);
       if(activeRequestRef.current===requestToken){
-        activeRequestRef.current=null;requestInFlightRef.current=false;if(requestToken.runEpoch===runEpochRef.current)setCompanionStatus("LINK STABLE");
+        activeRequestRef.current=null;requestInFlightRef.current=false;
         if(event.type==="initial_guidance"&&requestToken.runEpoch===runEpochRef.current){greetingCompleteRef.current=published;if(!published)queueMicrotask(()=>{void callCompanionRef.current({type:"initial_guidance"},undefined,true)})}
         const pending=pendingEventsRef.current[0];if(pending?.force){pendingEventsRef.current.shift();queueMicrotask(()=>{void callCompanionRef.current(pending.event,pending.playerMessage,true)})}
       }
@@ -341,7 +362,7 @@ export default function Home(){
     if(activeRequestRef.current){activeRequestRef.current.preempted=true;activeRequestRef.current.controller.abort();activeRequestRef.current=null}requestInFlightRef.current=false;
     const text=finalPreparedRef.current?interruptPreparedLine(finalPreparedRef.current,reason):finalAriadneLine(reason);
     const message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now()};
-    const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);setCompanionStatus("LINK LOST");setChatOpen(false);setExperienceState("ending");
+    const next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);setChatOpen(false);setExperienceState("ending");
     closureTimerRef.current=setTimeout(()=>{closureTimerRef.current=null;setClosureRevealed(true)},2400);
   },[setExperienceState]);
 
@@ -381,7 +402,7 @@ export default function Home(){
       const exitSeconds=exitStartedAt===null?0:journeyRef.current.activeWalkSeconds-exitStartedAt;
       if(current.objective.stage===4&&exitSeconds>=45&&!finalPreparationRequestedRef.current){finalPreparationRequestedRef.current=true;callCompanion({type:"final_direction"},undefined,true)}
       if(trace)guidanceTraceRef.current=appendGuidanceTrace(trace,sample,travelDelta,contradicted,familiar);
-      const relation=guidanceTraceRef.current?trajectoryCue(guidanceTraceRef.current):null,centeredEnd=centeredDeadEnd(current.world,geometry,pose,current.moves),centeredKey=centeredEnd?cellKey(centeredEnd[0],centeredEnd[1]):null;
+      const relation=guidanceTraceRef.current?trajectoryCue(guidanceTraceRef.current):null,centeredEnd=centeredDeadEnd(current.world,geometry,pose,current.moves,DEAD_END_REACTION_DISTANCE),centeredKey=centeredEnd?cellKey(centeredEnd[0],centeredEnd[1]):null;
       const activeStar=current.objective.activeStar,isStarVisible=activeStarIsVisible(current,pose);let starEvent:CompanionEvent|null=null;
       if(activeStar&&isStarVisible&&!seenStarEventsRef.current.has(activeStar.id)){
         seenStarEventsRef.current.add(activeStar.id);const objective={...current.objective,activeStar:{...activeStar,seen:true}},next={...current,objective};runRef.current=next;setRun(next);
@@ -389,16 +410,23 @@ export default function Home(){
       }
       let approachEvent:CompanionEvent|null=null;
       if(!centeredKey)activeDeadEndRef.current=null;
-      else if(activeDeadEndRef.current?.key!==centeredKey||now-activeDeadEndRef.current.lastTriggeredAt>=20000){activeDeadEndRef.current={key:centeredKey,lastTriggeredAt:now};recordEncounter(`dead-end:${centeredKey}`,"visible_dead_end");approachEvent={type:"dead_end_visible",cell:centeredEnd!}}
+      else if(activeDeadEndRef.current?.key!==centeredKey){
+        activeDeadEndRef.current={key:centeredKey,lastTriggeredAt:now};
+        const speechKey=`dead-end-speech:${current.objective.stage}:${centeredKey}`;
+        if(!seenPerceptionCuesRef.current.has(speechKey)){seenPerceptionCuesRef.current.add(speechKey);recordEncounter(`dead-end:${centeredKey}`,"visible_dead_end");approachEvent={type:"dead_end_visible",cell:centeredEnd!}}
+      }
       const cue=nextPerceptionCue(geometry,environment,null,seenPerceptionCuesRef.current);
       const pending=pendingEventsRef.current[0];
       if(starEvent)callCompanion(starEvent,undefined,true);
       else if(approachEvent)callCompanion(approachEvent,undefined,true);
       else if(relation){if(guidanceTraceRef.current&&relation.event.type==="trajectory_relationship_changed"){guidanceTraceRef.current=markTrajectoryChange(guidanceTraceRef.current,relation.event.change);recordEncounter(relation.key,relation.event.change)}if(relation.event.type!=="trajectory_relationship_changed"||relation.event.change!=="sustained_alignment")callCompanion(relation.event,undefined,relation.force)}
       else if(cue&&!(cue.event.type==="environment_visible"&&now<quietUntilRef.current)){seenPerceptionCuesRef.current.add(cue.key);if(cue.event.type==="environment_visible")recordEncounter(cue.key,"new_environment");callCompanion(cue.event,undefined,cue.force)}
-      else if(pending&&!requestInFlightRef.current&&(pending.force||Date.now()-lastCompanionCallRef.current>=companionCooldownMs(journeyRef.current.phase))){pendingEventsRef.current.shift();callCompanion(pending.event,pending.playerMessage,pending.force)}
+      else if(pending&&!requestInFlightRef.current&&(pending.force||(pending.event.type==="player_message"?Date.now()>=providerBackoffUntilRef.current:Date.now()-lastCompanionCallRef.current>=companionCooldownMs(journeyRef.current.phase)))){pendingEventsRef.current.shift();callCompanion(pending.event,pending.playerMessage,pending.force)}
       else{
-        if(now>=quietUntilRef.current&&shouldTriggerPassingThought(activity,now,nextPassingThoughtRef.current)&&(sceneChangesRef.current.length>0||relationshipMemoryRef.current.moments.some(moment=>moment.referencedInSpeech===0)))callCompanion({type:"passing_thought"})
+        // The live perceived scene is itself a concrete anchor. Requiring an
+        // older unspoken event here made Ariadne silent through ordinary play
+        // after only one or two opening lines.
+        if(now>=quietUntilRef.current&&shouldTriggerPassingThought(activity,now,nextPassingThoughtRef.current))callCompanion({type:"passing_thought"})
       }
       if(guidanceTraceRef.current&&guidanceTraceExpired(guidanceTraceRef.current)){guidanceTraceRef.current=null;guidanceRef.current=null}
     },1000);return()=>clearInterval(interval);
@@ -430,18 +458,31 @@ export default function Home(){
       turnRampRef.current=advanceInputRamp(turnRampRef.current,turn,dt,TURN_ACCELERATION.rampSeconds);const turnSpeed=acceleratedSpeed(turnRampRef.current,TURN_ACCELERATION);
       if(turn!==0){pose.angle=wrap(pose.angle+turn*turnSpeed*dt);lastTurnRef.current=Date.now();pauseObservedRef.current=false}let drive=touchDriveRef.current;if(held.has("w")||held.has("arrowup"))drive=1;if(held.has("s")||held.has("arrowdown"))drive=-1;
       moveRampRef.current=advanceInputRamp(moveRampRef.current,drive,dt,MOVE_ACCELERATION.rampSeconds);const moveSpeed=acceleratedSpeed(moveRampRef.current,MOVE_ACCELERATION);
-      const moving=drive!==0;if(moving){
+      const moving=drive!==0;let translatedThisFrame=0;if(moving){
         const beforeX=pose.x,beforeY=pose.y;
         const distance=drive*moveSpeed*dt,nx=pose.x+Math.cos(pose.angle)*distance,ny=pose.y+Math.sin(pose.angle)*distance,w=current.world;
         w.ensureAround(Math.floor(nx),Math.floor(ny),current.moves);
         const clearX=w.tile(Math.floor(nx-PLAYER_RADIUS),Math.floor(pose.y-PLAYER_RADIUS))===0&&w.tile(Math.floor(nx+PLAYER_RADIUS),Math.floor(pose.y+PLAYER_RADIUS))===0;if(clearX)pose.x=nx;
         const clearY=w.tile(Math.floor(pose.x-PLAYER_RADIUS),Math.floor(ny-PLAYER_RADIUS))===0&&w.tile(Math.floor(pose.x+PLAYER_RADIUS),Math.floor(ny+PLAYER_RADIUS))===0;if(clearY)pose.y=ny;
-        const translated=Math.hypot(pose.x-beforeX,pose.y-beforeY);pose.bob+=dt*9;if(translated<.0005){collisionRef.current++;if(collisionRef.current===24)callCompanion({type:"repeated_collision"})}else{collisionRef.current=0;lastMovementRef.current=Date.now();pauseObservedRef.current=false;if(!document.hidden){activeTravelAccumulatorRef.current+=dt;traceTravelAccumulatorRef.current+=dt}if(!ariadneAwakeRef.current){ariadneAwakeRef.current=true;greetingCompleteRef.current=true;const text="Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.",message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now()},next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);messagePulseAtRef.current=Date.now();speakAsAriadne(ariadneBodyRef.current,text,"initial_guidance",Date.now())}}
+        const translated=Math.hypot(pose.x-beforeX,pose.y-beforeY);translatedThisFrame=translated;pose.bob+=dt*9;if(translated<.0005){collisionRef.current++;if(collisionRef.current===24)callCompanion({type:"repeated_collision"})}else{collisionRef.current=0;lastMovementRef.current=Date.now();pauseObservedRef.current=false;if(!document.hidden){activeTravelAccumulatorRef.current+=dt;traceTravelAccumulatorRef.current+=dt}if(!ariadneAwakeRef.current){ariadneAwakeRef.current=true;greetingCompleteRef.current=true;const text=openingGreeting(current.resonance,current.objective.activeStar?.id??null),message:CompanionMessage={id:crypto.randomUUID(),role:"ariadne",text,time:Date.now()},next=[...messagesRef.current,message].slice(-18);messagesRef.current=next;setCompanionMessages(next);messagePulseAtRef.current=Date.now();speakAsAriadne(ariadneBodyRef.current,text,"initial_guidance",Date.now())}}
         const cell=cellKey(Math.floor(pose.x),Math.floor(pose.y));if(cell!==lastCellRef.current)enterCell(Math.floor(pose.x),Math.floor(pose.y));
         const resonanceChanges=activateNearbyResonance(current.resonance,[pose.x,pose.y],Date.now());
         for(const change of resonanceChanges){
           reactAriadneToResonance(ariadneBodyRef.current,change.completed,Date.now());
-          if(!change.completed)continue;
+          accomplishmentPulseRef.current={startedAt:Date.now(),gold:change.completed&&change.starResponded,completed:change.completed};
+          if(!change.completed){
+            // The first response from each incomplete configuration is a real
+            // conversational beat: MT caused something to wake. Later parts
+            // remain visual/body feedback so Ariadne never counts progress
+            // aloud like a mechanical tutorial.
+            const progressKey=`resonance-progress:${change.encounterId}`;
+            sceneChangesRef.current=[...new Set([...sceneChangesRef.current,change.description])].slice(-12);
+            if(!seenPerceptionCuesRef.current.has(progressKey)){
+              seenPerceptionCuesRef.current.add(progressKey);
+              void callCompanion({type:"scene_changed",sceneId:progressKey},undefined,true);
+            }
+            continue;
+          }
           latestAccomplishmentRef.current=encounterContext(current.resonance,change.encounterId);
           recordEncounter(`resonance:${change.encounterId}`,"resonance_completion");
           const correctedAriadne=change.starResponded&&(guidanceTraceRef.current?.evidence.divergedSeconds??0)>=5;
@@ -461,8 +502,40 @@ export default function Home(){
         }
         collectActiveStar();
       }
-      settleRealityTransformations(runRef.current.resonance,Date.now());const next=bearing(pose.angle);setHeading(old=>old===next?old:next);
-      const latest=runRef.current;if(now-lastSceneBuildRef.current>140){lastSceneBuildRef.current=now;const result=refreshScene(moving?"walking":turn!==0?"turning":"stationary"),visibleJunction=result.visibleJunction;if(!visibleJunction){activeJunctionRef.current=null;if(junctionRetryRef.current){clearTimeout(junctionRetryRef.current);junctionRetryRef.current=null}}else if(activeJunctionRef.current!==visibleJunction.id){activeJunctionRef.current=visibleJunction.id;recordEncounter(`junction:${visibleJunction.id}`,"new_junction");const activeId=latest.objective.activeStar?.id??null,journeyPlan=activeId?latest.resonance.journeys.get(activeId):null,hasAccomplished=!journeyPlan||journeyPlan.encounterIds.some(id=>latest.resonance.encounters.get(id)?.completed),sinceCommitment=journeyRef.current.activeWalkSeconds-lastCommitmentWalkRef.current,commitmentInterval=latest.objective.stage===0?12:20,majorHub=hasAccomplished&&sinceCommitment>=commitmentInterval;if(majorHub)void beginEmbodiedJunction(visibleJunction.id)}}
+      settleRealityTransformations(runRef.current.resonance,Date.now());
+      const latest=runRef.current;
+      if(now-lastSceneBuildRef.current>140){
+        lastSceneBuildRef.current=now;
+        const result=refreshScene(moving?"walking":turn!==0?"turning":"stationary"),visibleJunction=result.visibleJunction;
+        const visibleEnd=centeredDeadEnd(latest.world,result.visibleGeometry,pose,latest.moves,DEAD_END_REACTION_DISTANCE),visibleEndKey=visibleEnd?cellKey(visibleEnd[0],visibleEnd[1]):null;
+        if(!visibleEndKey)activeDeadEndRef.current=null;
+        else if(activeDeadEndRef.current?.key!==visibleEndKey){
+          const detectedAt=Date.now(),speechKey=`dead-end-speech:${latest.objective.stage}:${visibleEndKey}`;activeDeadEndRef.current={key:visibleEndKey,lastTriggeredAt:detectedAt};
+          if(!seenPerceptionCuesRef.current.has(speechKey)){
+            seenPerceptionCuesRef.current.add(speechKey);recordEncounter(`dead-end:${visibleEndKey}`,"visible_dead_end");
+            prepareAriadneForEvent(ariadneBodyRef.current,"dead_end_visible",detectedAt);
+            void callCompanion({type:"dead_end_visible",cell:visibleEnd!},undefined,true);
+          }
+        }
+        if(!visibleJunction){
+          activeJunctionRef.current=null;junctionHesitationRef.current=null;
+          if(junctionRetryRef.current){clearTimeout(junctionRetryRef.current);junctionRetryRef.current=null}
+        }else{
+          const activeEpisode=embodiedEpisodeRef.current,decisionActive=!!activeEpisode&&activeEpisode.junctionId===visibleJunction.id&&activeEpisode.state!=="resolved";
+          const hesitation=updateJunctionHesitation(junctionHesitationRef.current,visibleJunction,pose,Date.now(),decisionActive,translatedThisFrame>.0005);junctionHesitationRef.current=hesitation.state;
+          if(activeJunctionRef.current!==visibleJunction.id){
+            activeJunctionRef.current=visibleJunction.id;recordEncounter(`junction:${visibleJunction.id}`,"new_junction");
+            const activeId=latest.objective.activeStar?.id??null,journeyPlan=activeId?latest.resonance.journeys.get(activeId):null,hasAccomplished=!journeyPlan||journeyPlan.encounterIds.some(id=>latest.resonance.encounters.get(id)?.completed),sinceCommitment=journeyRef.current.activeWalkSeconds-lastCommitmentWalkRef.current,commitmentInterval=latest.objective.stage===0?12:20,majorHub=hasAccomplished&&sinceCommitment>=commitmentInterval;
+            // Ariadne still makes her own proactive commitments at meaningful
+            // hubs. Pausing is an additional request for guidance at any
+            // intersection, not a replacement for her initiative.
+            if(majorHub){if(junctionHesitationRef.current)junctionHesitationRef.current.triggered=true;void beginEmbodiedJunction(visibleJunction.id)}
+          }else if(hesitation.shouldCommit){
+            if(junctionHesitationRef.current)junctionHesitationRef.current.triggered=true;
+            void beginEmbodiedJunction(visibleJunction.id);
+          }
+        }
+      }
       const journey=journeyRef.current,body=ariadneBodyRef.current;updateAriadneBody(body,{world:latest.world,tick:latest.moves,pose,phase:journey.phase,disposition:dispositionRef.current,playerSpeed:moving?moveSpeed:0,dt,now:Date.now(),reducedMotion});
       const episode=embodiedEpisodeRef.current;
       if(episode){
@@ -477,7 +550,7 @@ export default function Home(){
         if(response){const key=`${episode.id}:${response}`,active=activeRequestRef.current,coveredByInvitation=response==="followed"&&active?.speechAnchor.speechAct==="invite_to_visible_choice"&&speechAnchorIsCompatible(active.speechAnchor,embodiedEpisodeRef.current);if(!embodiedReactionRef.current.has(key)){embodiedReactionRef.current.add(key);dispositionRef.current=recordDispositionMoment(dispositionRef.current,response==="followed"?"followed":response==="rejoined"?"rejoined":response==="passed"?"passed":"diverged",journey.phase);if(response==="followed")rememberRelationship("followed_commitment","MT travelled at least three cells into Ariadne's chosen passage.","The route is being tested; its result is not settled.",.45);else if(response==="rejoined")rememberRelationship("rejoined_ariadne","MT returned toward Ariadne after moving away.","Ariadne and MT occupy the same route again.",.75);else rememberRelationship("diverged_from_commitment","MT travelled at least three cells into a different passage.","Ariadne abandoned her waiting place and caught up.",.65);if(response!=="followed"&&!coveredByInvitation)void callCompanion({type:"embodied_response",response},undefined,true)}}
       }
       if(body.departureRouteId)body.departureRouteId=null;
-      const ctx=canvasRef.current?.getContext("2d");if(ctx){const messagePulse=Math.max(0,1-(Date.now()-messagePulseAtRef.current)/1400),visual:VisualFrameState={time:now*.001,movementSpeed:moving?moveSpeed:0,turnRate:turn*turnSpeed,collisionPulse:Math.min(1,collisionRef.current/24),relationshipPhase:journey.phase,relationshipIntensity:relationshipMemoryRef.current.position,collectedStars:latest.objective.collectedStars,activeStarVisible:sceneRef.current?.objective.starVisible??false,visibleRouteCount:sceneRef.current?.geometry.visibleOpenings.length??0,messagePulse,reducedMotion};const starReady=objectiveResonanceReady(latest.resonance,latest.objective.activeStar?.id??null),awarenessRadius=18+Math.min(8,latest.resonance.completedEncounterCount*.8+latest.resonance.permanentStarFragments),resonances=encountersForRender(latest.resonance,latest.objective.activeStar?.id??"exit",[pose.x,pose.y],awarenessRadius);renderWorld(ctx,latest.world,latest.anchors,latest.entities,latest.appearance,latest.appearanceProtected,pose,moving,reducedMotion,latest.moves,starReady?latest.objective.activeStar:null,sceneRef.current,visual,ariadneAwakeRef.current?ariadneBodyRef.current:null,resonances,latest.resonance)}
+      const ctx=canvasRef.current?.getContext("2d");if(ctx){const messagePulse=Math.max(0,1-(Date.now()-messagePulseAtRef.current)/1400),pulseState=accomplishmentPulseRef.current,pulseAge=pulseState?(Date.now()-pulseState.startedAt)/(pulseState.completed?2800:1500):1,accomplishmentPulse=pulseAge<1?Math.max(0,1-pulseAge):0,visual:VisualFrameState={time:now*.001,movementSpeed:moving?moveSpeed:0,turnRate:turn*turnSpeed,collisionPulse:Math.min(1,collisionRef.current/24),relationshipPhase:journey.phase,relationshipIntensity:relationshipMemoryRef.current.position,collectedStars:latest.objective.collectedStars,activeStarVisible:sceneRef.current?.objective.starVisible??false,visibleRouteCount:sceneRef.current?.geometry.visibleOpenings.length??0,messagePulse,accomplishmentPulse,accomplishmentGold:pulseState?.gold??false,accomplishmentCompleted:pulseState?.completed??false,reducedMotion};const starReady=objectiveResonanceReady(latest.resonance,latest.objective.activeStar?.id??null),awarenessRadius=SPATIAL_VISIBILITY_DISTANCE+Math.min(8,latest.resonance.completedEncounterCount*.8+latest.resonance.permanentStarFragments),resonances=encountersForRender(latest.resonance,latest.objective.activeStar?.id??"exit",[pose.x,pose.y],awarenessRadius);renderWorld(ctx,latest.world,latest.anchors,latest.entities,latest.appearance,latest.appearanceProtected,pose,moving,reducedMotion,latest.moves,starReady?latest.objective.activeStar:null,sceneRef.current,visual,ariadneAwakeRef.current?ariadneBodyRef.current:null,resonances,latest.resonance)}
       frame=requestAnimationFrame(tick);
     };frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
   },[enterCell,callCompanion,collectActiveStar,reducedMotion,refreshScene,recordEncounter,beginEmbodiedJunction,rememberRelationship]);
@@ -510,7 +583,7 @@ export default function Home(){
     {experience==="paused"&&<PauseMenu onResume={resumeGame} onEnd={endGame}/>}
     {experience==="ending"&&<ClosureScreen revealed={closureRevealed} onRestart={restartAfterClosure} onLeave={endGame}/>}
     {experience==="playing"&&!ready&&<div className="boot-screen" aria-live="polite"><span>OPENING THE GATE</span></div>}
-    <section className="viewport-wrap" aria-label="Infinite first person maze game" aria-hidden={experience!=="playing"&&experience!=="paused"}><div className="viewport-label"><span>CAM_01 // {heading}</span><span className="objective-stars" aria-label={`${run.objective.collectedStars} of 4 stars collected`}>{starMarks}</span><span>{companionStatus} · ENTER CHAT · ESC PAUSE · N NEW SIGNAL</span></div>
+    <section className="viewport-wrap" aria-label="Infinite first person maze game" aria-hidden={experience!=="playing"&&experience!=="paused"}><div className="objective-stars" aria-label={`${run.objective.collectedStars} of 4 stars collected`}>{starMarks}</div>
         <canvas ref={canvasRef} width={1280} height={720} tabIndex={0} aria-label="First-person view into an infinite maze" onClick={e=>e.currentTarget.requestPointerLock?.()} onTouchStart={beginTouch} onTouchMove={moveTouch} onTouchEnd={endTouch} onTouchCancel={()=>{touchControlsRef.current.clear();touchDriveRef.current=0}}/>
         <div className="vignette comfort-vignette"/>{companionMessages.length>0&&<div className={`ariadne-chat ${chatOpen?"chat-open":""}`} aria-live="polite">{companionMessages.slice(-5).map(message=><div key={message.id} className={`ariadne-chat-line ${message.role}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<MT>"}</span> {message.text}</div>)}</div>}
         {chatOpen&&<form className="minecraft-chat-input" onSubmit={sendToCompanion}><span>&gt;</span><input ref={chatInputRef} aria-label="Message ARIADNE" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.form?.requestSubmit()}else if(e.key==="Escape"){e.preventDefault();setChatOpen(false);setCompanionInput("");e.currentTarget.blur();canvasRef.current?.focus()}}} placeholder="Message ARIADNE"/></form>}

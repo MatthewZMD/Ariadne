@@ -8,6 +8,8 @@ export type RelativeDirection="far_left"|"left"|"center"|"right"|"far_right";
 export type SceneDistance="near"|"mid"|"far";
 export type SceneSalience="ambient"|"noticeable"|"major";
 export type ScenePose={x:number;y:number;angle:number};
+/** Shared semantic/render distance for spatial activity visible down corridors. */
+export const SPATIAL_VISIBILITY_DISTANCE=28;
 
 export type VisibleOpening={direction:RouteDirection;description:string};
 export type VisibleSceneObject={
@@ -28,7 +30,8 @@ export type PerceivedScene={
 export type VisualFrameState={
   time:number;movementSpeed:number;turnRate:number;collisionPulse:number;
   relationshipPhase:"charming"|"attached"|"overbearing";relationshipIntensity:number;
-  collectedStars:number;activeStarVisible:boolean;visibleRouteCount:number;messagePulse:number;reducedMotion:boolean;
+  collectedStars:number;activeStarVisible:boolean;visibleRouteCount:number;messagePulse:number;
+  accomplishmentPulse:number;accomplishmentGold:boolean;accomplishmentCompleted:boolean;reducedMotion:boolean;
 };
 export type SceneMemory={
   seen:Set<string>;previousDistances:Map<string,number>;previousVisible:Map<string,string>;
@@ -122,7 +125,7 @@ const distanceFor=(distance:number):SceneDistance=>distance<2.8?"near":distance<
 
 function pointProjection(world:InfiniteWorld,x:number,y:number,pose:ScenePose,tick:number){
   const dx=x-pose.x,dy=y-pose.y,distance=Math.hypot(dx,dy),delta=wrap(Math.atan2(dy,dx)-pose.angle);
-  if(distance<=.3||distance>12||Math.abs(delta)>CAMERA_FOV*.54)return null;
+  if(distance<=.3||distance>SPATIAL_VISIBILITY_DISTANCE||Math.abs(delta)>CAMERA_FOV*.54)return null;
   for(let d=.08;d<distance-.25;d+=.06){const x=Math.floor(pose.x+dx/distance*d),y=Math.floor(pose.y+dy/distance*d);if(world.tile(x,y,tick)!==0)return null}
   return{distance,delta};
 }
@@ -187,7 +190,7 @@ export function buildPerceivedScene(args:{
       addSpectacle({...item,description},id,foreign,"noticeable",(now%10_000)/10_000);
     }
   }
-  const star=visibleStarProjection(world,args.activeStar,pose,tick,12,CAMERA_FOV),starDirection=star?directionFor(star.relativeAngle):null,starDistance=star?distanceFor(star.distance):null;
+  const star=visibleStarProjection(world,args.activeStar,pose,tick,SPATIAL_VISIBILITY_DISTANCE,CAMERA_FOV),starDirection=star?directionFor(star.relativeAngle):null,starDistance=star?distanceFor(star.distance):null;
   if(star&& !memory.seen.has(`star:${args.activeStar?.id}`)){memory.seen.add(`star:${args.activeStar?.id}`);changes.push(`the ${starDistance} star has become visible ${starDirection?.replace("_"," ")}`)}
   const centered=objects.find(object=>object.direction==="center"),near=objects.find(object=>object.distance==="near");
   let approaching:string|null=null,movingAwayFrom:string|null=null;

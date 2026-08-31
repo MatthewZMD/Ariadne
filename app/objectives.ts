@@ -194,10 +194,10 @@ export function starVisible(world:InfiniteWorld,state:ObjectiveState,position:{x
   return visibleStarProjection(world,state.activeStar,position,tick,maxDistance,fov)!==null;
 }
 
-function* targetDistanceSearch(world:InfiniteWorld,target:Point,routes:RouteOption[],tick=0):Generator<void,Map<string,number>>{
+function* targetDistanceSearch(world:InfiniteWorld,target:Point,routes:RouteOption[],tick=0,maxNodes=120_000):Generator<void,Map<string,number>>{
   const wanted=new Set(routes.map(route=>route.targetCell??route.knownCells.at(-1)).filter(Boolean).map(point=>cellKey(point![0],point![1]))),found=new Map<string,number>();
   const startKey=cellKey(target[0],target[1]),queue:Point[]=[target],distance=new Map<string,number>([[startKey,0]]);let cursor=0;
-  while(cursor<queue.length&&queue.length<120_000&&found.size<wanted.size){
+  while(cursor<queue.length&&queue.length<maxNodes&&found.size<wanted.size){
     const current=queue[cursor++]!,key=cellKey(current[0],current[1]),d=distance.get(key)!;if(wanted.has(key))found.set(key,d);
     for(const next of openNeighbors(world,current,tick)){const nextKey=cellKey(next[0],next[1]);if(distance.has(nextKey))continue;distance.set(nextKey,d+1);queue.push(next)}
     yield;
@@ -210,8 +210,12 @@ function distancesFromTarget(world:InfiniteWorld,target:Point,routes:RouteOption
 }
 
 async function distancesFromTargetCooperatively(world:InfiniteWorld,target:Point,routes:RouteOption[],tick=0,signal?:AbortSignal){
-  const search=targetDistanceSearch(world,target,routes,tick);
-  while(true){for(let index=0;index<450;index++){const step=search.next();if(step.done)return step.value}await yieldSearch();throwIfCancelled(signal)}
+  // Embodied guidance has to begin while MT can still see Ariadne make the
+  // choice. Bound the live oracle instead of making her body wait for a huge
+  // procedural-world flood fill. Missing routes receive a deterministic
+  // geometric estimate below; every returned route remains physically legal.
+  const search=targetDistanceSearch(world,target,routes,tick,2_400);
+  while(true){for(let index=0;index<600;index++){const step=search.next();if(step.done){const distances=step.value;for(const route of routes){const point=route.targetCell??route.knownCells.at(-1)??route.knownCells[0];if(point&&!distances.has(cellKey(point[0],point[1])))distances.set(cellKey(point[0],point[1]),Math.hypot(point[0]-target[0],point[1]-target[1])+10_000)}return distances}}await yieldSearch();throwIfCancelled(signal)}
 }
 
 function beliefFromRankedRoutes(state:ObjectiveState,routes:RouteOption[],junctionId:string,seed:number,starIsVisible:boolean,distances:Map<string,number>){

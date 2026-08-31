@@ -29,4 +29,4 @@ export class InfiniteWorld {
 export type ThemeScheduler={nextAt:number;nextTheme:()=>string;advance:(from:number)=>void};
 export function createThemeScheduler(seed:number):ThemeScheduler;
 export function connectedTileCount(chunk:WorldChunk):number;
-export function chunkTopology(chunk:WorldChunk):{logicalCells:number;deadEnds:number;corridors:number;junctions:number};
+export function chunkTopology(chunk:WorldChunk):{logicalCells:number;deadEnds:number;corridors:number;junctions:number;cycleRank:number};

@@ -31,7 +31,9 @@ const goalByStars=["first_star","second_star","third_star","fourth_star","exit"]
 const objectiveEvents=["searching","star_visible","star_collected","objective_changed"] as const;
 const embodiedStates=["noticing","committing","waiting","mt_following","mt_diverging","mt_passed","route_contradicted","rejoining","resolved"] as const satisfies readonly EmbodiedDecisionState[];
 const speechActs=["invite_to_visible_choice","confirm_following","respond_to_divergence","catch_up","repair_mistake","celebrate_rejoining","react_to_star","celebrate_accomplishment","renew_hope","share_visible_discovery","passing_companionship","reply_to_mt"] as const satisfies readonly CompanionSpeechAct[];
-const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-31b-it:free","minimax/minimax-m3:free","google/gemma-4-26b-a4b-it:free"];
+const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free"];
+const PAID_FALLBACK_MODELS=["xiaomi/mimo-v2.5","openai/gpt-5.6-luna"] as const;
+const SERVER_OWNED_PAID_MODELS=new Set<string>(PAID_FALLBACK_MODELS);
 const beatKinds=["guidance","accomplishment","repair","objective","relational","ambient"] as const;
 const socialStrategies=["curious_wonder","playful_confidence","concrete_praise","grateful_closeness","tender_apology","relieved_reconnection","admiring_correction","hopeful_reinterpretation","reassurance_seeking","possessive_shared_meaning"] as const;
 const momentKinds=["followed_commitment","diverged_from_commitment","corrected_ariadne","rejoined_ariadne","shared_accomplishment","proxy_accomplishment","ariadne_mistake","star_collected"] as const;
@@ -211,7 +213,13 @@ function normalizeProviderReply(text:string,body:RequestBody){
 
 export function isVerifiedProviderModel(requested:string,actual:string|undefined,allowed:Set<string>){
   if(!actual)return false;
-  if(requested==="openrouter/free")return allowed.size===0||allowed.has(actual);
+  // The free router may select a newly-added free model between catalog
+  // refreshes. Its returned identity must still explicitly be a free SKU.
+  if(requested==="openrouter/free")return allowed.size===0||allowed.has(actual)||actual.endsWith(":free");
+  // Paid fallback identities are a closed, server-owned list. They can only
+  // be reached by the hard-coded final ladder below; client model preferences
+  // are still accepted exclusively from the validated free-model set.
+  if(SERVER_OWNED_PAID_MODELS.has(requested))return actual===requested;
   return actual===requested&&allowed.has(actual);
 }
 
@@ -243,7 +251,7 @@ function semanticMovement(evidence:GuidanceEvidence|null){
 }
 
 function semanticEvent(event:CompanionEvent){
-  if(event.type==="initial_guidance")return`This is your first moment together. Begin exactly with: “Hi, ${PLAYER_NAME}—I’m Ariadne. I’m here to help you find four stars, then the exit.”`;
+  if(event.type==="initial_guidance")return`This is your first moment together. Introduce yourself warmly to ${PLAYER_NAME}, notice the most specific visible incomplete configuration ahead, and invite MT to awaken it with you. Make the promise of four stars and the exit feel like an excited shared dare, not a mission briefing.`;
   if(event.type==="star_visible")return`The ${["first","second","third","fourth"][event.ordinal-1]} star has just become visible to MT. React to the actual sight of it.`;
   if(event.type==="star_collected")return`MT has just collected star ${event.ordinal} of four. Celebrate, while interpreting the journey only through the supplied trajectory facts.`;
   if(event.type==="encounter_completed")return event.starResponded?"MT completed a visible configuration and the star visibly responded to it.":"MT completed a visible configuration. The location transformed, but the star showed no visible response.";
@@ -287,8 +295,14 @@ type ProviderMessage={role:"system"|"user"|"assistant";content:string};
 export function buildProviderMessages(body:RequestBody):ProviderMessage[]{
   const messages:ProviderMessage[]=[{role:"system",content:ARIADNE_SYSTEM_PROMPT}];
   if(body.olderContextSummary.trim())messages.push({role:"user",content:`Earlier conversation transcript:\n${body.olderContextSummary.slice(0,800)}`});
-  messages.push(...body.recentMessages.map(message=>({role:message.role==="ariadne"?"assistant" as const:"user" as const,content:message.text})));
-  messages.push({role:"user",content:statePrompt(body)});
+  const directMessage=body.trigger.type==="player_message"?body.playerMessage??body.trigger.text:null;
+  // For a typed exchange, MT's sentence and the private live-world context
+  // must form one final user turn. Appending the stage card as a second user
+  // turn made models answer the game state instead of continuing the chat.
+  const recent=directMessage&&body.recentMessages.at(-1)?.role==="player"&&body.recentMessages.at(-1)?.text===directMessage?body.recentMessages.slice(0,-1):body.recentMessages;
+  messages.push(...recent.map(message=>({role:message.role==="ariadne"?"assistant" as const:"user" as const,content:message.text})));
+  const context=statePrompt(body);
+  messages.push({role:"user",content:directMessage?`${directMessage}\n\n${context.replace("<private_stage_card>","<private_stage_card>\nMT deliberately spoke to you. Answer MT's exact message first. Respond to its meaning, question, emotion, or request; use the visible maze only where it naturally helps the answer. Do not substitute generic encouragement or unrelated navigation.")}`:context});
   return messages;
 }
 
@@ -306,22 +320,44 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
 }
 
 async function openRouter(body:RequestBody,apiKey:string,clientSignal:AbortSignal):Promise<ProviderResult>{
-  const startedAt=Date.now(),deadline=startedAt+14_000;
+  const durable=body.experienceBeat?.durable===true||["star_visible","star_collected","encounter_completed","recommendation_contradicted","dead_end_visible","player_message","final_direction"].includes(body.trigger.type);
+  const startedAt=Date.now(),deadline=startedAt+(durable?30_000:24_000);
   const cachedModels=modelCache?.models??[],knownAtStart=new Set([...FAST_FREE_MODELS,...cachedModels]);
   const preferred=body.preferredModelId&&knownAtStart.has(body.preferredModelId)?body.preferredModelId:null;
   const primary=preferred??FAST_FREE_MODELS[0]??null,attempts:string[]=[];
   let lastError:unknown=null;
   if(primary){
     attempts.push(primary);const remaining=deadline-Date.now();
-    try{return await requestOpenRouter(body,apiKey,primary,knownAtStart,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted||preferred&&(body.providerFailureCount??0)<1||error instanceof Error&&/free-models-per-min|limit_source/i.test(error.message))throw error}
+    try{return await requestOpenRouter(body,apiKey,primary,knownAtStart,Math.min(6500,remaining),clientSignal)}catch(error){
+      lastError=error;
+      // Session stickiness is a preference, not a reason to lose a line. A
+      // free model can become rate-limited after two healthy replies; discover
+      // and try one alternate during this same meaningful beat.
+      if(clientSignal.aborted)throw error;
+    }
   }
   const available=await freeModels(apiKey),allowed=new Set([...FAST_FREE_MODELS,...available]);
-  const alternate=[...available,...FAST_FREE_MODELS].find(model=>!attempts.includes(model));
+  // Prefer the small set already exercised by this project. The live catalog
+  // broadens the pool only after those known candidates are exhausted.
+  const alternate=[...FAST_FREE_MODELS,...available].find(model=>!attempts.includes(model));
   if(alternate){
     attempts.push(alternate);const remaining=deadline-Date.now();
     if(remaining>=1000)try{return await requestOpenRouter(body,apiKey,alternate,allowed,Math.min(7000,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted)throw error}
   }
-  throw lastError??new ProviderAttemptError("no responsive free companion model available",false);
+  // Exhaust the aggregate free pool before spending any paid-model tokens.
+  // The free router remains explicitly incapable of selecting a paid model.
+  if(!attempts.includes("openrouter/free")){
+    const remaining=deadline-Date.now();
+    if(remaining>=1200)try{return await requestOpenRouter(body,apiKey,"openrouter/free",allowed,Math.min(6000,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted)throw error}
+  }
+  // These are deliberately not sticky and are never accepted from the
+  // browser. Every future speech request starts with the free ladder again.
+  for(const model of PAID_FALLBACK_MODELS){
+    const remaining=deadline-Date.now();
+    if(remaining<1200)break;
+    try{return await requestOpenRouter(body,apiKey,model,allowed,Math.min(6000,remaining),clientSignal)}catch(error){lastError=error;if(clientSignal.aborted)throw error}
+  }
+  throw lastError??new ProviderAttemptError("no responsive companion model available",false);
 }
 
 async function boundedJson(request:Request):Promise<{value:unknown}|{error:"invalid"|"too_large"}>{
@@ -343,5 +379,5 @@ export async function POST(request:Request){
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback",modelUsed:null});
     const result=await openRouter(body,apiKey,request.signal);console.info("ARIADNE provider reply",{trigger:body.trigger.type,model:result.modelUsed,elapsedMs:Date.now()-requestStartedAt});return Response.json({...acceptReply(result.reply),source:"provider",modelUsed:result.modelUsed});
-  }catch(error){console.error("ARIADNE free provider request failed",{trigger:body.trigger.type,elapsedMs:Date.now()-requestStartedAt,error});return Response.json({...fallback(),source:"fallback",modelUsed:null})}
+  }catch(error){console.error("ARIADNE provider ladder failed",{trigger:body.trigger.type,elapsedMs:Date.now()-requestStartedAt,error});return Response.json({...fallback(),source:"fallback",modelUsed:null})}
 }

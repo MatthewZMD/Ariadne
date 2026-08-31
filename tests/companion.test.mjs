@@ -4,10 +4,10 @@ import {
   analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc,
   companionCooldownMs, createGuidanceTrace, createJourneyState, describeEgocentricView,
   deterministicReply, forwardVisibleGeometry, guidanceTraceExpired,
-  instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearestActionableJunction, nearestVisibleJunction,
+  instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearbyJunction, nearestActionableJunction, nearestVisibleJunction,
   nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes,
   rebaseSelectedRoute, recordJourneyEncounter, routesForEvent,
-  shouldTriggerPassingThought, trajectoryCue, updateJourney,
+  shouldTriggerPassingThought, trajectoryCue, updateJourney, updateJunctionHesitation,
 } from "../app/companion.ts";
 import { isFreeCompanionModel } from "../app/api/companion/route.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "../app/api/companion/prompt.ts";
@@ -96,15 +96,16 @@ test("phase cards change social interpretation rather than only frequency",()=>{
   assert.match(overbearing,/tender voice/i);
   assert.match(overbearing,/seductive and suffocating/i);
   assert.doesNotMatch(`${charming} ${attached} ${overbearing}`,/CHARMING|ATTACHED|OVERBEARING/);
-  assert.equal(nextPassingThoughtAt(1_000,"charming",0),41_000);
-  assert.equal(nextPassingThoughtAt(1_000,"attached",0),31_000);
-  assert.equal(nextPassingThoughtAt(1_000,"overbearing",0),23_000);
+  assert.equal(nextPassingThoughtAt(1_000,"charming",0),27_000);
+  assert.equal(nextPassingThoughtAt(1_000,"attached",0),23_000);
+  assert.equal(nextPassingThoughtAt(1_000,"overbearing",0),19_000);
   assert.deepEqual([companionCooldownMs("charming"),companionCooldownMs("attached"),companionCooldownMs("overbearing")],[12000,9000,6000]);
 });
 
 test("deterministic voice exists only for the required opening greeting",()=>{
   const greeting=deterministicReply({type:"initial_guidance"},[route],null,null);
-  assert.equal(greeting.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
+  assert.match(greeting.message,/MT—hi! I’m Ariadne/);
+  assert.match(greeting.message,/wake it/);
   const environment={id:"frozen",regionId:"frozen:0:0",name:"frozen archive",details:["ice","shelves"]};
   assert.equal(deterministicReply({type:"environment_visible",regionId:environment.regionId,environment:"frozen"},[route],environment,null).message,"");
   assert.match(ARIADNE_SYSTEM_PROMPT,/Speak directly to MT, never about MT/i);
@@ -213,14 +214,47 @@ test("dead ends are visible before collision and remove invalid guidance",()=>{
   assert.equal(centeredDeadEnd(world,choiceBeforeWall,pose,0),null);
 });
 
+test("an unavoidable ending triggers only once it is a few visible cells away",()=>{
+  const open=new Set(Array.from({length:9},(_,x)=>`${x},0`)),world={tile:(x,y)=>open.has(`${x},${y}`)?0:1},pose={x:.5,y:.5,angle:0,bob:0},geometry=forwardVisibleGeometry(world,pose,0);
+  assert.equal(centeredDeadEnd(world,geometry,pose,0,6),null);
+  assert.deepEqual(centeredDeadEnd(world,geometry,{...pose,x:3.5},0,6),[8,0]);
+});
+
 test("perception episodes leave generic corridor endings to the centered POV check",()=>{
   const junction={cells:[[0,0]],junctions:[{id:"junction:0,0",cell:[0,0],open:["1,0","0,1","-1,0"]}],corridorEnds:[],summary:""};
   assert.equal(nearestVisibleJunction(junction,{x:2.5,y:.5,angle:0,bob:0}).id,"junction:0,0");
   assert.equal(nearestActionableJunction(junction,{x:8.5,y:.5,angle:Math.PI,bob:0}),null,"a distant visible junction is scenery, not yet a decision episode");
+  assert.equal(nearestActionableJunction(junction,{x:5.5,y:.5,angle:Math.PI,bob:0})?.id,"junction:0,0","Ariadne should begin deciding several walking steps before the junction");
   assert.equal(nearestActionableJunction(junction,{x:3.25,y:.5,angle:Math.PI,bob:0})?.id,"junction:0,0");
   assert.equal(nextPerceptionCue(junction,null,null,new Set()),null);
   const ending={cells:[[1,0]],junctions:[],corridorEnds:[[1,0]],summary:""};
   assert.equal(nextPerceptionCue(ending,null,null,new Set()),null);
+});
+
+test("pausing at an intersection becomes a guidance opportunity while movement does not",()=>{
+  const junction={id:"junction:4,4",cell:[4,4],open:["3,4","5,4","4,3"]},pose={x:4.5,y:4.5,angle:0,bob:0};
+  let result=updateJunctionHesitation(null,junction,pose,1000,false,true);assert.equal(result.shouldCommit,false);
+  result=updateJunctionHesitation(result.state,junction,pose,1900,false,true);assert.equal(result.shouldCommit,false,"walking through the junction must not be mistaken for asking for help");
+  result=updateJunctionHesitation(result.state,junction,{...pose,angle:Math.PI},2849,false,false);assert.equal(result.shouldCommit,false,"looking around during the pause remains uncertainty, not a route choice");
+  result=updateJunctionHesitation(result.state,junction,{...pose,angle:Math.PI/2},2850,false,false);assert.equal(result.shouldCommit,true);
+  result.state.triggered=true;assert.equal(updateJunctionHesitation(result.state,junction,pose,5000,false,false).shouldCommit,false,"the same pause must prompt only once");
+  assert.equal(updateJunctionHesitation(result.state,junction,{...pose,x:7},5100,false).state,null,"leaving the intersection clears hesitation");
+});
+
+test("a nearby physical junction remains actionable when the camera crops a side branch",()=>{
+  const open=new Set(["0,0","1,0","2,0","-1,0","0,-1"]),world={tile:(x,y)=>open.has(`${x},${y}`)?0:1};
+  const pose={x:.5,y:.5,angle:0,bob:0};
+  assert.equal(nearbyJunction(world,pose,0)?.id,"junction:0,0");
+  assert.equal(nearbyJunction(world,{...pose,x:2.49},0)?.id,"junction:0,0");
+  assert.equal(nearbyJunction(world,{...pose,x:2.51},0),null);
+  assert.equal(nearbyJunction(world,{...pose,x:4.5},0),null);
+});
+
+test("an existing embodied decision suppresses the hesitation prompt",()=>{
+  const junction={id:"junction:2,2",cell:[2,2],open:["1,2","3,2","2,3"]},pose={x:2.5,y:2.5,angle:0,bob:0};
+  const started=updateJunctionHesitation(null,junction,pose,0,false).state;
+  const active=updateJunctionHesitation(started,junction,pose,3000,true);
+  assert.equal(active.shouldCommit,false);assert.equal(active.state.triggered,true);
 });
 
 test("spontaneous thoughts require actual walking",()=>{

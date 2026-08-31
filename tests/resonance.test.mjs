@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {activateNearbyResonance,condenseStarFragment,createResonanceState,ensureExitEncountersAround,ensureObjectiveJourney,objectiveResonanceReady,settleRealityTransformations} from "../app/resonance.ts";
+import {activateNearbyResonance,condenseStarFragment,createResonanceState,ensureExitEncountersAround,ensureObjectiveJourney,objectiveResonanceReady,openingGreeting,settleRealityTransformations} from "../app/resonance.ts";
 import {InfiniteWorld} from "../app/world.mjs";
 
 const openWorld={tile(){return 0}};
@@ -29,6 +29,9 @@ test("the first required accomplishment cannot be missed while following the ope
     assert.equal(element.activatedAt,1000+index*1000,"each accomplishment retains the moment needed for immediate spatial feedback");
   }
   assert.deepEqual(routeIndexes,[2,6,10],"the opening rewards must unfold as separate beats instead of one accidental cluster");
+  assert.equal(required.teaching,true);
+  assert.match(openingGreeting(state,"opening-star"),new RegExp(required.motif.kind));
+  assert.match(openingGreeting(state,"opening-star"),/wake it/);
   assert.equal(required.completed,true);assert.equal(objectiveResonanceReady(state,"opening-star"),true);
 });
 
@@ -36,6 +39,7 @@ test("partial progress survives leaving and star collection condenses motifs",()
   const state=createResonanceState(),journey=ensureObjectiveJourney(state,openWorld,{seed:22,objectiveId:"star-2",ordinal:2,path,tick:0,activeSeconds:70}),encounter=state.encounters.get(journey.requiredEncounterIds[0]);
   activateNearbyResonance(state,encounter.elements[0].position,1000);assert.equal(encounter.elements[0].active,true);assert.equal(encounter.completed,false);assert.equal(encounter.reality.stage,"assembling");assert.equal(encounter.reality.progress,1/encounter.elements.length);
   for(const element of encounter.elements.slice(1))activateNearbyResonance(state,element.position,2000);assert.equal(encounter.completed,true);
+  assert.deepEqual(encounter.reality.completionPosition,encounter.elements.at(-1).position,"the completion fold must erupt where MT can see the final action, not behind them at the centerpiece");
   condenseStarFragment(state);assert.equal(state.permanentStarFragments,1);assert.deepEqual(state.activeMotifs,[]);assert.equal(state.chaos.collectedStars,1);assert.ok(state.chaos.activeIntensity>0);
 });
 

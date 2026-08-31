@@ -53,6 +53,7 @@ export type VisibleGeometry = {
   cells:Point[];junctions:Array<{id:string;cell:Point;open:string[]}>;
   corridorEnds:Point[];summary:string;
 };
+export type VisibleJunction=VisibleGeometry["junctions"][number];
 
 export type EgocentricView = {
   facing:"north"|"east"|"south"|"west";
@@ -295,7 +296,11 @@ export function companionArc(state:JourneyState):CompanionArc{
 }
 
 export function nextPassingThoughtAt(now:number,phase:CompanionPhase="charming",roll=Math.random()){
-  const [minimum,spread]=phase==="charming"?[40000,25000]:phase==="attached"?[30000,20000]:[22000,14000];
+  // Passing companionship fills the real-time space between large authored
+  // beats. These ranges yield roughly 18–24 grounded opportunities during a
+  // ten-minute moving run; accomplishments, guidance, and repair supply the
+  // remaining lines in the intended 25–40-line arc.
+  const [minimum,spread]=phase==="charming"?[26000,12000]:phase==="attached"?[22000,10000]:[18000,8000];
   return now+minimum+Math.floor(clamp(roll)*spread);
 }
 
@@ -320,10 +325,43 @@ export function nearestVisibleJunction(geometry:VisibleGeometry,pose:Pose){
   return geometry.junctions.slice().sort((a,b)=>Math.hypot(a.cell[0]+.5-pose.x,a.cell[1]+.5-pose.y)-Math.hypot(b.cell[0]+.5-pose.x,b.cell[1]+.5-pose.y))[0]??null;
 }
 
+export const JUNCTION_COMMIT_DISTANCE=5.5;
+export const JUNCTION_HESITATION_MS=950;
+export const JUNCTION_PAUSE_RADIUS=2;
+export const DEAD_END_REACTION_DISTANCE=6;
+export type JunctionHesitation={junctionId:string;startedAt:number;triggered:boolean};
+
+export function updateJunctionHesitation(state:JunctionHesitation|null,junction:VisibleJunction|null,pose:Pose,now:number,decisionActive=false,travelling=false){
+  if(!junction||Math.hypot(junction.cell[0]+.5-pose.x,junction.cell[1]+.5-pose.y)>JUNCTION_PAUSE_RADIUS)return{state:null,shouldCommit:false};
+  const next=state?.junctionId===junction.id?state:{junctionId:junction.id,startedAt:now,triggered:false};
+  if(decisionActive)next.triggered=true;
+  // Looking around is part of wondering. Translational movement is not: the
+  // recommendation begins only after MT actually pauses at the choice.
+  if(travelling&&!next.triggered){next.startedAt=now;return{state:next,shouldCommit:false}}
+  return{state:next,shouldCommit:!next.triggered&&now-next.startedAt>=JUNCTION_HESITATION_MS};
+}
+
 /** Geometry remains visible at distance, but embodied choices start nearby. */
-export function nearestActionableJunction(geometry:VisibleGeometry,pose:Pose,maxDistance=3){
+export function nearestActionableJunction(geometry:VisibleGeometry,pose:Pose,maxDistance=JUNCTION_COMMIT_DISTANCE){
   const junction=nearestVisibleJunction(geometry,pose);if(!junction)return null;
   return Math.hypot(junction.cell[0]+.5-pose.x,junction.cell[1]+.5-pose.y)<=maxDistance?junction:null;
+}
+
+/**
+ * A player standing inside a junction is at a real choice even when the
+ * forward camera rays happen to crop one of its side branches. Walk the open
+ * local topology from MT's cell so pausing and looking around cannot make the
+ * decision disappear with the camera angle.
+ */
+export function nearbyJunction(world:InfiniteWorld,pose:Pose,tick:number,maxSteps=2):VisibleJunction|null{
+  const origin:Point=[Math.floor(pose.x),Math.floor(pose.y)],queue:Array<{cell:Point;steps:number}>=[{cell:origin,steps:0}],seen=new Set([pointKey(origin)]),found:VisibleJunction[]=[];
+  while(queue.length){
+    const{cell,steps}=queue.shift()!,neighbors=openNeighbors(world,cell[0],cell[1],tick);
+    if(neighbors.length>=3)found.push({id:`junction:${pointKey(cell)}`,cell,open:neighbors.map(pointKey)});
+    if(steps>=maxSteps)continue;
+    for(const next of neighbors){const key=pointKey(next);if(seen.has(key))continue;seen.add(key);queue.push({cell:next,steps:steps+1})}
+  }
+  return found.filter(item=>Math.hypot(item.cell[0]+.5-pose.x,item.cell[1]+.5-pose.y)<JUNCTION_PAUSE_RADIUS).sort((a,b)=>Math.hypot(a.cell[0]+.5-pose.x,a.cell[1]+.5-pose.y)-Math.hypot(b.cell[0]+.5-pose.x,b.cell[1]+.5-pose.y))[0]??null;
 }
 
 export function centeredDeadEnd(world:InfiniteWorld,geometry:VisibleGeometry,pose:Pose,tick:number,maxDistance=10):Point|null{
@@ -441,5 +479,5 @@ export function deterministicReply(event:CompanionEvent,routes:RouteOption[],_en
   void _visibleMoment;
   void routes;void belief;
   if(event.type!=="initial_guidance")return{message:""};
-  return{message:"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit."};
+  return{message:"MT—hi! I’m Ariadne. Something ahead is waiting for us to wake it—come on, four stars, then we make this maze give us its exit."};
 }

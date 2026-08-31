@@ -2,7 +2,7 @@ import { hash32, type InfiniteWorld } from "./world.mjs";
 import { THEMES, rememberedThemeAt, themeAt, type AmbientEntity, type ThemeAnchor, type ThemeId, type ThemeMemory, type ThemeSample } from "./themes";
 import { CAMERA_FOV } from "./camera";
 import { visibleStarProjection, type StarObjective } from "./objectives";
-import type { PerceivedScene, VisualFrameState } from "./scene";
+import { SPATIAL_VISIBILITY_DISTANCE, type PerceivedScene, type VisualFrameState } from "./scene";
 import { atlasFrame } from "./sprite-atlas";
 import type { AriadneBodyState, AriadneTrailPoint } from "./ariadne-body";
 import type { RealityEffect, ResonanceEncounter, ResonanceState } from "./resonance";
@@ -109,12 +109,14 @@ function sprite(ctx:CanvasRenderingContext2D,x:number,y:number,size:number,kind:
 
 function objectiveStar(ctx:CanvasRenderingContext2D,x:number,y:number,size:number,time:number){
   const unit=Math.max(2,Math.floor(size/9)),pulse=1+Math.sin(time*3)*.08;ctx.save();ctx.translate(Math.round(x),Math.round(y-Math.sin(time*2.2)*unit));ctx.scale(pulse,pulse);
-  const halo=ctx.createRadialGradient(0,0,unit,0,0,unit*8);halo.addColorStop(0,"rgba(255,241,155,.38)");halo.addColorStop(.4,"rgba(242,168,54,.18)");halo.addColorStop(1,"rgba(242,168,54,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*8,-unit*8,unit*16,unit*16);
-  for(let i=0;i<6;i++){const angle=time*(i%2?-.7:.9)+i*Math.PI/3,orbit=unit*(5+(i%2));ctx.fillStyle=i%2?"#fff2ad":"#e99b45";ctx.fillRect(Math.round(Math.cos(angle)*orbit),Math.round(Math.sin(angle)*orbit),unit,unit)}
-  ctx.fillStyle="rgba(8,7,3,.45)";ctx.fillRect(-unit*3,unit*4,unit*6,unit);
-  ctx.fillStyle="#f2cf69";ctx.fillRect(-unit,-unit*4,unit*2,unit*8);ctx.fillRect(-unit*4,-unit,unit*8,unit*2);
+  const halo=ctx.createRadialGradient(0,0,unit,0,0,unit*12);halo.addColorStop(0,"rgba(255,250,196,.72)");halo.addColorStop(.28,"rgba(255,213,92,.34)");halo.addColorStop(.68,"rgba(242,143,39,.14)");halo.addColorStop(1,"rgba(242,168,54,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*12,-unit*12,unit*24,unit*24);
+  ctx.save();ctx.rotate(-time*.32);ctx.globalAlpha=.5+.18*Math.sin(time*2.3);ctx.fillStyle="#fff1a3";ctx.fillRect(-unit*.5,-unit*10,unit,unit*20);ctx.fillRect(-unit*10,-unit*.5,unit*20,unit);ctx.restore();
+  for(let i=0;i<8;i++){const angle=time*(i%2?-.78:.96)+i*Math.PI/4,orbit=unit*(6+(i%2));ctx.fillStyle=i%2?"#fff2ad":"#e99b45";ctx.fillRect(Math.round(Math.cos(angle)*orbit),Math.round(Math.sin(angle)*orbit),unit,unit)}
+  // The star itself rotates independently of its halo, so its world-space
+  // motion remains legible even when it is still a small distant silhouette.
+  ctx.save();ctx.rotate(time*.58);ctx.fillStyle="#f2cf69";ctx.fillRect(-unit,-unit*4,unit*2,unit*8);ctx.fillRect(-unit*4,-unit,unit*8,unit*2);
   ctx.fillRect(-unit*3,-unit*2,unit*2,unit*2);ctx.fillRect(unit,-unit*2,unit*2,unit*2);ctx.fillRect(-unit*2,unit,unit,unit*3);ctx.fillRect(unit,unit,unit,unit*3);
-  ctx.fillStyle="#fff2ad";ctx.fillRect(-unit,-unit*3,unit,unit*3);ctx.restore();
+  ctx.fillStyle="#fff8ca";ctx.fillRect(-unit,-unit*3,unit,unit*3);ctx.restore();ctx.restore();
 }
 
 function resonanceGlyph(ctx:CanvasRenderingContext2D,theme:ResonanceEncounter["theme"],unit:number,color:string,active:boolean,time:number,phase:number){
@@ -144,7 +146,7 @@ function resonanceGlyph(ctx:CanvasRenderingContext2D,theme:ResonanceEncounter["t
   }
 }
 
-function projectWorldPoint(point:[number,number],pose:Pose,depths:Float32Array,width:number,horizon:number,height:number,maxDistance=22){
+function projectWorldPoint(point:[number,number],pose:Pose,depths:Float32Array,width:number,horizon:number,height:number,maxDistance=SPATIAL_VISIBILITY_DISTANCE){
   const dx=point[0]-pose.x,dy=point[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
   if(dist<.25||dist>maxDistance||Math.abs(rel)>FOV*.59)return null;
   const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.2)return null;
@@ -175,11 +177,20 @@ function renderRealityEffect(ctx:CanvasRenderingContext2D,effect:RealityEffect,x
 }
 
 function renderCenterpiece(ctx:CanvasRenderingContext2D,encounter:ResonanceEncounter,x:number,y:number,size:number,time:number,reducedMotion:boolean){
-  const count=encounter.elements.length,active=encounter.elements.filter(item=>item.active).length,unit=Math.max(2,Math.floor(size/24)),radius=size*.22;
+  const count=encounter.elements.length,active=encounter.elements.filter(item=>item.active).length,unit=Math.max(2,Math.floor(size/24)),radius=size*.24;
   ctx.save();ctx.translate(Math.round(x),Math.round(y-size*.15));
-  const halo=ctx.createRadialGradient(0,0,unit,0,0,size*.42);halo.addColorStop(0,`${encounter.motif.color}72`);halo.addColorStop(.52,`${encounter.motif.color}22`);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-size*.45,-size*.45,size*.9,size*.9);
-  ctx.lineWidth=Math.max(1,unit);for(let i=0;i<count;i++){const angle=-Math.PI/2+i/count*Math.PI*2+(reducedMotion?0:Math.sin(time*.7)*.04),next=-Math.PI/2+(i+1)/count*Math.PI*2;ctx.beginPath();ctx.strokeStyle=i<active?(encounter.relevance==="objective_relevant"&&encounter.completed?"#f2cf69":encounter.motif.color):"rgba(185,194,184,.25)";ctx.arc(0,0,radius,angle+.08,next-.08);ctx.stroke()}
-  ctx.fillStyle=encounter.completed?"#fff4c5":"rgba(210,220,211,.7)";ctx.fillRect(-unit,-unit,unit*2,unit*2);
+  const halo=ctx.createRadialGradient(0,0,unit,0,0,size*.48);halo.addColorStop(0,`${encounter.motif.color}92`);halo.addColorStop(.52,`${encounter.motif.color}38`);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-size*.5,-size*.5,size,size);
+  // The centerpiece is a world object first and a progress display second.
+  // Repeating the encounter's actual form here makes the opening read as a
+  // sleeping machine/flower/shell rather than an abstract HUD reticle.
+  // Progress lives in the sculpture's satellite pieces, not in a circular
+  // meter. A complete ring read as a targeting HUD even though it was
+  // projected in world space.
+  ctx.lineWidth=Math.max(1,unit*.7);for(let i=0;i<count;i++){const angle=-Math.PI/2+i/count*Math.PI*2+(reducedMotion?0:Math.sin(time*.7+i)*.055),markerX=Math.cos(angle)*radius,markerY=Math.sin(angle)*radius;ctx.beginPath();ctx.strokeStyle=i<active?encounter.motif.color:"rgba(190,205,197,.25)";ctx.moveTo(Math.cos(angle)*radius*.38,Math.sin(angle)*radius*.38);ctx.lineTo(markerX,markerY);ctx.stroke();ctx.save();ctx.translate(markerX,markerY);ctx.rotate(angle+(active>i&&!reducedMotion?Math.sin(time*2+i)*.18:0));ctx.fillStyle=i<active?"#fff4c5":"rgba(185,198,190,.7)";ctx.fillRect(-unit*1.5,-unit,unit*3,unit*2);ctx.fillStyle=i<active?encounter.motif.color:"rgba(137,151,143,.68)";ctx.fillRect(-unit,unit,unit*2,unit*2);ctx.restore()}
+  ctx.save();
+  const coreUnit=Math.max(3,Math.floor(size/(encounter.teaching?15:18))),coreScale=encounter.teaching?1.15:1;ctx.scale(coreScale,coreScale);
+  resonanceGlyph(ctx,encounter.theme,coreUnit,encounter.completed?"#fff4c5":active>0?encounter.motif.color:"#c6d2ca",active>0,time,17.3);
+  ctx.restore();
   if(!reducedMotion&&active>0&&!encounter.completed){const a=time*1.3;ctx.fillStyle=encounter.motif.color;ctx.fillRect(Math.cos(a)*radius-unit,Math.sin(a)*radius-unit,unit*2,unit*2)}
   ctx.restore();
 }
@@ -188,19 +199,27 @@ function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncou
   const{width,height}=ctx.canvas;
   for(const encounter of encounters){
     const activeCount=encounter.elements.filter(element=>element.active).length,progress=activeCount/encounter.elements.length;
-    const centerProjection=projectWorldPoint([encounter.center[0]+.5,encounter.center[1]+.5],pose,depths,width,horizon,height,22);
+    const completionAge=encounter.completedAt===null?-1:(Date.now()-encounter.completedAt)/1000;
+    const visualOrigin=encounter.reality.stage==="completing"&&completionAge>=0&&completionAge<2.8&&encounter.reality.completionPosition
+      ?encounter.reality.completionPosition:[encounter.center[0]+.5,encounter.center[1]+.5] as [number,number];
+    const centerProjection=projectWorldPoint(visualOrigin,pose,depths,width,horizon,height);
     if(centerProjection){
-      const chaos=accumulation?.chaos.activeIntensity??0,size=Math.max(48,Math.min(height*.88,height/Math.max(.6,centerProjection.corrected)*(.58+chaos*.12))),completionAge=encounter.completedAt===null?-1:(Date.now()-encounter.completedAt)/1000;
+      const chaos=accumulation?.chaos.activeIntensity??0,teachingBoost=encounter.teaching?1.24:1,distant=centerProjection.dist>18,size=Math.max(distant?22:encounter.teaching?104:76,Math.min(height*1.08,height/Math.max(.6,centerProjection.corrected)*(.68+chaos*.16)*teachingBoost));
       const effects=encounter.reality.stage==="dormant"?[]:encounter.reality.stage==="assembling"?encounter.reality.activationEffects.filter(effect=>effect.startedAt!==null):[encounter.reality.completionEffect,...encounter.reality.persistentEffects];
       const layerCount=Math.min(encounter.completed?6:2,accumulation?.chaos.maximumLayerCount??2);Array.from({length:Math.min(layerCount,effects.length?Math.max(effects.length,layerCount):0)},(_,index)=>effects[index%effects.length]!).forEach((effect,index)=>renderRealityEffect(ctx,effect,centerProjection.sx,centerProjection.sy-size*.12,size,time,progress,completionAge,reducedMotion,index+1));
       renderCenterpiece(ctx,encounter,centerProjection.sx,centerProjection.sy,size,time,reducedMotion);
     }
     const projected=encounter.elements.map((element,index)=>{
       const dx=element.position[0]-pose.x,dy=element.position[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
-      if(dist<.25||dist>18||Math.abs(rel)>FOV*.59)return null;const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.16)return null;
-      const size=Math.max(7,Math.min(58,height/Math.max(.55,corrected)*.09)),unit=Math.max(1,Math.floor(size/7)),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*(element.active?.7:1.2);
+      if(dist<.25||dist>SPATIAL_VISIBILITY_DISTANCE||Math.abs(rel)>FOV*.59)return null;const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.16)return null;
+      const minimumSize=dist>18?6:encounter.teaching?20:10,maximumSize=encounter.teaching?96:76,scale=encounter.teaching?.2:.135;
+      const size=Math.max(minimumSize,Math.min(maximumSize,height/Math.max(.55,corrected)*scale)),unit=Math.max(1,Math.floor(size/7)),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*(element.active?.7:1.2);
       return{element,index,dist,corrected,sx,sy:sy+bob,size,unit};
     });
+    // A configuration reads as one accomplishable object before MT touches
+    // it. These faint local tethers connect its parts to the centerpiece; they
+    // are spatial, occluded, and never extend toward a route or objective.
+    if(centerProjection){for(const projection of projected){if(!projection)continue;ctx.save();ctx.strokeStyle=projection.element.active?"#fff1ac":encounter.motif.color;ctx.globalAlpha=projection.element.active?.72:encounter.teaching?.32:.22;ctx.lineWidth=Math.max(1,projection.unit*(projection.element.active?.72:.5));ctx.setLineDash(projection.element.active?[]:[Math.max(2,projection.unit*2),Math.max(3,projection.unit*3)]);ctx.beginPath();ctx.moveTo(projection.sx,projection.sy);ctx.lineTo(centerProjection.sx,centerProjection.sy);ctx.stroke();ctx.restore()}}
     // Activation sends a brief visible response toward the rest of the
     // configuration. There is deliberately no persistent line: this is
     // accomplishment feedback, not a breadcrumb or navigation system.
@@ -211,11 +230,12 @@ function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncou
     for(const [index,element] of encounter.elements.entries()){
       const projection=projected[index];if(!projection)continue;const{sx,sy,unit}=projection,accomplishmentColor=encounter.completed&&encounter.relevance==="objective_relevant"?"#f4ce63":encounter.motif.color;
       ctx.save();ctx.translate(Math.round(sx),Math.round(sy));
-      const dormantPulse=reducedMotion?.72:.62+Math.sin(time*3.1+index*1.9)*.16;
+      const dormantPulse=reducedMotion?.82:.74+Math.sin(time*3.1+index*1.9)*.16;
       ctx.globalAlpha=element.active ? 0.98 : Math.min(.94,dormantPulse+progress*.22);
       if(element.active){const halo=ctx.createRadialGradient(0,0,0,0,0,unit*7);halo.addColorStop(0,accomplishmentColor);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*7,-unit*7,unit*14,unit*14)}
       if(element.active&&element.activatedAt&&!reducedMotion){const age=Math.max(0,Date.now()-element.activatedAt)/1000;if(age<1.15){const radius=unit*(3+age*15);ctx.strokeStyle=`rgba(255,245,191,${(1-age/1.15)*.88})`;ctx.lineWidth=Math.max(1,unit*.65);ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke()}}
-      resonanceGlyph(ctx,encounter.theme,unit,element.active?accomplishmentColor:progress>0?encounter.motif.color:"#7f8b82",element.active,reducedMotion?0:time,index*1.7);ctx.restore();
+      if(!element.active){const dormantHalo=ctx.createRadialGradient(0,0,0,0,0,unit*(encounter.teaching?8:6));dormantHalo.addColorStop(0,`${encounter.motif.color}44`);dormantHalo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=dormantHalo;ctx.fillRect(-unit*8,-unit*8,unit*16,unit*16)}
+      resonanceGlyph(ctx,encounter.theme,unit,element.active?accomplishmentColor:progress>0?encounter.motif.color:"#b8c6bd",element.active,reducedMotion?0:time,index*1.7);ctx.restore();
     }
   }
 }
@@ -224,7 +244,7 @@ function renderSpectacles(ctx:CanvasRenderingContext2D,scene:PerceivedScene,pose
   const{width,height}=ctx.canvas,t=reducedMotion?0:time,density=Math.max(4,Math.round(7+intensity*11));ctx.save();ctx.imageSmoothingEnabled=false;
   for(const spectacle of scene.spectacles){
     const dx=spectacle.worldPosition[0]-pose.x,dy=spectacle.worldPosition[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
-    if(dist<=.35||dist>12||Math.abs(rel)>FOV*.58)continue;
+    if(dist<=.35||dist>SPATIAL_VISIBILITY_DISTANCE||Math.abs(rel)>FOV*.58)continue;
     const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.2)continue;
     const size=Math.min(height*.78,height/Math.max(.5,corrected)*(spectacle.salience==="major"?.8:.48)),sy=horizon+height/(dist*3.8)-size*.18;
     const seed=hash32(spectacle.id),accent=THEMES[spectacle.theme].accent,kind=spectacle.visualKind;
@@ -320,7 +340,7 @@ function wallSprite(ctx:CanvasRenderingContext2D,x:number,top:number,width:numbe
 export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor[],appearance:ThemeMemory,x:number,y:number,collageIntensity=0):AmbientEntity[]{
   const out:AmbientEntity[]=[];
   const rememberedThemes:ThemeId[]=[...new Set(anchors.filter(anchor=>anchor.triggered).map(anchor=>anchor.theme))];
-  for(let cy=Math.floor(y)-14;cy<=Math.floor(y)+14;cy++)for(let cx=Math.floor(x)-14;cx<=Math.floor(x)+14;cx++){
+  for(let cy=Math.floor(y)-SPATIAL_VISIBILITY_DISTANCE;cy<=Math.floor(y)+SPATIAL_VISIBILITY_DISTANCE;cy++)for(let cx=Math.floor(x)-SPATIAL_VISIBILITY_DISTANCE;cx<=Math.floor(x)+SPATIAL_VISIBILITY_DISTANCE;cx++){
     if(world.tile(cx,cy)!==0)continue;const info=appearance.get(`${cx},${cy}`)??themeAt(anchors,cx,cy);if(info.id==="neutral")continue;
     const h=hash32(seed,"entity",cx,cy);if(h%17!==0||((h>>>8)%100)/100>info.influence)continue;let entityTheme=info.id;
     if(rememberedThemes.length>1&&((h>>>14)%100)/100<collageIntensity*.38)entityTheme=rememberedThemes[(h>>>20)%rememberedThemes.length]!;
@@ -332,14 +352,14 @@ export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor
 export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anchors:ThemeAnchor[],entities:AmbientEntity[],appearance:ThemeMemory,protectedCells:Set<string>,pose:Pose,moving:boolean,reducedMotion:boolean,tick:number,activeStar:StarObjective|null=null,scene:PerceivedScene|null=null,visual:VisualFrameState|null=null,ariadne:AriadneBodyState|null=null,resonances:ResonanceEncounter[]=[],accumulation:ResonanceState|null=null){
   const{width,height}=ctx.canvas,time=performance.now()*.001;const here=themeAt(anchors,pose.x,pose.y),neutral=THEMES.neutral;
   const behavior=!reducedMotion?(here.id==="beach"?Math.sin(time*2)*2:here.id==="tornado"?Math.sin(time*5)*1.5:here.id==="frozen"?Math.sin(time)*.7:0):0;
-  const bob=moving&&!reducedMotion?Math.sin(pose.bob)*3.2:0,lean=!reducedMotion?(visual?.turnRate??0)*height*.008:0,collision=!reducedMotion?(visual?.collisionPulse??0)*Math.sin(time*22)*3:0,horizon=height*.47+bob+behavior+lean+collision;
+  const accomplishment=!reducedMotion?(visual?.accomplishmentPulse??0):0,bob=moving&&!reducedMotion?Math.sin(pose.bob)*3.2:0,lean=!reducedMotion?(visual?.turnRate??0)*height*.008:0,collision=!reducedMotion?(visual?.collisionPulse??0)*Math.sin(time*22)*3:0,horizon=height*.47+bob+behavior+lean+collision+Math.sin((1-accomplishment)*Math.PI*2)*height*.032*accomplishment;
   const ceiling=ctx.createLinearGradient(0,0,0,horizon);ceiling.addColorStop(0,neutral.ceiling);ceiling.addColorStop(1,"#282923");ctx.fillStyle=ceiling;ctx.fillRect(0,0,width,horizon);
   const floor=ctx.createLinearGradient(0,horizon,0,height);floor.addColorStop(0,neutral.floor);floor.addColorStop(1,"#10120f");ctx.fillStyle=floor;ctx.fillRect(0,horizon,width,height-horizon);
   renderPlanes(ctx,anchors,appearance,protectedCells,pose,horizon,height,reducedMotion);
   renderDistantSky(ctx,anchors,pose,horizon,tick);
   const depths=new Float32Array(RAYS);
   for(let i=0;i<RAYS;i++){
-    const angle=pose.angle-FOV/2+i/RAYS*FOV,ray=cast(world,pose,angle,tick),corrected=ray.distance*Math.cos(angle-pose.angle);depths[i]=corrected;
+    const rayPosition=i/RAYS,fold=Math.sin(rayPosition*Math.PI*2+time*2.4)*accomplishment*.026,angle=pose.angle-FOV/2+rayPosition*FOV+fold,ray=cast(world,pose,angle,tick),corrected=ray.distance*Math.cos(angle-pose.angle);depths[i]=corrected;
     const wallH=Math.min(height*1.7,height/Math.max(corrected,.22)),top=horizon-wallH/2,x=i/RAYS*width,cw=width/RAYS+1;
     const theme=rememberedThemeAt(anchors,appearance,ray.mapX,ray.mapY,protectedCells.has(`${ray.mapX},${ray.mapY}`)),wall=THEMES[theme.id],palette=themedWall(theme),fog=Math.min(1,corrected/12),seed=hash32(ray.mapX,ray.mapY,ray.side),entranceGate=world.isEntranceGate(ray.mapX,ray.mapY);
     const hue=palette[0],sat=Math.max(8,palette[1]-fog*9),light=Math.max(16,palette[2]-fog*24-ray.side*4+(seed%7-3));
@@ -369,12 +389,16 @@ export function renderWorld(ctx:CanvasRenderingContext2D,world:InfiniteWorld,anc
   if(scene)renderSpectacles(ctx,scene,pose,depths,horizon,time,visual?.relationshipIntensity??0,reducedMotion);
   renderResonances(ctx,resonances,pose,depths,horizon,time,reducedMotion,accumulation);
   const perceivedIds=scene?new Set(scene.objects.map(object=>object.id)):null;
-  const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>(!perceivedIds||perceivedIds.has(v.e.id))&&Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<12).sort((a,b)=>b.dist-a.dist).slice(0,28);
-  for(const v of visible){const sx=(.5+v.rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS)));if(v.dist>depths[rayIndex]+.2)continue;const size=Math.min(120,height/v.dist*.33*v.e.scale),sy=horizon+height/(v.dist*3.8);sprite(ctx,sx,sy,size,v.e.kind,THEMES[v.e.theme].accent,time,v.e.phase)}
-  if(activeStar){const projection=visibleStarProjection(world,activeStar,pose,tick,12,FOV);
-    if(projection){const {distance:dist,relativeAngle:rel}=projection,sx=(.5+rel/FOV)*width,size=Math.min(150,height/dist*.42),sy=horizon+height/(dist*3.8);objectiveStar(ctx,sx,sy,size,time)}
+  const visible=entities.map(e=>{const dx=e.x-pose.x,dy=e.y-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;return{e,dist,rel}}).filter(v=>(!perceivedIds||perceivedIds.has(v.e.id))&&Math.abs(v.rel)<FOV*.58&&v.dist>.35&&v.dist<SPATIAL_VISIBILITY_DISTANCE).sort((a,b)=>b.dist-a.dist).slice(0,42);
+  for(const v of visible){const sx=(.5+v.rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS)));if(v.dist>depths[rayIndex]+.2)continue;const size=Math.max(v.dist>18?5:8,Math.min(120,height/v.dist*.33*v.e.scale)),sy=horizon+height/(v.dist*3.8);sprite(ctx,sx,sy,size,v.e.kind,THEMES[v.e.theme].accent,time,v.e.phase)}
+  if(activeStar){const projection=visibleStarProjection(world,activeStar,pose,tick,SPATIAL_VISIBILITY_DISTANCE,FOV);
+    if(projection){const {distance:dist,relativeAngle:rel}=projection,sx=(.5+rel/FOV)*width,size=Math.max(20,Math.min(170,height/dist*.58)),floorY=horizon+height/(dist*3.8),sy=floorY-size*.82;objectiveStar(ctx,sx,sy,size,time)}
   }
   if(visual&&ariadne)renderAriadneFairy(ctx,time,ariadne,visual,pose,depths,horizon,accumulation);
+  if(accomplishment>0){
+    const color=visual?.accomplishmentGold?"242,205,91":"108,229,222",completed=visual?.accomplishmentCompleted??false,edge=ctx.createRadialGradient(width/2,horizon,height*.08,width/2,horizon,width*.72);edge.addColorStop(0,`rgba(${color},${accomplishment*(completed?.08:.04)})`);edge.addColorStop(1,`rgba(${color},${accomplishment*(completed?.38:.22)})`);ctx.fillStyle=edge;ctx.fillRect(0,0,width,height);
+    const rings=completed?5:2;ctx.save();ctx.translate(width/2,horizon);ctx.strokeStyle=`rgba(${color},${accomplishment*(completed?.72:.42)})`;ctx.lineWidth=completed?3:2;for(let index=0;index<rings;index++){const expansion=(1-accomplishment)*width*.18,indexScale=.16+index*.12;ctx.strokeRect(-width*(indexScale+.08)-expansion/2,-height*(indexScale*.46+.06)-expansion/4,width*(indexScale*2+.16)+expansion,height*(indexScale*.92+.12)+expansion/2)}ctx.restore();
+  }
   const vignette=ctx.createRadialGradient(width/2,horizon,height*.12,width/2,horizon,width*.72);vignette.addColorStop(0,"rgba(0,0,0,0)");vignette.addColorStop(1,"rgba(3,4,3,.43)");ctx.fillStyle=vignette;ctx.fillRect(0,0,width,height);
   ctx.fillStyle="rgba(220,215,194,.45)";ctx.fillRect(width/2-7,horizon,14,1);ctx.fillRect(width/2,horizon-7,1,14);
   ctx.fillStyle="rgba(0,0,0,.05)";for(let y=0;y<height;y+=5)ctx.fillRect(0,y,width,1);

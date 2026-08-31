@@ -25,19 +25,21 @@ test("every chunk has one connected walkable network containing all portals",()=
   }
 });
 
-test("long corridors separate decisions while preserving branches and dead ends",()=>{
-  let cells=0,deadEnds=0,corridors=0,junctions=0;
+test("long corridors separate decisions while every region preserves alternate routes",()=>{
+  let cells=0,deadEnds=0,corridors=0,junctions=0,cycles=0,minCycles=Infinity;
   for(let seed=1;seed<=240;seed++){
     const topology=chunkTopology(generateChunk(seed,(seed%13)-6,(seed%17)-8,seed%4));
-    cells+=topology.logicalCells;deadEnds+=topology.deadEnds;corridors+=topology.corridors;junctions+=topology.junctions;
+    cells+=topology.logicalCells;deadEnds+=topology.deadEnds;corridors+=topology.corridors;junctions+=topology.junctions;cycles+=topology.cycleRank;minCycles=Math.min(minCycles,topology.cycleRank);
   }
   assert.equal(LOGICAL_SPACING,14);
   assert.ok(LOGICAL_SPACING/MOVE_ACCELERATION.maximum>=5,"near-junction episodes must remain at least five seconds apart at maximum speed");
   assert.equal(cells/240,16);
-  assert.ok(deadEnds/cells>=.24,`dead-end rate was only ${deadEnds/cells}`);
+  assert.ok(minCycles>=1,"every generated region must contain a route that reconnects instead of requiring exact backtracking");
+  assert.ok(cycles/240>=1.35,`average local cycle count was only ${cycles/240}`);
+  assert.ok(deadEnds/cells>=.08&&deadEnds/cells<=.2,`dead-end rate was ${deadEnds/cells}`);
   assert.ok(corridors/cells<.55,`corridor rate was ${corridors/cells}`);
-  assert.ok(junctions/cells>=.2,`junction rate was only ${junctions/cells}`);
-  assert.ok(junctions/240<6,`average junction count was ${junctions/240}`);
+  assert.ok(junctions/cells>=.28,`junction rate was only ${junctions/cells}`);
+  assert.ok(junctions/240<7,`average junction count was ${junctions/240}`);
   assert.ok(junctions/(240*CHUNK_SIZE*CHUNK_SIZE)<.025,`physical decision density was ${junctions/(240*CHUNK_SIZE*CHUNK_SIZE)}`);
 });
 
@@ -69,14 +71,14 @@ test("the starting corridor has exactly one traversable direction and opens afte
   assert.deepEqual(immediateNeighbors,[[2,1]]);
 });
 
-test("randomized entrances never terminate inside the camera range and join a continuing route",()=>{
+test("randomized entrances never terminate inside the camera range and join a genuine choice",()=>{
   const directions=[[1,0],[0,1],[-1,0],[0,-1]];
   for(let seed=1;seed<=256;seed++){
     const world=new InfiniteWorld(seed),[dx,dy]=directions[seed%directions.length],gate=world.setEntranceCorridor(1,1,dx,dy);
     const endpoint=gate.exit,distance=Math.abs(endpoint[0]-1)+Math.abs(endpoint[1]-1);
     assert.ok(distance>=LOGICAL_SPACING+DECISION_VISIBILITY_DISTANCE,`seed ${seed} closed after ${distance} cells`);
     const onward=[[1,0],[-1,0],[0,1],[0,-1]].filter(([nx,ny])=>!(nx===-dx&&ny===-dy)&&world.tile(endpoint[0]+nx,endpoint[1]+ny)===0);
-    assert.ok(onward.length>0,`seed ${seed} entrance did not join the maze`);
+    assert.ok(onward.length>=2,`seed ${seed} entrance joined only ${onward.length} onward route(s)`);
     assert.deepEqual(gate.facing,[dx,dy]);
   }
 });
@@ -136,7 +138,7 @@ async function requestCompanion(body){
 
 test("product shell promises the search without claiming the exit was found",async()=>{
   const response=await render();assert.equal(response.status,200);const html=await response.text();
-  assert.match(html,/ENTER CHAT/);assert.match(html,/Follow Ariadne and find the exit!/);assert.match(html,/☆☆☆☆/);assert.doesNotMatch(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|you (?:found|reached) the exit|you win/i);
+  assert.doesNotMatch(html,/ENTER CHAT|CAM_01|NEW SIGNAL/);assert.match(html,/Follow Ariadne and find the exit!/);assert.match(html,/☆☆☆☆/);assert.doesNotMatch(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|you (?:found|reached) the exit|you win/i);
 });
 
 test("companion route works without credentials through the in-world fallback",async()=>{
@@ -145,7 +147,7 @@ test("companion route works without credentials through the in-world fallback",a
   const perceivedScene={setting:{primaryEnvironment:"neutral",blendedEnvironments:["neutral"],visibleDetails:["the shifting maze"]},geometry:{facingDescription:"MT is facing east",visibleOpenings:[{direction:"straight",description:"an open passage ahead"}],visibleEndAhead:false,visibleJunction:false},objects:[],spectacles:[],objective:{starVisible:false,starDirection:null,starDistance:null},mtAttention:{lookingToward:null,approaching:null,movingAwayFrom:null,pausedNear:null}};
   const embodiment={currentAction:"You are floating naturally beside MT's right shoulder.",positionRelativeToMT:"beside MT's right shoulder",relationToBelievedRoute:null,mtLookingAtAriadne:false,mtApproachingAriadne:false,mtFollowingHerLead:false,mtLeavingWhileSheWaits:false,mtReturningToHer:false};
   const response=await requestCompanion({sessionId:"test",trigger:{type:"initial_guidance"},speechAnchor:{episodeId:null,episodeState:null,speechAct:"passing_companionship",speechEpoch:0},dispositionCard:"You are warmly confident and allowing MT room.",activity:{state:"stationary",stationarySeconds:0,positionChangedSinceRecommendation:false,headingChangedSinceRecommendation:false,atVisibleChoice:false,description:"Session just started."},recommendation:null,recommendationEvidence:null,actualTrajectory:[],currentView:{facing:"east",centerView:"a corridor",openings:["straight"],blocked:["left","right","back"],description:"MT faces an open corridor."},environment:null,perceivedScene,sceneChanges:[],rememberedMap:"###\n#P.\n###",legalRoutes:[route],recentMessages:[],olderContextSummary:"",companionArc:{phase:"charming",performanceDirection:"You are making a charming first impression.",relationshipContext:"Nothing has happened yet."},objective:{collectedStars:0,currentGoal:"first_star",activeStarVisible:false,latestEvent:"searching"},navigationBelief:belief,embodiment});
-  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,undefined);assert.equal(body.message,"Hi, MT—I’m Ariadne. I’m here to help you find four stars, then the exit.");
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.source,"fallback");assert.equal(body.selectedRouteId,undefined);assert.match(body.message,/MT—hi! I’m Ariadne/);assert.match(body.message,/wake it/);
 });
 
 test("companion provider is configured for OpenRouter without exposing a key",async()=>{

@@ -77,6 +77,31 @@ export function generateChunk(seed, cx, cy) {
     seen.add(id);carveLine(tiles,edge.x,edge.y,edge.nx,edge.ny);
     addFrontier(edge.nx,edge.ny);
   }
+  // A perfect maze is mathematically connected but experientially brittle:
+  // every mistake can only be repaired by retracing the same corridor. Braid
+  // a few deterministic logical edges so each streamed region contains real
+  // alternate routes and reconnections. Logical spacing is unchanged, so the
+  // extra choices do not arrive faster than Ariadne can perceive them.
+  const logicalDegree=(x,y)=>[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>tiles[y+dy]?.[x+dx]===0).length;
+  const braidCandidates=[];
+  for(let y=LOGICAL_MIN;y<=LOGICAL_MAX;y+=LOGICAL_SPACING)for(let x=LOGICAL_MIN;x<=LOGICAL_MAX;x+=LOGICAL_SPACING){
+    for(const[dx,dy]of[[LOGICAL_SPACING,0],[0,LOGICAL_SPACING]]){
+      const nx=x+dx,ny=y+dy;if(nx>LOGICAL_MAX||ny>LOGICAL_MAX)continue;
+      if(tiles[y+Math.sign(dy)]?.[x+Math.sign(dx)]===0)continue;
+      braidCandidates.push({x,y,nx,ny,tie:random()});
+    }
+  }
+  const braidTarget=1+(hash32(seed,"braids",cx,cy)%2);
+  braidCandidates.sort((a,b)=>{
+    const aNeed=(logicalDegree(a.x,a.y)===1?2:0)+(logicalDegree(a.nx,a.ny)===1?2:0),bNeed=(logicalDegree(b.x,b.y)===1?2:0)+(logicalDegree(b.nx,b.ny)===1?2:0);
+    return bNeed-aNeed||a.tie-b.tie;
+  });
+  let braided=0;
+  for(const edge of braidCandidates){
+    if(braided>=braidTarget)break;
+    if(logicalDegree(edge.x,edge.y)>=3||logicalDegree(edge.nx,edge.ny)>=3)continue;
+    carveLine(tiles,edge.x,edge.y,edge.nx,edge.ny);braided++;
+  }
   const portals = portalsFor(seed, cx, cy);
   carveLine(tiles, portals.north, 0, portals.north, 1);
   carveLine(tiles, portals.south, CHUNK_SIZE - 1, portals.south, LOGICAL_MAX);
@@ -130,16 +155,18 @@ export class InfiniteWorld {
     // existing maze cell that has a natural way onward, then join the sealed
     // approach corridor to it. The default begins beyond the camera range so a
     // new run cannot present MT with a wall filling the opening view.
-    let corridorLength = requestedLength;
-    for (let step = requestedLength; step <= requestedLength + CHUNK_SIZE * 2; step++) {
+    let corridorLength = requestedLength,firstContinuingLength=null,foundBranch=false;
+    for (let step = requestedLength; step <= requestedLength + CHUNK_SIZE * 3; step++) {
       const x = insideX + dx * step, y = insideY + dy * step;
       if (this.tile(x, y) !== 0) continue;
-      const continues = [[1,0],[-1,0],[0,1],[0,-1]].some(([nx,ny]) => {
-        if (nx === -dx && ny === -dy) return false;
-        return this.tile(x + nx, y + ny) === 0;
-      });
-      if (continues) { corridorLength = step; break; }
+      const onward = [[1,0],[-1,0],[0,1],[0,-1]].filter(([nx,ny]) => !(nx === -dx && ny === -dy)&&this.tile(x + nx, y + ny) === 0);
+      if(onward.length>0&&firstContinuingLength===null)firstContinuingLength=step;
+      // Joining a single continuation can strand the whole opening on a
+      // dangling arm: MT walks to its end and can only retrace the entrance.
+      // Require a genuine decision so every new run opens into the maze.
+      if (onward.length >= 2) { corridorLength = step;foundBranch=true;break; }
     }
+    if(!foundBranch&&firstContinuingLength!==null)corridorLength=firstContinuingLength;
     const gate = this.setEntranceGate(insideX, insideY, dx, dy);
     for (let step = 0; step <= corridorLength; step++) {
       const x = insideX + dx * step, y = insideY + dy * step;
@@ -215,11 +242,13 @@ export function connectedTileCount(chunk) {
 }
 
 export function chunkTopology(chunk) {
-  let deadEnds=0,corridors=0,junctions=0,logicalCells=0;
+  let deadEnds=0,corridors=0,junctions=0,logicalCells=0,logicalEdges=0;
   for(let y=LOGICAL_MIN;y<=LOGICAL_MAX;y+=LOGICAL_SPACING)for(let x=LOGICAL_MIN;x<=LOGICAL_MAX;x+=LOGICAL_SPACING){
     if(chunk.tiles[y][x]!==0)continue;logicalCells++;
     const degree=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>chunk.tiles[y+dy]?.[x+dx]===0).length;
     if(degree===1)deadEnds++;else if(degree===2)corridors++;else if(degree>=3)junctions++;
+    if(x+LOGICAL_SPACING<=LOGICAL_MAX&&chunk.tiles[y][x+1]===0)logicalEdges++;
+    if(y+LOGICAL_SPACING<=LOGICAL_MAX&&chunk.tiles[y+1][x]===0)logicalEdges++;
   }
-  return{logicalCells,deadEnds,corridors,junctions};
+  return{logicalCells,deadEnds,corridors,junctions,cycleRank:Math.max(0,logicalEdges-logicalCells+1)};
 }
