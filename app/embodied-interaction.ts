@@ -1,12 +1,13 @@
 import type { CompanionEvent, CompanionPhase } from "./companion.ts";
+import type { AriadnePresence } from "./ariadne-body.ts";
 
 export type EmbodiedDecisionState=
   | "noticing"
   | "committing"
-  | "waiting"
+  | "route_marked"
   | "mt_following"
   | "mt_diverging"
-  | "mt_passed"
+  | "divergence_detected"
   | "route_contradicted"
   | "rejoining"
   | "resolved";
@@ -19,7 +20,6 @@ export type CompanionSpeechAct=
   | "invite_to_visible_choice"
   | "confirm_following"
   | "respond_to_divergence"
-  | "catch_up"
   | "repair_mistake"
   | "celebrate_rejoining"
   | "react_to_star"
@@ -29,7 +29,8 @@ export type CompanionSpeechAct=
   | "passing_companionship"
   | "reply_to_mt";
 
-export type SpeechAnchor={episodeId:string|null;episodeState:EmbodiedDecisionState|null;speechAct:CompanionSpeechAct;speechEpoch:number};
+export type SpeechPlacement="route_or_companion"|"with_mt"|"repairing"|"any";
+export type SpeechAnchor={episodeId:string|null;episodeState:EmbodiedDecisionState|null;speechAct:CompanionSpeechAct;speechEpoch:number;placement:SpeechPlacement};
 
 export type AriadneDisposition={
   warmth:number;confidence:number;attachment:number;apologyPressure:number;reassuranceNeed:number;attentionSeeking:number;insistence:number;recognitionIntensity:number;interpretiveCapture:number;
@@ -90,10 +91,30 @@ export function transitionEmbodiedEpisode(episode:EmbodiedDecisionEpisode,state:
   return episode.state===state?episode:{...episode,state,speechEpoch:episode.speechEpoch+(invalidateSpeech?1:0)};
 }
 
+export type EmbodiedObservation={
+  motion:"noticing"|"leading"|"route_marked"|"other";
+  presence:AriadnePresence;
+  followingLead:boolean;
+  choseAnotherRoute:boolean;
+  returningTowardAriadne:boolean;
+};
+
+export function advanceEpisodeFromBody(episode:EmbodiedDecisionEpisode,observation:EmbodiedObservation){
+  let state=episode.state,invalidate=false,response:"followed"|"diverged"|"rejoined"|null=null;
+  if(observation.motion==="noticing"||observation.motion==="leading")state="committing";
+  else if(observation.motion==="route_marked")state="route_marked";
+  if(observation.returningTowardAriadne){state="rejoining";invalidate=true;response="rejoined"}
+  else if(observation.followingLead){state="mt_following";response="followed"}
+  else if(observation.choseAnotherRoute){
+    if(observation.presence==="with_mt"){state="mt_diverging";response="diverged"}
+    else{state="divergence_detected";invalidate=episode.state!=="divergence_detected"}
+  }else if(observation.presence==="with_mt"&&episode.state==="route_marked"){state="resolved";invalidate=true}
+  return{episode:state===episode.state?episode:transitionEmbodiedEpisode(episode,state,invalidate),response};
+}
+
 export function speechActForEvent(event:CompanionEvent):CompanionSpeechAct{
   if(event.type==="new_junction_visible")return"invite_to_visible_choice";
-  if(event.type==="embodied_response")return event.response==="followed"?"confirm_following":event.response==="rejoined"?"celebrate_rejoining":event.response==="passed"?"catch_up":"respond_to_divergence";
-  if(event.type==="left_ariadne_waiting")return"catch_up";
+  if(event.type==="embodied_response")return event.response==="followed"?"confirm_following":event.response==="rejoined"?"celebrate_rejoining":"respond_to_divergence";
   if(event.type==="recommendation_contradicted"||event.type==="dead_end_visible"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted")return"repair_mistake";
   if(event.type==="star_visible"||event.type==="star_collected"||event.type==="objective_changed")return"react_to_star";
   if(event.type==="encounter_completed")return"celebrate_accomplishment";
@@ -106,7 +127,8 @@ export function speechActForEvent(event:CompanionEvent):CompanionSpeechAct{
 
 export function createSpeechAnchor(event:CompanionEvent,episode:EmbodiedDecisionEpisode|null):SpeechAnchor{
   const speechAct=speechActForEvent(event),episodeScoped=!["repair_mistake","react_to_star","celebrate_accomplishment","renew_hope","share_visible_discovery","passing_companionship","reply_to_mt"].includes(speechAct);
-  return{episodeId:episodeScoped?episode?.id??null:null,episodeState:episodeScoped?episode?.state??null:null,speechAct,speechEpoch:episodeScoped?episode?.speechEpoch??0:0};
+  const placement:SpeechPlacement=speechAct==="invite_to_visible_choice"||speechAct==="confirm_following"?"route_or_companion":speechAct==="respond_to_divergence"||speechAct==="celebrate_rejoining"?"with_mt":speechAct==="repair_mistake"?"repairing":"any";
+  return{episodeId:episodeScoped?episode?.id??null:null,episodeState:episodeScoped?episode?.state??null:null,speechAct,speechEpoch:episodeScoped?episode?.speechEpoch??0:0,placement};
 }
 
 export function speechBypassesProviderBackoff(event:CompanionEvent,force:boolean){
@@ -115,8 +137,15 @@ export function speechBypassesProviderBackoff(event:CompanionEvent,force:boolean
 }
 
 const compatibleStates:Record<CompanionSpeechAct,EmbodiedDecisionState[]>={
-  invite_to_visible_choice:["noticing","committing","waiting","mt_following"],confirm_following:["mt_following","rejoining"],respond_to_divergence:["mt_diverging","mt_passed"],catch_up:["mt_diverging","mt_passed"],repair_mistake:["route_contradicted"],celebrate_rejoining:["rejoining","mt_following"],react_to_star:[],celebrate_accomplishment:[],renew_hope:[],share_visible_discovery:[],passing_companionship:[],reply_to_mt:[],
+  invite_to_visible_choice:["noticing","committing","route_marked","mt_following"],confirm_following:["mt_following","rejoining"],respond_to_divergence:["mt_diverging"],repair_mistake:["route_contradicted"],celebrate_rejoining:["rejoining","mt_following"],react_to_star:[],celebrate_accomplishment:[],renew_hope:[],share_visible_discovery:[],passing_companionship:[],reply_to_mt:[],
 };
+
+export function speechPlacementIsCompatible(anchor:SpeechAnchor,presence:AriadnePresence){
+  if(anchor.placement==="any")return true;
+  if(anchor.placement==="repairing")return presence==="repairing";
+  if(anchor.placement==="with_mt")return presence==="with_mt";
+  return presence==="leading_ahead"||presence==="with_mt";
+}
 
 export function speechAnchorIsCompatible(anchor:SpeechAnchor,episode:EmbodiedDecisionEpisode|null){
   if(anchor.episodeId===null)return true;
@@ -128,8 +157,7 @@ export function speechActDirection(acting:CompanionSpeechAct){
   const directions:Record<CompanionSpeechAct,string>={
     invite_to_visible_choice:"Your body is already identifying the passage. Invite MT with deictic language such as ‘this way’, ‘over here’, or ‘follow me’; do not name a geometric direction.",
     confirm_following:"MT is moving with the passage you physically chose. Respond with grounded delight or encouragement; do not repeat the direction.",
-    respond_to_divergence:"MT took another passage. You have left your old position and are catching up. React to that concrete choice without pretending it was your original route.",
-    catch_up:"You are catching up beside MT after they moved on. Speak from beside MT, not as though you are still waiting behind.",
+    respond_to_divergence:"MT took another passage. You immediately left the entrance you had indicated and now move with MT. React to the concrete choice without pretending it was your original route or describing yourself as behind.",
     repair_mistake:"Visible reality contradicted your guidance. Apologize for the specific mistake with care, then recover hopeful confidence without issuing a cardinal direction.",
     celebrate_rejoining:"MT has just returned toward you or crossed your route again. Let your relief and attachment show without inventing a larger history.",
     react_to_star:"React to the supplied visible or collected star as a concrete event in the current journey.",

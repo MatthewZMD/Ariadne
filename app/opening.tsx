@@ -1,50 +1,52 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import Image from "next/image";
 
 export type ExperienceState = "title" | "story" | "playing" | "paused" | "ending";
 
 const STORY = [
   {
-    art: "stars",
-    lines: ["On the night the stars changed places, four of them fell from the sky."],
+    art: "remembered",
+    lines: ["The maze once remembered every place it touched—and every way home."],
   },
   {
-    art: "maze",
-    lines: ["They vanished into the Great Maze, where corridors twist beneath forgotten worlds."],
+    art: "fracture",
+    lines: ["Then its memory broke.", "Places remained, but the paths between them were forgotten."],
+  },
+  {
+    art: "anchors",
+    lines: ["Four stars had fixed its paths in place.", "When they fell, the way outward vanished with them."],
+  },
+  {
+    art: "memories",
+    lines: ["Fragments of the maze’s memory still sleep inside the things it carried with it."],
+  },
+  {
+    art: "ariadne",
+    lines: ["One thread of memory remained alive.", "Her name was Ariadne."],
+  },
+  {
+    art: "belief",
+    lines: ["She believed four awakened stars would let her stitch the maze’s paths together again."],
   },
   {
     art: "gate",
-    lines: ["Without the four stars, the path through the maze can never be revealed."],
+    lines: ["But a thread cannot cross a maze alone.", "MT entered the gate."],
   },
   {
-    art: "adventurers",
-    lines: ["Knights entered with swords.", "Wizards entered with spells.", "Cartographers entered with very large maps."],
-  },
-  {
-    art: "maps",
-    lines: ["The maze kept the swords, confused the spells, and made a complete mess of the maps."],
-  },
-  {
-    art: "mt",
-    lines: ["So the kingdom called for a different kind of hero.", "MT answered."],
-  },
-  {
-    art: "meeting",
-    lines: ["At the maze gate, a small light flickered to life.", "Her name was Ariadne. She would be MT's companion and guide."],
-  },
-  {
-    art: "team",
-    lines: ["Four stars. One legendary maze.", "One brand-new team, ready for adventure."],
+    art: "premise",
+    lines: ["Beyond the gate, the first sleeping memory waited to be awakened.", "Together, MT and the living thread entered the broken maze."],
   },
 ] as const;
+
+export const OPENING_ARIADNE_LINE="Hi, MT—I’m Ariadne, and I’m here to guide you to the four stars that once held this maze’s exit open. They’ve gone dark, and the exit vanished with them. Wake them with me—I’m sure we can bring it back.";
 
 function Logo() {
   return <Image className="title-card-image" src="/ariadne-title-card.png" alt="Ariadne" width={1672} height={941} unoptimized priority />;
 }
 
-export function TitleScreen({ onStart,onStory,ready }: { onStart: () => void;onStory:()=>void;ready:boolean }) {
+export function TitleScreen({ onStart,ready }: { onStart: () => void;ready:boolean }) {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => { if (event.key === "Enter") { event.preventDefault(); onStart(); } };
     addEventListener("keydown", handle);return () => removeEventListener("keydown", handle);
@@ -53,8 +55,7 @@ export function TitleScreen({ onStart,onStory,ready }: { onStart: () => void;onS
     <div className="front-panel title-panel">
       <Logo />
       <button className="pixel-button primary" type="button" onClick={onStart} disabled={!ready}>{ready?"START":"OPENING THE GATE..."}</button>
-      <button className="text-button" type="button" onClick={onStory}>OPENING STORY</button>
-      <p className="front-hint">ENTER · MOVE TO AWAKEN ARIADNE</p>
+      <p className="front-hint">ENTER · BEGIN</p>
     </div>
   </section>;
 }
@@ -63,45 +64,46 @@ function StoryArt({ index }: { index: number }) {
   const scene=String(index+1).padStart(2,"0");
   return <div className="story-art" aria-hidden="true">
     <Image className="story-scene-image" src={`/story/scene-${scene}.png`} alt="" width={320} height={180} unoptimized priority={index<2}/>
-    {index===0&&<div className="animated-story-stars"><i>★</i><i>★</i><i>★</i><i>★</i></div>}
-    {(index===6||index===7)&&<div className={`story-fairy story-fairy-${index===6?"meeting":"team"}`}>
+    {index===2&&<div className="animated-story-stars"><i>★</i><i>★</i><i>★</i><i>★</i></div>}
+    {(index>=4)&&<div className={`story-fairy story-fairy-${index===4?"meeting":"team"}`}>
       <i className="story-fairy-wing wing-a"/><i className="story-fairy-wing wing-b"/><i className="story-fairy-wing wing-c"/><i className="story-fairy-wing wing-d"/>
       <i className="story-fairy-core"/><i className="story-fairy-mote mote-a"/><i className="story-fairy-mote mote-b"/><i className="story-fairy-mote mote-c"/>
     </div>}
   </div>;
 }
 
-export function StorySequence({ index, ready, onAdvance, onBack, onComplete }: {
+export function StorySequence({ index, ready, onAdvance, onSkip, onComplete }: {
   index: number;
   ready: boolean;
   onAdvance: () => void;
-  onBack: () => void;
+  onSkip: () => void;
   onComplete: () => void;
 }) {
   const finalScene = index === STORY.length - 1;
-  const advance = useCallback(() => { if (finalScene) { if (ready) onComplete(); } else onAdvance(); },[finalScene,onAdvance,onComplete,ready]);
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); onBack(); return; }
-      if (event.key !== "Enter" && event.key !== " ") return;
+      if (event.repeat) return;
       event.preventDefault();
-      advance();
+      if(finalScene&&ready)onComplete();else if(!finalScene)onAdvance();
     };
     addEventListener("keydown", handle);
     return () => removeEventListener("keydown", handle);
-  }, [advance, onBack]);
+  }, [finalScene, onAdvance, onComplete, ready]);
+  useEffect(()=>{
+    const delay=2000;
+    const timer=window.setTimeout(()=>{if(finalScene){if(ready)onComplete()}else onAdvance()},delay);
+    return()=>window.clearTimeout(timer);
+  },[finalScene,index,onAdvance,onComplete,ready]);
 
   const screen = STORY[index];
   return <section className="front-screen story-screen" aria-label={`Opening story, scene ${index + 1} of ${STORY.length}`}>
-    <button className="story-back text-button" type="button" onClick={event => { event.stopPropagation(); onBack(); }}>RETURN TO TITLE</button>
-    <button className="story-stage" type="button" onClick={advance} key={index} aria-label={finalScene?"Enter the maze":"Continue opening story"}>
+    <button className="story-skip text-button" type="button" onClick={event => { event.stopPropagation(); if(finalScene&&ready)onComplete();else onSkip(); }}>{finalScene?"ENTER THE MAZE":"SKIP"}</button>
+    <button className="story-stage" type="button" onClick={()=>{if(finalScene&&ready)onComplete();else if(!finalScene)onAdvance()}} key={index} aria-label={finalScene?"Enter the maze":"Continue opening animation"}>
       <StoryArt index={index} />
       <div className="story-copy" aria-live="polite">
-        {screen.lines.map((line, lineIndex) => <p key={line} className={screen.art === "mt" && lineIndex === 1 ? "hero-answer" : ""}>{line}</p>)}
+        {screen.lines.map((line, lineIndex) => <p key={line} className={screen.art === "premise" && lineIndex === 1 ? "hero-answer" : ""}>{line}</p>)}
       </div>
     </button>
-    <p className="story-progress">{String(index + 1).padStart(2, "0")} / {String(STORY.length).padStart(2, "0")}</p>
-    <p className="story-continue">{finalScene?(ready?"ENTER OR CLICK TO ENTER THE MAZE":"OPENING THE GATE..."):"ENTER OR CLICK TO CONTINUE"} <span>▼</span></p>
   </section>;
 }
 

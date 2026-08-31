@@ -197,14 +197,17 @@ export class InfiniteWorld {
     else this.pinnedChunks.set(id, count - 1);
   }
   prune(x, y, protectedChunks = new Set()) {
+    const removed = [];
     const { cx, cy } = this.coords(x, y);
     if(this.entranceGate){const start=this.coords(this.entranceGate.inside[0],this.entranceGate.inside[1]),leftStartRegion=Math.abs(start.cx-cx)>CACHE_RADIUS||Math.abs(start.cy-cy)>CACHE_RADIUS;if(leftStartRegion){for(const key of this.entranceOverrideKeys)this.tileOverrides.delete(key);this.entranceOverrideKeys.clear();this.entranceChunks.clear();this.entranceGate=null}}
     for (const [id, chunk] of this.chunks) {
       const far = Math.abs(chunk.cx - cx) > CACHE_RADIUS || Math.abs(chunk.cy - cy) > CACHE_RADIUS;
       if (far && !protectedChunks.has(id) && !this.pinnedChunks.has(id)) {
         this.chunks.delete(id);
+        removed.push(id);
       }
     }
+    return removed;
   }
 }
 

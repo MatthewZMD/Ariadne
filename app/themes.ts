@@ -4,6 +4,7 @@ export type AmbientEntity = { id:string; x: number; y: number; kind: string; the
 export type ThemeLayer = { id: ThemeId; influence: number };
 export type ThemeSample = { id: ThemeId; influence: number; layers: ThemeLayer[] };
 export type ThemeMemory = Map<string, ThemeSample>;
+export type ThemeLighting={wallLift:number;fogLoss:number;minimumWall:number;floorShade:number;ceilingShade:number;vignette:number;glow:number};
 export type ThemeDefinition = {
   wall: [number, number, number]; floor: string; ceiling: string; fog: string;
   floorDetail: string; skyDetail: string; accent: string; props: string[]; life: string[]; wallSprites: string[]; signal: string;
@@ -11,6 +12,16 @@ export type ThemeDefinition = {
 
 export const THEME_RADIUS = 38;
 export const THEME_FEATHER = 32;
+
+export const THEME_LIGHTING:Record<ThemeId,ThemeLighting>={
+  neutral:{wallLift:3,fogLoss:18,minimumWall:20,floorShade:.72,ceilingShade:.6,vignette:.4,glow:0},
+  beach:{wallLift:14,fogLoss:9,minimumWall:38,floorShade:.28,ceilingShade:.2,vignette:.17,glow:.1},
+  tornado:{wallLift:1,fogLoss:18,minimumWall:20,floorShade:.68,ceilingShade:.58,vignette:.38,glow:.015},
+  ruins:{wallLift:9,fogLoss:12,minimumWall:29,floorShade:.46,ceilingShade:.38,vignette:.27,glow:.045},
+  frozen:{wallLift:15,fogLoss:7,minimumWall:42,floorShade:.22,ceilingShade:.16,vignette:.14,glow:.12},
+  foundry:{wallLift:8,fogLoss:15,minimumWall:25,floorShade:.54,ceilingShade:.48,vignette:.31,glow:.055},
+  cavern:{wallLift:13,fogLoss:9,minimumWall:34,floorShade:.36,ceilingShade:.27,vignette:.21,glow:.1},
+};
 
 export const THEMES: Record<ThemeId, ThemeDefinition> = {
   neutral: { wall:[42,14,43], floor:"#24251f", ceiling:"#111411", floorDetail:"#49483d", skyDetail:"#30352f", fog:"rgba(6,8,7,.42)", accent:"#aaa58d", props:["rune","fossil"], life:["mote"], wallSprites:["eye-rune","spiral-fossil","sealed-door"], signal:"THE AIR FORGETS YOUR SHAPE" },

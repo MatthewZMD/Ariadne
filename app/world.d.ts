@@ -24,7 +24,7 @@ export class InfiniteWorld {
   ensureAround(x:number,y:number,tick?:number):void;
   pinChunk(id:string):void;
   unpinChunk(id:string):void;
-  prune(x:number,y:number,protectedChunks?:Set<string>,tick?:number):void;
+  prune(x:number,y:number,protectedChunks?:Set<string>,tick?:number):string[];
 }
 export type ThemeScheduler={nextAt:number;nextTheme:()=>string;advance:(from:number)=>void};
 export function createThemeScheduler(seed:number):ThemeScheduler;

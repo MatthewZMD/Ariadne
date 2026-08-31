@@ -71,8 +71,7 @@ export type CompanionEvent =
   | {type:"target_reached"}
   | {type:"same_target_reached_differently"}
   | {type:"new_junction_visible"}
-  | {type:"embodied_response";response:"followed"|"diverged"|"passed"|"rejoined"}
-  | {type:"left_ariadne_waiting"}
+  | {type:"embodied_response";response:"followed"|"diverged"|"rejoined"}
   | {type:"dead_end_visible";cell:Point}
   | {type:"passing_thought"}
   | {type:"revisited_position"}
@@ -90,7 +89,8 @@ export type CompanionEvent =
   | {type:"final_direction"}
   | {type:"initial_guidance"};
 
-export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number};
+export type CompanionMessageKind="player"|"generated"|"prerecorded_cue"|"authored_lore";
+export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number;kind?:CompanionMessageKind};
 export type CompanionReply = {message:string};
 export type CompanionCue = {key:string;event:CompanionEvent;force:boolean};
 export type CompanionPhase = "charming"|"attached"|"overbearing";

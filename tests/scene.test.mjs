@@ -64,3 +64,8 @@ test("renderer consumes shared perceived objects and spectacle layers",async()=>
   const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8"));
   assert.match(source,/perceivedIds/);assert.match(source,/renderSpectacles\(ctx,scene/);assert.match(source,/depths\[rayIndex\]/);assert.match(source,/renderAriadneFairy/);assert.doesNotMatch(source,/renderAriadneThread/);assert.match(source,/atlasFrame/);
 });
+
+test("environment lighting has genuinely different bright and dark ranges",async()=>{
+  const {THEME_LIGHTING}=await import("../app/themes.ts"),values=Object.values(THEME_LIGHTING);
+  assert.equal(values.length,7);assert.ok(THEME_LIGHTING.frozen.minimumWall-THEME_LIGHTING.tornado.minimumWall>=20);assert.ok(THEME_LIGHTING.beach.glow>THEME_LIGHTING.ruins.glow);assert.ok(THEME_LIGHTING.frozen.vignette<THEME_LIGHTING.neutral.vignette);assert.ok(new Set(values.map(item=>item.floorShade)).size===7);
+});

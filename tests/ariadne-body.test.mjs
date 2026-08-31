@@ -27,7 +27,7 @@ test("reduced motion preserves a gentle living hover instead of freezing Ariadne
 test("guidance makes Ariadne fly to the supplied route and return when MT enters it",()=>{
   const body=createAriadneBody(pose,0);beginAriadneGuidance(body,intent,1000);
   for(let i=0;i<100;i++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+i*1000/60,reducedMotion:false});
-  assert.ok(body.mode==="leading"||body.mode==="waiting_ahead");assert.equal(body.targetRouteId,"second-left");assert.ok(body.position[0]>2.2);
+  assert.ok(body.mode==="leading"||body.mode==="marking_route");assert.equal(body.targetRouteId,"second-left");assert.ok(body.position[0]>2.2);
   for(const [index,x] of [2.5,3.5,4.5,5.5].entries())updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x},phase:"charming",dt:1/30,now:2900+index*34,reducedMotion:false});
   assert.ok(["returning","catching_up","celebrating","hovering_beside"].includes(body.mode));assert.equal(body.mtFollowingHerLead,true);
 });
@@ -76,7 +76,7 @@ test("Ariadne visibly crosses to the actual side passage instead of collapsing t
   const route={id:"left-now",knownCells:[[2,1],[3,1],[4,1],[4,0]],decisionCell:[4,1],targetCell:[4,0],decisionPoint:"upcoming"},body=createAriadneBody(pose,0);beginAriadneRoute(body,route,pose,0);
   let currentPose={...pose};for(let frame=1;frame<=90;frame++){currentPose={...currentPose,x:Math.min(4.5,currentPose.x+.045)};updateAriadneBody(body,{world:openWorld,tick:0,pose:currentPose,phase:"charming",playerSpeed:2.65,dt:1/60,now:frame*1000/60,reducedMotion:false})}
   assert.ok(body.position[1]<1.05,`Ariadne did not fly into the chosen left entrance: ${body.position[1]}`);
-  assert.ok(body.mode==="leading"||body.mode==="waiting_ahead",`Ariadne abandoned the visible commitment: ${body.mode}`);
+  assert.ok(body.mode==="leading"||body.mode==="marking_route",`Ariadne abandoned the visible commitment: ${body.mode}`);
 });
 
 test("a side-passage commitment remains active when its entrance begins outside the narrow camera cone",()=>{
@@ -85,7 +85,7 @@ test("a side-passage commitment remains active when its entrance begins outside 
   for(let frame=1;frame<=70;frame++)updateAriadneBody(body,{world:openWorld,tick:0,pose:junctionPose,phase:"charming",dt:1/60,now:frame*1000/60,reducedMotion:false});
   const finalDistance=Math.hypot(body.position[0]-4.5,body.position[1]-.5);
   assert.ok(finalDistance<initialDistance*.45,`Ariadne failed to traverse to the selected entrance: ${initialDistance} -> ${finalDistance}`);
-  assert.ok(body.mode==="leading"||body.mode==="waiting_ahead",`side guidance was cancelled: ${body.mode}`);
+  assert.ok(body.mode==="leading"||body.mode==="marking_route",`side guidance was cancelled: ${body.mode}`);
 });
 
 test("a junction belief sends Ariadne ahead before the spoken reply arrives",()=>{
@@ -115,26 +115,26 @@ test("deciding to speak creates visible attention until speech begins or the req
   prepareAriadneForEvent(body,"passing_thought",3000);settleAriadneThinking(body);assert.equal(body.thinkingSince,null);
 });
 
-test("Ariadne abandons her waiting place and catches MT after another branch is chosen",()=>{
+test("Ariadne leaves her route marker and rejoins MT after another branch is chosen",()=>{
   const body=createAriadneBody(pose,0);beginAriadneGuidance(body,intent,1000);
   for(let i=0;i<100;i++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+i*1000/60,reducedMotion:false});
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5},phase:"charming",dt:1/30,now:2750,reducedMotion:false});
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:2.5},phase:"charming",dt:1/30,now:2784,reducedMotion:false});
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:3.5},phase:"charming",dt:1/30,now:2818,reducedMotion:false});
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:4.5},phase:"charming",dt:1/30,now:2852,reducedMotion:false});
-  assert.ok(["returning","catching_up"].includes(body.mode));assert.equal(body.mtLeavingWhileSheWaits,true);assert.equal(body.departureRouteId,"second-left");
+  assert.ok(["returning","catching_up"].includes(body.mode));assert.equal(body.mtChoseAnotherRoute,true);assert.equal(body.departureRouteId,"second-left");
 });
 
 test("looking around and tentatively entering a branch are not choices",()=>{
   const body=createAriadneBody(pose,0);beginAriadneGuidance(body,intent,1000);
   for(let i=0;i<100;i++)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+i*1000/60,reducedMotion:false});
   for(let turn=0;turn<12;turn++)updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,angle:turn*Math.PI/6},phase:"charming",dt:1/30,now:2750+turn*34,reducedMotion:false});
-  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtLeavingWhileSheWaits,false);assert.deepEqual(body.choiceCells,[]);
+  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtChoseAnotherRoute,false);assert.deepEqual(body.choiceCells,[]);
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:2.5,angle:Math.PI/2},phase:"charming",dt:1/30,now:3200,reducedMotion:false});
   for(let turn=0;turn<8;turn++)updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,y:2.5,angle:turn*Math.PI/4},phase:"charming",dt:1/30,now:3234+turn*34,reducedMotion:false});
-  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtLeavingWhileSheWaits,false);assert.equal(body.choiceCells.length,1);
+  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtChoseAnotherRoute,false);assert.equal(body.choiceCells.length,1);
   updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x:2.5,angle:Math.PI},phase:"charming",dt:1/30,now:3550,reducedMotion:false});
-  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtLeavingWhileSheWaits,false);assert.deepEqual(body.choiceCells,[]);
+  assert.equal(body.mtFollowingHerLead,false);assert.equal(body.mtChoseAnotherRoute,false);assert.deepEqual(body.choiceCells,[]);
 });
 
 test("blocked shoulder space makes Ariadne choose the open side",()=>{
