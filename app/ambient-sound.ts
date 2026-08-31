@@ -76,6 +76,7 @@ export type AmbientSoundscape={
   unlock:()=>void;
   pause:()=>void;
   resume:()=>void;
+  setMasterVolume:(volume:number)=>void;
   update:(args:{playing:boolean;speaking:boolean;pose:Pose;entities:AmbientEntity[];scene:PerceivedScene|null;theme:ThemeId})=>void;
   playInteraction:(args:{kind:InteractionSoundKind;id:string;position:[number,number];pose:Pose;theme:ThemeId;progress?:number})=>void;
   reset:()=>void;
@@ -83,7 +84,7 @@ export type AmbientSoundscape={
 };
 
 export function createAmbientSoundscape():AmbientSoundscape{
-  let context:AudioContext|null=null,destroyed=false,unlocked=false,paused=false,activeTheme:ThemeId="neutral";
+  let context:AudioContext|null=null,destroyed=false,unlocked=false,paused=false,activeTheme:ThemeId="neutral",masterVolume=1;
   const buffers=new Map<SoundFamily,Promise<AudioBuffer|null>>(),emitters=new Map<string,Emitter>(),pending=new Set<string>();
   const interactionSources=new Set<AudioScheduledSourceNode>(),lastInteractionAt=new Map<InteractionSoundKind,number>();
   let master:GainNode|null=null,interactionBus:GainNode|null=null,limiter:DynamicsCompressorNode|null=null;
@@ -137,8 +138,9 @@ export function createAmbientSoundscape():AmbientSoundscape{
     unlock(){if(destroyed)return;const ctx=ensureContext();unlocked=true;if(!paused)void ctx.resume()},
     pause(){paused=true;void context?.suspend()},
     resume(){paused=false;if(unlocked)void context?.resume()},
+    setMasterVolume(volume){masterVolume=clamp(volume,0,1);if(context&&master&&interactionBus){ramp(master.gain,AMBIENT_MASTER_GAIN*masterVolume,context,.08);ramp(interactionBus.gain,INTERACTION_MASTER_GAIN*masterVolume,context,.08)}},
     update({playing,speaking,pose,entities,scene,theme}){
-      if(!context||!master||!interactionBus||!unlocked||paused)return;const now=performance.now(),ctx=context,targetMaster=playing?AMBIENT_MASTER_GAIN*(speaking?.28:1):0,targetInteraction=playing?INTERACTION_MASTER_GAIN*(speaking?.5:1):0;ramp(master.gain,targetMaster,ctx,playing?.7:.22);ramp(interactionBus.gain,targetInteraction,ctx,playing?.18:.12);
+      if(!context||!master||!interactionBus||!unlocked||paused)return;const now=performance.now(),ctx=context,targetMaster=playing?AMBIENT_MASTER_GAIN*masterVolume*(speaking?.28:1):0,targetInteraction=playing?INTERACTION_MASTER_GAIN*masterVolume*(speaking?.5:1):0;ramp(master.gain,targetMaster,ctx,playing?.7:.22);ramp(interactionBus.gain,targetInteraction,ctx,playing?.18:.12);
       if(!playing){for(const id of [...emitters.keys()])stopEmitter(id,.35);return}
       if(theme!==activeTheme){for(const id of emitters.keys())if(id.startsWith("theme:"))stopEmitter(id,1.4);activeTheme=theme}
       const candidates=candidatesFor(entities,scene,pose,theme),desired=new Set(candidates.map(item=>item.id));

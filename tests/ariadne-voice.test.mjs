@@ -38,6 +38,7 @@ test("a prerecorded cue plays immediately and the synchronized generated line wa
     assert.deepEqual(sequence,["cue","audio-start"]);voice.pause();assert.equal(contexts[0].state,"suspended");assert.equal(voice.isBusy(),true);voice.resume();assert.equal(contexts[0].state,"running");sources[0].onended?.();assert.equal(await cue,"spoken");
     await eventually(()=>sources.length===2);
     assert.deepEqual(sequence,["cue","audio-start","caption","audio-start"]);assert.equal(sources[1].playbackRate.value,ARIADNE_PLAYBACK_RATE);assert.equal(panners[1].pan.value,-.7);assert.ok(gains[1].gain.value<.9);assert.equal(requests[0].body.delivery,"confident_invitation");assert.equal(voice.isBusy(),true);assert.equal(requests.length,1);
+    voice.setMasterVolume(0);assert.equal(gains[1].gain.value,0);voice.setMasterVolume(1);assert.ok(gains[1].gain.value>0);
     voice.interrupt();assert.equal(await first,"interrupted");assert.equal(voice.isBusy(),false);
   }finally{
     voice.destroy();globalThis.fetch=originalFetch;

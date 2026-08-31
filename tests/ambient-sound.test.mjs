@@ -58,3 +58,10 @@ test("pause suspends voice and soundscape transports instead of discarding playb
   assert.match(soundscape,/context\?\.suspend\(\)/);assert.match(soundscape,/if\(!context\|\|!master\|\|!interactionBus\|\|!unlocked\|\|paused\)return/);
   assert.match(voice,/audioContext\?\.suspend\(\)/);assert.match(voice,/resumeWaiters/);
 });
+
+test("the pause menu owns one master switch for voice and world audio",async()=>{
+  const [opening,page,soundscape,voice]=await Promise.all(["../app/opening.tsx","../app/page.tsx","../app/ambient-sound.ts","../app/ariadne-voice.ts"].map(path=>import("node:fs/promises").then(fs=>fs.readFile(new URL(path,import.meta.url),"utf8"))));
+  assert.match(opening,/>VOLUME</);assert.match(opening,/type="range"/);assert.match(opening,/GIVE UP/);
+  assert.match(page,/setMasterVolume/);assert.match(page,/setMasterVolume\(masterVolume\)/);
+  assert.match(soundscape,/masterVolume=1/);assert.match(voice,/masterVolume=1/);
+});

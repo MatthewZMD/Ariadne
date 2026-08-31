@@ -110,6 +110,7 @@ export default function Home(){
   const[companionMessages,setCompanionMessages]=useState<CompanionMessage[]>([]),messagesRef=useRef<CompanionMessage[]>([]);
   const[companionInput,setCompanionInput]=useState(""),[chatOpen,setChatOpen]=useState(false),[chatAwaitingReply,setChatAwaitingReply]=useState(false),[chatLingering,setChatLingering]=useState(false);
   const[starPulse,setStarPulse]=useState(false),[reducedMotion,setReducedMotion]=useState(false),[closureRevealed,setClosureRevealed]=useState(false);
+  const[masterVolume,setMasterVolume]=useState(1);
   const guidanceRef=useRef<GuidanceIntent|null>(null),guidanceTraceRef=useRef<GuidanceTrace|null>(null),trajectoryRef=useRef<TrajectorySample[]>([]),observedAfterGuidanceRef=useRef(new Set<string>()),newlyRevealedRef=useRef(new Set<string>());
   const seenPerceptionCuesRef=useRef(new Set<string>()),lastCompanionCallRef=useRef(0),nextPassingThoughtRef=useRef(0),requestInFlightRef=useRef(false),pendingEventsRef=useRef<Array<{event:CompanionEvent;force:boolean;playerMessage?:string;staticCueEligible:boolean}>>([]),lastMovementRef=useRef(0),lastTurnRef=useRef(0),pauseObservedRef=useRef(false),collisionRef=useRef(0),providerFailureRef=useRef(0),providerBackoffUntilRef=useRef(0);
   const callCompanionRef=useRef<(event:CompanionEvent,playerMessage?:string,force?:boolean,staticCueEligible?:boolean)=>Promise<void>>(async()=>{});
@@ -214,6 +215,7 @@ export default function Home(){
     const soundscape=createAmbientSoundscape();ambientSoundscapeRef.current=soundscape;
     return()=>{soundscape.destroy();if(ambientSoundscapeRef.current===soundscape)ambientSoundscapeRef.current=null};
   },[]);
+  useEffect(()=>{ariadneVoiceRef.current?.setMasterVolume(masterVolume);ambientSoundscapeRef.current?.setMasterVolume(masterVolume)},[masterVolume]);
   useEffect(()=>{
     const query=window.matchMedia("(prefers-reduced-motion: reduce)"),sync=()=>setReducedMotion(query.matches);sync();query.addEventListener("change",sync);return()=>query.removeEventListener("change",sync);
   },[]);
@@ -568,7 +570,7 @@ export default function Home(){
 
   useEffect(()=>{
     const down=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;const state=experienceRef.current,k=e.key.toLowerCase();
-      if(e.key==="Escape"&&state==="playing"){e.preventDefault();heldRef.current.clear();document.exitPointerLock?.();if(activeRequestRef.current){activeRequestRef.current.preempted=true;activeRequestRef.current.controller.abort()}setExperienceState("paused");return}
+      if(e.key==="Escape"&&state==="playing"){e.preventDefault();heldRef.current.clear();document.exitPointerLock?.();setExperienceState("paused");return}
       if(e.key==="Escape"&&state==="paused"){e.preventDefault();setExperienceState("playing");canvasRef.current?.focus();return}
       if(state!=="playing")return;
       if(e.key==="Enter"){e.preventDefault();heldRef.current.clear();setChatOpen(true);requestAnimationFrame(()=>chatInputRef.current?.focus());return}if(k==="n"){e.preventDefault();setStoryIndex(0);setExperienceState("story");void initializeRun(randomSeed());return}if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
@@ -723,7 +725,7 @@ export default function Home(){
   return <main className={`shell game-only ${starPulse?"star-pulse":""}`}>
     {experience==="title"&&<TitleScreen onStart={startStory} ready={ready}/>}
     {experience==="story"&&<StorySequence index={storyIndex} ready={ready} onAdvance={()=>setStoryIndex(value=>Math.min(value+1,7))} onSkip={enterGame} onComplete={enterGame}/>}
-    {experience==="paused"&&<PauseMenu onResume={resumeGame} onEnd={endGame}/>}
+    {experience==="paused"&&<PauseMenu onResume={resumeGame} onGiveUp={endGame} masterVolume={masterVolume} onVolumeChange={setMasterVolume}/>}
     {experience==="ending"&&<ClosureScreen revealed={closureRevealed} onRestart={restartAfterClosure} onLeave={endGame}/>}
     {experience==="playing"&&!ready&&<div className="boot-screen" aria-live="polite"><span>OPENING THE GATE</span></div>}
     <section className="viewport-wrap" aria-label="Infinite first person maze game" aria-hidden={experience!=="playing"&&experience!=="paused"}><div className="objective-stars" aria-label={`${run.objective.collectedStars} of 4 stars collected`}>{starMarks}</div>

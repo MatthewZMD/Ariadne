@@ -107,12 +107,16 @@ export function StorySequence({ index, ready, onAdvance, onSkip, onComplete }: {
   </section>;
 }
 
-export function PauseMenu({ onResume, onEnd }: { onResume: () => void; onEnd: () => void }) {
+export function PauseMenu({ onResume, onGiveUp, masterVolume, onVolumeChange }: { onResume: () => void; onGiveUp: () => void; masterVolume: number; onVolumeChange: (volume: number) => void }) {
   return <section className="pause-screen" role="dialog" aria-modal="true" aria-label="Game paused">
     <div className="pause-panel">
       <h1>PAUSED</h1>
       <button className="pixel-button primary" type="button" onClick={onResume}>RESUME</button>
-      <button className="pixel-button danger" type="button" onClick={onEnd}>END GAME</button>
+      <label className="pause-volume">
+        <span>VOLUME</span><strong>{Math.round(masterVolume*100)}%</strong>
+        <input type="range" min="0" max="100" step="5" value={Math.round(masterVolume*100)} onChange={event=>onVolumeChange(Number(event.currentTarget.value)/100)} aria-label="Master volume"/>
+      </label>
+      <button className="pixel-button danger" type="button" onClick={onGiveUp}>GIVE UP</button>
       <p className="front-hint">ESC TO RESUME</p>
     </div>
   </section>;

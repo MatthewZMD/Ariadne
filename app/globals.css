@@ -50,6 +50,10 @@ button { font: inherit; }
 .pause-panel { width: min(380px, 88vw); padding: 38px 34px 34px; display: flex; flex-direction: column; align-items: stretch; gap: 17px; border: 1px solid #71684e; background: #0b0d0b; box-shadow: 0 16px 60px rgba(0,0,0,.7), inset 0 0 0 3px #050605; }
 .pause-panel h1 { margin: 0 0 12px; color: #dfca8a; text-align: center; font-size: 24px; letter-spacing: .26em; font-weight: 400; }
 .pause-panel .pixel-button { width: 100%; }
+.pause-volume { width: 100%; min-height: 62px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 9px 12px; border: 1px solid #4d5149; padding: 10px 13px; color: #b9b7ac; background: #090b09; font-size: 10px; letter-spacing: .12em; }
+.pause-volume:focus-within { outline: 1px solid #9b916f; outline-offset: 3px; color: #eee9dc; background: #11130f; }
+.pause-volume strong { color: #dfca8a; font-size: 9px; font-weight: 400; text-align: right; }
+.pause-volume input { grid-column: 1 / -1; width: 100%; height: 16px; margin: 0; accent-color: #efcf70; cursor: pointer; }
 .pause-panel .front-hint { margin-top: 8px; text-align: center; }
 .closure-screen { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; background: rgba(0,0,0,0); animation: signal-collapse 2.25s steps(12) forwards; }
 .closure-screen.revealed { pointer-events: auto; background: #030403; }

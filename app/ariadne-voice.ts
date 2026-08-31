@@ -18,18 +18,19 @@ export type AriadneVoice={
   interrupt:()=>void;
   isBusy:()=>boolean;
   setSpatial:(pan:number,distance:number)=>void;
+  setMasterVolume:(volume:number)=>void;
   reset:()=>void;
   destroy:()=>void;
 };
 
 export function createAriadneVoice():AriadneVoice{
-  let unlocked=false,destroyed=false,paused=false,busyKind:"cue"|"speech"|null=null,speechQueued=false,epoch=0,audioContext:AudioContext|null=null,currentSource:AudioBufferSourceNode|null=null,currentController:AbortController|null=null,currentPanner:StereoPannerNode|null=null,currentGain:GainNode|null=null,spatialPan=0,spatialDistance=1,activeCueDone:Promise<AriadneVoiceResult>|null=null;
+  let unlocked=false,destroyed=false,paused=false,busyKind:"cue"|"speech"|null=null,speechQueued=false,epoch=0,audioContext:AudioContext|null=null,currentSource:AudioBufferSourceNode|null=null,currentController:AbortController|null=null,currentPanner:StereoPannerNode|null=null,currentGain:GainNode|null=null,spatialPan=0,spatialDistance=1,masterVolume=1,activeCueDone:Promise<AriadneVoiceResult>|null=null;
   const cueBuffers=new Map<string,Promise<AudioBuffer|null>>(),lastCueVariant=new Map<AriadneVoiceCue,number>();
   const resumeWaiters=new Set<()=>void>();
 
   const applySpatial=()=>{
     if(currentPanner)currentPanner.pan.value=Math.max(-1,Math.min(1,spatialPan));
-    if(currentGain)currentGain.gain.value=ARIADNE_REFERENCE_GAIN*Math.max(.5,Math.min(1,1-Math.max(0,spatialDistance-.65)*.11));
+    if(currentGain)currentGain.gain.value=ARIADNE_REFERENCE_GAIN*masterVolume*Math.max(.5,Math.min(1,1-Math.max(0,spatialDistance-.65)*.11));
   };
   const clearCurrent=()=>{
     currentController?.abort();currentController=null;
@@ -89,6 +90,7 @@ export function createAriadneVoice():AriadneVoice{
     resume(){paused=false;releaseResumeWaiters();if(unlocked)void audioContext?.resume()},
     speak,playCue,interrupt,isBusy:()=>busyKind!==null||speechQueued,
     setSpatial(pan,distance){spatialPan=pan;spatialDistance=distance;applySpatial()},
+    setMasterVolume(volume){masterVolume=Math.max(0,Math.min(1,volume));applySpatial()},
     reset:interrupt,
     destroy(){destroyed=true;unlocked=false;paused=false;interrupt();void audioContext?.close();audioContext=null},
   };
