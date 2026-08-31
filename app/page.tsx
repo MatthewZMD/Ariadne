@@ -217,6 +217,17 @@ export default function Home(){
   },[]);
   useEffect(()=>{ariadneVoiceRef.current?.setMasterVolume(masterVolume);ambientSoundscapeRef.current?.setMasterVolume(masterVolume)},[masterVolume]);
   useEffect(()=>{
+    const receivePortfolioVolume=(event:MessageEvent)=>{
+      const trustedOrigin=/^https:\/\/(?:www\.)?mt-zeng\.com$/.test(event.origin)||/^http:\/\/localhost(?::\d+)?$/.test(event.origin);
+      if(event.source!==window.parent||!trustedOrigin)return;
+      const message=event.data as {type?:unknown;volume?:unknown}|null;
+      if(!message||message.type!=="ariadne:set-master-volume"||typeof message.volume!=="number"||!Number.isFinite(message.volume))return;
+      setMasterVolume(Math.max(0,Math.min(1,message.volume)));
+    };
+    window.addEventListener("message",receivePortfolioVolume);
+    return()=>window.removeEventListener("message",receivePortfolioVolume);
+  },[]);
+  useEffect(()=>{
     const query=window.matchMedia("(prefers-reduced-motion: reduce)"),sync=()=>setReducedMotion(query.matches);sync();query.addEventListener("change",sync);return()=>query.removeEventListener("change",sync);
   },[]);
   useEffect(()=>{
