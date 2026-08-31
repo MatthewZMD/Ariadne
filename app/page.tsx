@@ -98,6 +98,7 @@ function randomSeed(){
 export default function Home(){
   const[run,setRun]=useState<Run>(()=>newRun());const runRef=useRef(run);
   const[experience,setExperience]=useState<ExperienceState>("title"),experienceRef=useRef<ExperienceState>("title"),[storyIndex,setStoryIndex]=useState(0);
+  const pausedFromRef=useRef<Exclude<ExperienceState,"paused">>("title");
   const canvasRef=useRef<HTMLCanvasElement>(null),poseRef=useRef<Pose>({x:1.5,y:1.5,angle:run.spawnAngle,bob:0});
   const minimapMemoryRef=useRef<MinimapMemory>(createMinimapMemory());
   const ariadneBodyRef=useRef<AriadneBodyState>(createAriadneBody({x:1.5,y:1.5,angle:run.spawnAngle},0,run.world,run.moves));
@@ -580,9 +581,20 @@ export default function Home(){
   },[ready,experience,callCompanion,recordEncounter,beginClosure]);
 
   useEffect(()=>{
-    const down=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;const state=experienceRef.current,k=e.key.toLowerCase();
-      if(e.key==="Escape"&&state==="playing"){e.preventDefault();heldRef.current.clear();document.exitPointerLock?.();setExperienceState("paused");return}
-      if(e.key==="Escape"&&state==="paused"){e.preventDefault();setExperienceState("playing");canvasRef.current?.focus();return}
+    const down=(e:KeyboardEvent)=>{const state=experienceRef.current,k=e.key.toLowerCase();
+      if(e.key==="Escape"){
+        e.preventDefault();if(e.repeat)return;
+        if(state==="paused"){
+          const previous=pausedFromRef.current;
+          if(previous!=="title"){ariadneVoiceRef.current?.resume();ambientSoundscapeRef.current?.resume()}
+          setExperienceState(previous);
+          if(previous==="playing"){lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;requestAnimationFrame(()=>canvasRef.current?.focus())}
+        }else{
+          pausedFromRef.current=state;heldRef.current.clear();touchDriveRef.current=0;setChatOpen(false);setCompanionInput("");chatInputRef.current?.blur();document.exitPointerLock?.();setExperienceState("paused");
+        }
+        return;
+      }
+      if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;
       if(state!=="playing")return;
       if(e.key==="Enter"){e.preventDefault();heldRef.current.clear();setChatOpen(true);requestAnimationFrame(()=>chatInputRef.current?.focus());return}if(k==="n"){e.preventDefault();setStoryIndex(0);setExperienceState("story");void initializeRun(randomSeed());return}if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
     const up=(e:KeyboardEvent)=>heldRef.current.delete(e.key.toLowerCase()),blur=()=>heldRef.current.clear();
@@ -721,7 +733,13 @@ export default function Home(){
     }
     requestAnimationFrame(()=>canvasRef.current?.focus());
   },[ready,setExperienceState]);
-  const resumeGame=useCallback(()=>{ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();setExperienceState("playing");lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;requestAnimationFrame(()=>canvasRef.current?.focus())},[setExperienceState]);
+  const resumeGame=useCallback(()=>{
+    const previous=pausedFromRef.current;
+    ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();
+    if(previous!=="title"){ariadneVoiceRef.current?.resume();ambientSoundscapeRef.current?.resume()}
+    setExperienceState(previous);
+    if(previous==="playing"){lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;requestAnimationFrame(()=>canvasRef.current?.focus())}
+  },[setExperienceState]);
   const endGame=useCallback(()=>{
     heldRef.current.clear();document.exitPointerLock?.();setExperienceState("title");setStoryIndex(0);
     if(activeRequestRef.current){activeRequestRef.current.preempted=true;activeRequestRef.current.controller.abort()}
@@ -742,7 +760,7 @@ export default function Home(){
     <section className="viewport-wrap" aria-label="Infinite first person maze game" aria-hidden={experience!=="playing"&&experience!=="paused"}><div className="objective-stars" aria-label={`${run.objective.collectedStars} of 4 stars collected`}>{starMarks}</div>
         <canvas ref={canvasRef} width={1280} height={720} tabIndex={0} aria-label="First-person view into an infinite maze" onClick={e=>{ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();e.currentTarget.requestPointerLock?.()}} onTouchStart={beginTouch} onTouchMove={moveTouch} onTouchEnd={endTouch} onTouchCancel={()=>{touchControlsRef.current.clear();touchDriveRef.current=0}}/>
         <div className="vignette comfort-vignette"/>{companionMessages.length>0&&(chatOpen||chatAwaitingReply||voiceActive||chatLingering)&&<div ref={chatHistoryRef} className={`ariadne-chat ${chatOpen?"chat-open":""} ${chatAwaitingReply?"awaiting-reply":""} ${voiceActive?"voice-active":""}`} role="log" aria-live="polite">{displayedMessages.map(message=><div key={message.id} className={`ariadne-chat-line ${message.role}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<MT>"}</span> {message.text}</div>)}</div>}
-        {chatOpen&&<form className="minecraft-chat-input" onSubmit={sendToCompanion}><span>&gt;</span><input ref={chatInputRef} aria-label="Message ARIADNE" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.form?.requestSubmit()}else if(e.key==="Escape"){e.preventDefault();setChatOpen(false);setCompanionInput("");e.currentTarget.blur();canvasRef.current?.focus()}}} placeholder="Message ARIADNE"/></form>}
+        {chatOpen&&<form className="minecraft-chat-input" onSubmit={sendToCompanion}><span>&gt;</span><input ref={chatInputRef} aria-label="Message ARIADNE" value={companionInput} maxLength={500} onChange={e=>setCompanionInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.form?.requestSubmit()}}} placeholder="Message ARIADNE"/></form>}
     </section>
   </main>;
 }

@@ -83,6 +83,7 @@ export function StorySequence({ index, ready, onAdvance, onSkip, onComplete }: {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       if (event.repeat) return;
+      if (event.key === "Escape") return;
       event.preventDefault();
       if(finalScene&&ready)onComplete();else if(!finalScene)onAdvance();
     };
