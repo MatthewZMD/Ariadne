@@ -12,6 +12,13 @@ button { font: inherit; }
 .front-panel { position: relative; z-index: 1; width: min(900px, 92vw); display: flex; flex-direction: column; align-items: center; }
 .title-panel { gap: 26px; }
 .title-card-image { display: block; width: min(880px, 92vw); height: auto; image-rendering: pixelated; filter: saturate(.93) contrast(1.08); }
+.headphone-panel { width: min(560px, 88vw); gap: 20px; text-align: center; }
+.headphone-panel h1 { margin: 4px 0 0; color: #dfca8a; font-size: clamp(18px, 3vw, 28px); font-weight: 400; letter-spacing: .2em; }
+.headphone-panel p { max-width: 430px; margin: 0 0 10px; color: #aaa699; font-family: Georgia, "Times New Roman", serif; font-size: clamp(16px, 2vw, 20px); line-height: 1.45; }
+.headphone-icon { position: relative; width: 78px; height: 72px; display: block; border: 7px solid #71dff2; border-bottom: 0; border-radius: 42px 42px 0 0; filter: drop-shadow(0 0 12px rgba(98,218,242,.45)); }
+.headphone-icon::before { content: ""; position: absolute; left: 8px; right: 8px; top: 8px; height: 39px; border: 2px solid rgba(238,207,112,.65); border-bottom: 0; border-radius: 32px 32px 0 0; }
+.headphone-icon i { position: absolute; top: 38px; width: 18px; height: 29px; border: 2px solid #e8d184; background: #111916; box-shadow: 0 0 9px rgba(113,223,242,.55); }
+.headphone-icon i:first-child { left: -10px; }.headphone-icon i:last-child { right: -10px; }
 .pixel-button { min-width: 220px; border: 1px solid #8d815e; padding: 13px 22px 12px; color: #e9dfc5; background: #12130f; box-shadow: inset 0 0 0 2px #060706, 0 4px 0 #050605; cursor: pointer; letter-spacing: .18em; font-size: 12px; text-align: center; }
 .pixel-button:hover, .pixel-button:focus-visible { outline: 1px solid #e8ce79; outline-offset: 3px; color: #fff4ce; background: #211e14; }
 .pixel-button:active { transform: translateY(2px); box-shadow: inset 0 0 0 2px #060706, 0 2px 0 #050605; }
@@ -70,8 +77,9 @@ button { font: inherit; }
 @keyframes title-reveal { from { opacity: 0; filter: brightness(0); } to { opacity: 1; filter: brightness(1); } }
 @keyframes signal-collapse { 0%,35% { background: rgba(0,0,0,0); } 55% { background: rgba(0,0,0,.28); } 72% { background: rgba(0,0,0,.74); } 100% { background: #030403; } }
 @keyframes closure-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.game-only .viewport-wrap { width: 100%; height: 100%; border: 0; box-shadow: none; }
+.game-only .viewport-wrap { width: 100%; height: 100%; border: 0; box-shadow: none; touch-action: none; overscroll-behavior: none; }
 .game-only canvas { width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; }
+.mobile-landscape-guard { display: none; }
 .boot-screen { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: #080a09; color: var(--amber); font-size: 11px; letter-spacing: .22em; opacity: 1; transition: opacity .18s linear, visibility .18s linear; }
 .boot-screen::after { content: ""; width: 72px; height: 1px; margin-top: 30px; position: absolute; background: var(--green); animation: signal-load .55s steps(5) infinite alternate; }
 .boot-screen.ready { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -174,3 +182,10 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 7; touch-
   .reset { align-self: center; }
 }
 @media (prefers-reduced-motion: reduce) { .blink, .boot-screen::after, .star-pulse .viewport-wrap::after, .story-stage, .animated-story-stars i, .story-title-panel, .story-fairy, .story-fairy i, .closure-panel { animation: none; } .boot-screen { transition: none; } .closure-screen { animation: none; background: #030403; } }
+@media (orientation: portrait) and (pointer: coarse) {
+  .mobile-landscape-guard { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 28px; color: #e9dfc5; background: #070908; text-align: center; }
+  .mobile-landscape-guard strong { color: #dfca8a; font-size: 16px; font-weight: 400; letter-spacing: .18em; }
+  .mobile-landscape-guard small { color: #858176; font-family: Georgia, "Times New Roman", serif; font-size: 15px; }
+  .rotate-device-icon { width: 44px; height: 70px; border: 3px solid #71dff2; box-shadow: 0 0 14px rgba(98,218,242,.35); transform: rotate(90deg); }
+  .rotate-device-icon::after { content: ""; position: absolute; width: 5px; height: 5px; margin: 57px 0 0 17px; border: 1px solid #dfca8a; border-radius: 50%; }
+}

@@ -7,7 +7,8 @@ import { THEMES, retainThemeMemory, themeAt, type AmbientEntity, type ThemeAncho
 import { analyzePlayerActivity, appendGuidanceTrace, centeredDeadEnd, companionArc, companionCooldownMs, compactMap, createGuidanceIntent, createGuidanceTrace, createJourneyState, DEAD_END_REACTION_DISTANCE, describeEgocentricView, deterministicReply, forwardVisibleGeometry, guidanceTraceExpired, isRecentCompanionRepeat, JUNCTION_COMMIT_DISTANCE, markTrajectoryChange, nearbyJunction, nearestActionableJunction, nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes, recordJourneyEncounter, routesForEvent, shouldTriggerPassingThought, trajectoryCue, updateJourney, updateJunctionHesitation, visibleEnvironment, type CompanionCue, type CompanionEvent, type CompanionMessage, type CompanionReply, type EncounterKind, type GuidanceIntent, type GuidanceTrace, type JunctionHesitation, type TrajectorySample } from "./companion";
 import { chooseNavigationBeliefAsync, collectStar, createObjectiveStateAsync, emptyObjectiveState, objectiveProtectedChunks, publicObjective, queueNextStarAsync, releaseStarRoute, settleObjectiveStreaming, starCollectedAt, starVisible, type NavigationBelief, type ObjectiveState } from "./objectives";
 import { closureReason, finalAriadneLine, interruptPreparedLine, type ClosureReason } from "./closure";
-import { ClosureScreen, OPENING_ARIADNE_LINE, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
+import { ClosureScreen, HeadphoneScreen, OPENING_ARIADNE_LINE, PauseMenu, StorySequence, TitleScreen, type ExperienceState } from "./opening";
+import { requestMobileLandscape } from "./immersive";
 import { acceleratedSpeed, advanceInputRamp, MOVE_ACCELERATION, TURN_ACCELERATION, type InputRamp } from "./movement";
 import { buildPerceivedScene, createSceneMemory, sceneForPrompt, SPATIAL_VISIBILITY_DISTANCE, type PerceivedScene, type VisualFrameState } from "./scene";
 import { beginAriadneRoute, cancelAriadneChoiceNotice, createAriadneBody, describeAriadneEmbodiment, noticeAriadneChoice, prepareAriadneForEvent, reactAriadneToResonance, settleAriadneThinking, speakAsAriadne, updateAriadneBody, type AriadneBodyState } from "./ariadne-body";
@@ -596,7 +597,7 @@ export default function Home(){
       }
       if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;
       if(state!=="playing")return;
-      if(e.key==="Enter"){e.preventDefault();heldRef.current.clear();setChatOpen(true);requestAnimationFrame(()=>chatInputRef.current?.focus());return}if(k==="n"){e.preventDefault();setStoryIndex(0);setExperienceState("story");void initializeRun(randomSeed());return}if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
+      if(e.key==="Enter"){e.preventDefault();heldRef.current.clear();setChatOpen(true);requestAnimationFrame(()=>chatInputRef.current?.focus());return}if(k==="n"){e.preventDefault();setStoryIndex(0);setExperienceState("headphones");void initializeRun(randomSeed());return}if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){e.preventDefault();heldRef.current.add(k)}};
     const up=(e:KeyboardEvent)=>heldRef.current.delete(e.key.toLowerCase()),blur=()=>heldRef.current.clear();
     const mouse=(e:MouseEvent)=>{if(document.pointerLockElement===canvasRef.current&&e.movementX!==0){poseRef.current.angle=wrap(poseRef.current.angle+e.movementX*.00125);lastTurnRef.current=Date.now();pauseObservedRef.current=false}};
     addEventListener("keydown",down);addEventListener("keyup",up);addEventListener("blur",blur);addEventListener("mousemove",mouse);
@@ -722,7 +723,12 @@ export default function Home(){
     const message:CompanionMessage={id:crypto.randomUUID(),role:"player",text:text.slice(0,500),time:Date.now(),kind:"player"};setCompanionMessages(old=>[...old,message].slice(-18));messagesRef.current=[...messagesRef.current,message].slice(-18);
     await callCompanion({type:"player_message",text:message.text},message.text,true);
   };
-  const startStory=useCallback(()=>{setStoryIndex(0);setExperienceState("story")},[setExperienceState]);
+  const startStory=useCallback(()=>{setStoryIndex(0);setExperienceState("headphones")},[setExperienceState]);
+  const beginOpening=useCallback(()=>{
+    ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();
+    void requestMobileLandscape();
+    setStoryIndex(0);setExperienceState("story");
+  },[setExperienceState]);
   const enterGame=useCallback(()=>{
     if(!ready)return;ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();setExperienceState("playing");lastMovementRef.current=Date.now();lastTurnRef.current=lastMovementRef.current;pauseObservedRef.current=false;
     if(!ariadneAwakeRef.current){
@@ -746,17 +752,19 @@ export default function Home(){
     void initializeRun(randomSeed());
   },[initializeRun,setExperienceState]);
   const restartAfterClosure=useCallback(()=>{setStoryIndex(0);setExperienceState("title");void initializeRun(randomSeed())},[initializeRun,setExperienceState]);
-  const beginTouch=useCallback((e:React.TouchEvent<HTMLCanvasElement>)=>{const rect=e.currentTarget.getBoundingClientRect();for(const touch of Array.from(e.changedTouches))touchControlsRef.current.set(touch.identifier,{kind:touch.clientX<rect.left+rect.width/2?"move":"look",startX:touch.clientX,startY:touch.clientY,lastX:touch.clientX})},[]);
+  const beginTouch=useCallback((e:React.TouchEvent<HTMLCanvasElement>)=>{e.preventDefault();if(experienceRef.current!=="playing")return;ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();const rect=e.currentTarget.getBoundingClientRect();for(const touch of Array.from(e.changedTouches))touchControlsRef.current.set(touch.identifier,{kind:touch.clientX<rect.left+rect.width/2?"move":"look",startX:touch.clientX,startY:touch.clientY,lastX:touch.clientX})},[]);
   const moveTouch=useCallback((e:React.TouchEvent<HTMLCanvasElement>)=>{e.preventDefault();for(const touch of Array.from(e.changedTouches)){const control=touchControlsRef.current.get(touch.identifier);if(!control)continue;if(control.kind==="move")touchDriveRef.current=Math.max(-1,Math.min(1,(control.startY-touch.clientY)/54));else{poseRef.current.angle=wrap(poseRef.current.angle+(touch.clientX-control.lastX)*.0042);lastTurnRef.current=Date.now();pauseObservedRef.current=false;control.lastX=touch.clientX}}},[]);
-  const endTouch=useCallback((e:React.TouchEvent<HTMLCanvasElement>)=>{for(const touch of Array.from(e.changedTouches)){const control=touchControlsRef.current.get(touch.identifier);touchControlsRef.current.delete(touch.identifier);if(control?.kind==="move")touchDriveRef.current=0}},[]);
+  const endTouch=useCallback((e:React.TouchEvent<HTMLCanvasElement>)=>{e.preventDefault();for(const touch of Array.from(e.changedTouches)){const control=touchControlsRef.current.get(touch.identifier);touchControlsRef.current.delete(touch.identifier);if(control?.kind==="move")touchDriveRef.current=0}},[]);
   const starMarks=`${"★".repeat(run.objective.collectedStars)}${"☆".repeat(4-run.objective.collectedStars)}`;
   const displayedMessages=chatOpen?companionMessages:companionMessages.slice(-3);
   return <main className={`shell game-only ${starPulse?"star-pulse":""}`}>
     {experience==="title"&&<TitleScreen onStart={startStory} ready={ready}/>}
+    {experience==="headphones"&&<HeadphoneScreen onContinue={beginOpening}/>}
     {experience==="story"&&<StorySequence index={storyIndex} ready={ready} onAdvance={()=>setStoryIndex(value=>Math.min(value+1,7))} onSkip={enterGame} onComplete={enterGame}/>}
     {experience==="paused"&&<PauseMenu onResume={resumeGame} onGiveUp={endGame} masterVolume={masterVolume} onVolumeChange={setMasterVolume}/>}
     {experience==="ending"&&<ClosureScreen revealed={closureRevealed} onRestart={restartAfterClosure} onLeave={endGame}/>}
     {experience==="playing"&&!ready&&<div className="boot-screen" aria-live="polite"><span>OPENING THE GATE</span></div>}
+    {experience!=="title"&&experience!=="headphones"&&<div className="mobile-landscape-guard" role="status" aria-label="Rotate device to landscape"><span className="rotate-device-icon" aria-hidden="true"/><strong>ROTATE YOUR DEVICE</strong><small>Ariadne is played in landscape.</small></div>}
     <section className="viewport-wrap" aria-label="Infinite first person maze game" aria-hidden={experience!=="playing"&&experience!=="paused"}><div className="objective-stars" aria-label={`${run.objective.collectedStars} of 4 stars collected`}>{starMarks}</div>
         <canvas ref={canvasRef} width={1280} height={720} tabIndex={0} aria-label="First-person view into an infinite maze" onClick={e=>{ariadneVoiceRef.current?.unlock();ambientSoundscapeRef.current?.unlock();e.currentTarget.requestPointerLock?.()}} onTouchStart={beginTouch} onTouchMove={moveTouch} onTouchEnd={endTouch} onTouchCancel={()=>{touchControlsRef.current.clear();touchDriveRef.current=0}}/>
         <div className="vignette comfort-vignette"/>{companionMessages.length>0&&(chatOpen||chatAwaitingReply||voiceActive||chatLingering)&&<div ref={chatHistoryRef} className={`ariadne-chat ${chatOpen?"chat-open":""} ${chatAwaitingReply?"awaiting-reply":""} ${voiceActive?"voice-active":""}`} role="log" aria-live="polite">{displayedMessages.map(message=><div key={message.id} className={`ariadne-chat-line ${message.role}`}><span>{message.role==="ariadne"?"<ARIADNE>":"<MT>"}</span> {message.text}</div>)}</div>}

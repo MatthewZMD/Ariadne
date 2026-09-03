@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Image from "next/image";
 
-export type ExperienceState = "title" | "story" | "playing" | "paused" | "ending";
+export type ExperienceState = "title" | "headphones" | "story" | "playing" | "paused" | "ending";
 
 const STORY = [
   {
@@ -56,6 +56,27 @@ export function TitleScreen({ onStart,ready }: { onStart: () => void;ready:boole
       <Logo />
       <button className="pixel-button primary" type="button" onClick={onStart} disabled={!ready}>{ready?"START":"OPENING THE GATE..."}</button>
       <p className="front-hint">ENTER · BEGIN</p>
+    </div>
+  </section>;
+}
+
+export function HeadphoneScreen({ onContinue }: { onContinue: () => void }) {
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      onContinue();
+    };
+    addEventListener("keydown", handle);
+    return () => removeEventListener("keydown", handle);
+  }, [onContinue]);
+
+  return <section className="front-screen headphone-screen" aria-label="Headphones recommended">
+    <div className="front-panel headphone-panel">
+      <span className="headphone-icon" aria-hidden="true"><i /><i /></span>
+      <h1>HEADPHONES RECOMMENDED</h1>
+      <p>Ariadne moves and speaks from inside the maze.</p>
+      <button className="pixel-button primary" type="button" onClick={onContinue}>CONTINUE</button>
     </div>
   </section>;
 }
