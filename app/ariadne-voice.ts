@@ -1,7 +1,7 @@
 import { ARIADNE_VOICE_CUES, type AriadneVocalDelivery, type AriadneVoiceCue } from "./ariadne-vocal-performance.ts";
 
 type SpeechJob={text:string;sessionId:string;utteranceId:string;delivery:AriadneVocalDelivery};
-type SpeechCallbacks={onStart?:(cueText?:string)=>void};
+type SpeechCallbacks={onStart?:(cueText?:string)=>void|boolean};
 export type AriadneVoiceResult="spoken"|"failed"|"interrupted"|"busy";
 export const ARIADNE_PLAYBACK_RATE=1.1;
 /** Median measured mean level of the bundled reference cues. */
@@ -51,7 +51,8 @@ export function createAriadneVoice():AriadneVoice{
     if(!audioContext||destroyed||epoch!==speechEpoch)return"interrupted";
     if(audioContext.state!=="running")await audioContext.resume();
     const source=audioContext.createBufferSource(),gain=audioContext.createGain(),panner=audioContext.createStereoPanner();source.buffer=buffer;source.playbackRate.value=ARIADNE_PLAYBACK_RATE;source.connect(gain);gain.connect(panner);panner.connect(audioContext.destination);currentSource=source;currentGain=gain;currentPanner=panner;busyKind=kind;applySpatial();
-    callbacks.onStart?.();source.start();await new Promise<void>(resolve=>{source.onended=()=>resolve()});
+    if(callbacks.onStart?.()===false)return"interrupted";
+    source.start();await new Promise<void>(resolve=>{source.onended=()=>resolve()});
     return epoch===speechEpoch?"spoken":"interrupted";
   };
   const playCue=(cue:AriadneVoiceCue,callbacks:SpeechCallbacks={}):Promise<AriadneVoiceResult>=>{

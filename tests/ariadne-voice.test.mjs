@@ -45,3 +45,34 @@ test("a prerecorded cue plays immediately and the synchronized generated line wa
     if(OriginalAudioContext===undefined)delete globalThis.AudioContext;else globalThis.AudioContext=OriginalAudioContext;
   }
 });
+
+test("generated speech does not play when its synchronized caption is rejected",async()=>{
+  const originalFetch=globalThis.fetch,OriginalAudioContext=globalThis.AudioContext,starts=[];
+  class FakeSource{
+    onended=null;buffer=null;playbackRate={value:1};
+    connect(){}disconnect(){}stop(){this.onended?.()}
+    start(){starts.push("audio-start")}
+  }
+  class FakeAudioContext{
+    state="suspended";destination={};
+    async resume(){this.state="running"}
+    async close(){this.state="closed"}
+    async decodeAudioData(data){return{byteLength:data.byteLength}}
+    createBufferSource(){return new FakeSource()}
+    createGain(){return{gain:{value:1},connect(){},disconnect(){}}}
+    createStereoPanner(){return{pan:{value:0},connect(){},disconnect(){}}}
+  }
+  globalThis.AudioContext=FakeAudioContext;
+  globalThis.fetch=async()=>new Response(new Uint8Array([1,2,3]),{headers:{"content-type":"audio/mpeg"}});
+  const voice=createAriadneVoice();
+  try{
+    voice.unlock();
+    const result=await voice.speak({sessionId:"session-a",utteranceId:"stale-line",text:"An obsolete reply.",delivery:"quiet_companionship"},{onStart:()=>false});
+    assert.equal(result,"interrupted");
+    assert.deepEqual(starts,[]);
+    assert.equal(voice.isBusy(),false);
+  }finally{
+    voice.destroy();globalThis.fetch=originalFetch;
+    if(OriginalAudioContext===undefined)delete globalThis.AudioContext;else globalThis.AudioContext=OriginalAudioContext;
+  }
+});

@@ -162,7 +162,7 @@ export default function Home(){
     const summary={summary:[movement,...window.facts].join(" "),facts:window.facts};completedTurnActivitiesRef.current=[...completedTurnActivitiesRef.current,summary].slice(-3);return summary;
   },[]);
   const speakAndRevealAriadne=useCallback(async(message:CompanionMessage,reveal:()=>void,stillCurrent:()=>boolean=()=>true,delivery:AriadneVocalDelivery="quiet_companionship")=>{
-    let revealed=false,voiceActivitySerial=0;const show=()=>{if(revealed||!stillCurrent())return;revealed=true;voiceActivitySerial=++voiceActivitySerialRef.current;setVoiceActive(true);reveal()};const voice=ariadneVoiceRef.current;
+    let revealed=false,voiceActivitySerial=0;const show=()=>{if(revealed||!stillCurrent())return false;revealed=true;voiceActivitySerial=++voiceActivitySerialRef.current;setVoiceActive(true);reveal();return true};const voice=ariadneVoiceRef.current;
     if(!voice){if(stillCurrent()){revealed=true;reveal();lingerChat()}return revealed}
     const result=await voice.speak({text:message.text,sessionId:companionSessionRef.current,utteranceId:message.id,delivery},{onStart:show});
     if(result==="spoken")lastVoiceEndedAtRef.current=Date.now();
