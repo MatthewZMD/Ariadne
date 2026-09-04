@@ -139,6 +139,7 @@ export function PauseMenu({ onResume, onGiveUp, masterVolume, onVolumeChange }: 
         <input type="range" min="0" max="100" step="5" value={Math.round(masterVolume*100)} onChange={event=>onVolumeChange(Number(event.currentTarget.value)/100)} aria-label="Master volume"/>
       </label>
       <button className="pixel-button danger" type="button" onClick={onGiveUp}>GIVE UP</button>
+      <a className="pause-source" href="https://github.com/MatthewZMD/Ariadne" target="_blank" rel="noreferrer">SOURCE &amp; LICENSE</a>
       <p className="front-hint">ESC TO RESUME</p>
     </div>
   </section>;

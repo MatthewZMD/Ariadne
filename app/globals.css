@@ -61,6 +61,8 @@ button { font: inherit; }
 .pause-volume:focus-within { outline: 1px solid #9b916f; outline-offset: 3px; color: #eee9dc; background: #11130f; }
 .pause-volume strong { color: #dfca8a; font-size: 9px; font-weight: 400; text-align: right; }
 .pause-volume input { grid-column: 1 / -1; width: 100%; height: 16px; margin: 0; accent-color: #efcf70; cursor: pointer; }
+.pause-source { align-self: center; color: #96988f; font-size: 9px; letter-spacing: .14em; text-decoration: none; border-bottom: 1px solid transparent; transition: color 120ms ease, border-color 120ms ease; }
+.pause-source:hover, .pause-source:focus-visible { color: #dfca8a; border-color: currentColor; outline: none; }
 .pause-panel .front-hint { margin-top: 8px; text-align: center; }
 .closure-screen { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; background: rgba(0,0,0,0); animation: signal-collapse 2.25s steps(12) forwards; }
 .closure-screen.revealed { pointer-events: auto; background: #030403; }
