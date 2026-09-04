@@ -76,6 +76,8 @@ export function HeadphoneScreen({ onContinue }: { onContinue: () => void }) {
       <span className="headphone-icon" aria-hidden="true"><i /><i /></span>
       <h1>HEADPHONES RECOMMENDED</h1>
       <p>Ariadne moves and speaks from inside the maze.</p>
+      <p className="opening-controls desktop-opening-controls">WASD / ARROWS · MOVE&nbsp;&nbsp;&nbsp; MOUSE · LOOK&nbsp;&nbsp;&nbsp; ENTER · CHAT&nbsp;&nbsp;&nbsp; ESC · PAUSE</p>
+      <p className="opening-controls touch-opening-controls">LEFT SIDE · MOVE&nbsp;&nbsp;&nbsp; RIGHT SIDE · LOOK</p>
       <button className="pixel-button primary" type="button" onClick={onContinue}>CONTINUE</button>
     </div>
   </section>;
