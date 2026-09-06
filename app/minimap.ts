@@ -12,6 +12,7 @@ export type MinimapCell = {
   chunkId: string;
   source: "glimpsed" | "seen" | "traversed";
   clarity: number;
+  deadEnd?: boolean;
 };
 
 export type MinimapMemory = Map<string, MinimapCell>;
@@ -20,9 +21,14 @@ export function createMinimapMemory(): MinimapMemory {
   return new Map();
 }
 
+function isDeadEnd(world:InfiniteWorld,x:number,y:number,tick:number){
+  if(world.tile(x,y,tick)!==0)return false;
+  return ([[1,0],[-1,0],[0,1],[0,-1]] as const).filter(([dx,dy])=>world.tile(x+dx,y+dy,tick)===0).length===1;
+}
+
 export function recordTraversedCell(memory: MinimapMemory, world: InfiniteWorld, x: number, y: number, tick = 0) {
   const coords = world.coords(x, y);
-  memory.set(cellKey(x, y), { tile: world.tile(x, y, tick), chunkId: chunkKey(coords.cx, coords.cy), source: "traversed", clarity: 1 });
+  memory.set(cellKey(x, y), { tile: world.tile(x, y, tick), chunkId: chunkKey(coords.cx, coords.cy), source: "traversed", clarity: 1, deadEnd: isDeadEnd(world,x,y,tick) });
 }
 
 export function observeMinimap(
@@ -42,6 +48,7 @@ export function observeMinimap(
       chunkId: chunkKey(coords.cx, coords.cy),
       source: existing?.source === "traversed" ? "traversed" : "seen",
       clarity: 1,
+      deadEnd: isDeadEnd(world,x,y,tick),
     });
   };
   const rememberGlimpse=(x:number,y:number,clarity:number)=>{
@@ -56,7 +63,18 @@ export function observeMinimap(
   // Peripheral branch awareness is a tapered skim, not a binary route reveal.
   // A distant junction exposes only its entrance; as MT comes closer, another
   // faint cell or two becomes legible before the trace dissolves into fog.
-  for(const junction of visibleJunctions){
+  // Visibility reports junctions with three or more exits. A corridor elbow
+  // has only two, so include visible right-angle bends in the same skim.
+  const skimOrigins=[...visibleJunctions];
+  const originKeys=new Set(skimOrigins.map(origin=>cellKey(...origin.cell)));
+  for(const [x,y] of visibleCells){
+    if(originKeys.has(cellKey(x,y))||Math.hypot(x+.5-pose.x,y+.5-pose.y)>maxDistance+.7||world.tile(x,y,tick)!==0)continue;
+    const exits=([[1,0],[-1,0],[0,1],[0,-1]] as const).filter(([dx,dy])=>world.tile(x+dx,y+dy,tick)===0);
+    if(exits.length!==2||exits[0][0]*exits[1][0]+exits[0][1]*exits[1][1]!==0)continue;
+    skimOrigins.push({cell:[x,y],open:exits.map(([dx,dy])=>cellKey(x+dx,y+dy))});
+    originKeys.add(cellKey(x,y));
+  }
+  for(const junction of skimOrigins){
     const [jx,jy]=junction.cell;
     const junctionDistance=Math.hypot(jx+.5-pose.x,jy+.5-pose.y);
     if(junctionDistance>maxDistance+.7)continue;
@@ -147,6 +165,12 @@ export function renderMinimap(ctx: CanvasRenderingContext2D, memory: MinimapMemo
     else ctx.fillStyle = `rgba(93, 139, 132, ${Math.max(.12,Math.min(.48,cell.clarity))})`;
     const inset = cell.tile === 0 ? cell.source==="glimpsed"?1.05:.7 : .25;
     ctx.fillRect(-scale / 2 + inset, -scale / 2 + inset, Math.max(1, scale - inset * 2), Math.max(1, scale - inset * 2));
+    // Only observed or traversed endings are marked; a fading branch preview
+    // is not evidence that the passage ends there.
+    if(cell.deadEnd&&cell.source!=="glimpsed"){
+      ctx.fillStyle="rgba(190,94,83,.78)";
+      ctx.fillRect(-1,-1,2,2);
+    }
     ctx.restore();
   }
 
