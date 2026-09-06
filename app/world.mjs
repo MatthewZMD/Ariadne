@@ -146,9 +146,11 @@ export class InfiniteWorld {
     this.entranceGate = { inside: [insideX, insideY], cell: [gateX, gateY], facing: [Math.sign(forwardX), Math.sign(forwardY)] };
     return this.entranceGate;
   }
-  setEntranceCorridor(insideX, insideY, forwardX, forwardY, minimumLength = LOGICAL_SPACING + 12) {
+  setEntranceCorridor(insideX, insideY, forwardX, forwardY, minimumLength = LOGICAL_SPACING) {
     const dx = Math.sign(forwardX), dy = Math.sign(forwardY);
     if (Math.abs(dx) + Math.abs(dy) !== 1) throw new Error("entrance corridor requires one cardinal facing direction");
+    // Fourteen cells clear the initial twelve-cell view and leave time for
+    // the opening voice and material response without sealing a second span.
     const requestedLength = Math.max(1, Math.floor(minimumLength));
     const sideX = -dy, sideY = dx;
     // Do not end the authored entrance at an isolated carved cell. Find an

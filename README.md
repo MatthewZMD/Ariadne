@@ -26,7 +26,7 @@ The world, Ariadne’s animated body, and her generated voice operate at differe
 
 The procedural run remains isolated to one browser session. Four stars are real, sequential, and reachable. Ariadne’s hidden guidance reliability declines across them; she receives neither the reliability values nor knowledge of the absent exit. Environmental accomplishments can transform the maze without advancing its declared objective, allowing useful progress and pleasurable activity to diverge.
 
-The interface includes keyboard, mouse, and touch controls; a rotating exploration map; captions; spatial voice and ambience; reduced-motion behaviour; and a roughly ten-minute closure. The deployed application runs as a standalone Cloudflare Worker.
+The interface includes keyboard, mouse, and touch controls; a rotating exploration map; captions; spatial voice and ambience; and reduced-motion behaviour. Structures respond to approach, sustained looking, or stillness; awakened fragments can be sounded again without advancing the search. Reading and listening count toward the encounter's duration. Closure follows an extended search, with timing dependent on the player's progress. The deployed application runs as a standalone Cloudflare Worker.
 
 ## Run locally
 
@@ -38,7 +38,9 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Add an OpenRouter API key to `.env.local` to enable live generated language and voice. Without a key, the maze and Ariadne’s embodied behaviour continue without generated speech.
+Add an OpenRouter API key to `.env.local` to enable live generated language and voice. Speech tries Fish Audio S2.1 Pro Free first; on rate limits or server errors, it makes one paid S2.1 Pro attempt with the same voice ID and a shared 20-second deadline. Without a key, the maze and Ariadne’s embodied behaviour continue without generated speech.
+
+If the installed Workers emulator cannot support the production compatibility date, `ARIADNE_LOCAL_PREVIEW=1 npm run dev` previews the same application with vinext's Node runtime. Set the local provider environment as above. The default build and deployment still use Workers.
 
 Useful commands:
 

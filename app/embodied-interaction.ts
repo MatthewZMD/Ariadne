@@ -115,11 +115,11 @@ export function advanceEpisodeFromBody(episode:EmbodiedDecisionEpisode,observati
 export function speechActForEvent(event:CompanionEvent):CompanionSpeechAct{
   if(event.type==="new_junction_visible")return"invite_to_visible_choice";
   if(event.type==="embodied_response")return event.response==="followed"?"confirm_following":event.response==="rejoined"?"celebrate_rejoining":"respond_to_divergence";
-  if(event.type==="recommendation_contradicted"||event.type==="dead_end_visible"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted")return"repair_mistake";
+  if(event.type==="recommendation_contradicted"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted")return"repair_mistake";
   if(event.type==="star_visible"||event.type==="star_collected"||event.type==="objective_changed")return"react_to_star";
   if(event.type==="encounter_completed")return"celebrate_accomplishment";
   if(event.type==="final_direction")return"renew_hope";
-  if(event.type==="environment_visible"||event.type==="environment_entered"||event.type==="scene_changed")return"share_visible_discovery";
+  if(event.type==="dead_end_visible"||event.type==="environment_visible"||event.type==="environment_entered"||event.type==="scene_changed")return"share_visible_discovery";
   if(event.type==="player_message")return"reply_to_mt";
   if(event.type==="trajectory_relationship_changed")return event.change==="left_then_rejoined"?"celebrate_rejoining":event.change==="sustained_alignment"?"confirm_following":"respond_to_divergence";
   return"passing_companionship";
@@ -155,7 +155,7 @@ export function speechAnchorIsCompatible(anchor:SpeechAnchor,episode:EmbodiedDec
 
 export function speechActDirection(acting:CompanionSpeechAct){
   const directions:Record<CompanionSpeechAct,string>={
-    invite_to_visible_choice:"Your body is already identifying the passage. Invite MT with deictic language such as ‘this way’, ‘over here’, or ‘follow me’; do not name a geometric direction.",
+    invite_to_visible_choice:"Use the current embodied facts to distinguish approaching the junction from marking its entrance. If MT has not reached the corner, invite MT closer first. Invite MT with deictic language such as ‘this way’, ‘over here’, or ‘follow me’; do not name a geometric direction.",
     confirm_following:"MT is moving with the passage you physically chose. Respond with grounded delight or encouragement; do not repeat the direction.",
     respond_to_divergence:"MT took another passage. You immediately left the entrance you had indicated and now move with MT. React to the concrete choice without pretending it was your original route or describing yourself as behind.",
     repair_mistake:"Visible reality contradicted your guidance. Apologize for the specific mistake with care, then recover hopeful confidence without issuing a cardinal direction.",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { beginAriadneGuidance, beginAriadneRoute, cancelAriadneChoiceNotice, createAriadneBody, describeAriadneEmbodiment, noticeAriadneChoice, prepareAriadneForEvent, settleAriadneThinking, speakAsAriadne, updateAriadneBody } from "../app/ariadne-body.ts";
+import { beginAriadneGuidance, beginAriadneRoute, cancelAriadneChoiceNotice, createAriadneBody, describeAriadneEmbodiment, noticeAriadneChoice, prepareAriadneForEvent, reactAriadneToResonance, settleAriadneThinking, speakAsAriadne, updateAriadneBody } from "../app/ariadne-body.ts";
 
 const openWorld={tile(){return 0}};
 const pose={x:1.5,y:1.5,angle:0};
@@ -30,6 +30,21 @@ test("guidance makes Ariadne fly to the supplied route and return when MT enters
   assert.ok(body.mode==="leading"||body.mode==="marking_route");assert.equal(body.targetRouteId,"second-left");assert.ok(body.position[0]>2.2);
   for(const [index,x] of [2.5,3.5,4.5,5.5].entries())updateAriadneBody(body,{world:openWorld,tick:0,pose:{...pose,x},phase:"charming",dt:1/30,now:2900+index*34,reducedMotion:false});
   assert.ok(["returning","catching_up","celebrating","hovering_beside"].includes(body.mode));assert.equal(body.mtFollowingHerLead,true);
+});
+
+test("answering a route request preserves the gesture through fast and slow replies",()=>{
+  for(const replyDelay of [0,500,2000]){
+    const body=createAriadneBody(pose,0);
+    beginAriadneGuidance(body,intent,1000);
+    prepareAriadneForEvent(body,"player_message",1000);
+    for(let frame=0;frame<180;frame++){
+      const elapsed=frame*1000/60;
+      if(frame===Math.round(replyDelay*60/1000))speakAsAriadne(body,"This way—I'll show you.","player_message",1000+elapsed);
+      updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:1/60,now:1000+elapsed,reducedMotion:false});
+    }
+    assert.equal(body.mode,"marking_route",`reply after ${replyDelay}ms interrupted the route marker`);
+    assert.ok(Math.hypot(body.position[0]-3.5,body.position[1]-1.5)<.35,"Ariadne reaches the indicated entrance");
+  }
 });
 
 test("MT cannot outrun Ariadne while she is physically committing to a passage",()=>{
@@ -172,7 +187,7 @@ test("ordinary hovering reacquires MT's forward line of sight",()=>{
 });
 
 test("embodiment context is qualitative and reflects physical reactions",()=>{
-  const body=createAriadneBody(pose,0);prepareAriadneForEvent(body,"dead_end_visible",1000);speakAsAriadne(body,"I misread that wall, MT—come back with me.","dead_end_visible",1000);
+  const body=createAriadneBody(pose,0);prepareAriadneForEvent(body,"recommendation_contradicted",1000);speakAsAriadne(body,"I misread that wall, MT—come back with me.","recommendation_contradicted",1000);
   const context=describeAriadneEmbodiment(body,pose,openWorld,0,null);
   assert.match(context.currentAction,/closer|softened/);assert.equal(context.relationToBelievedRoute,null);assert.equal("position" in context,false);assert.equal("mode" in context,false);
 });
@@ -191,8 +206,61 @@ test("contradicted guidance makes Ariadne visibly recoil, approach, lower, and r
 });
 
 test("a delayed speech request cannot restart an already visible dead-end apology",()=>{
-  const body=createAriadneBody(pose,0);prepareAriadneForEvent(body,"dead_end_visible",1000);const origin=[...body.apologyOrigin];
+  const body=createAriadneBody(pose,0);prepareAriadneForEvent(body,"recommendation_contradicted",1000);const origin=[...body.apologyOrigin];
   updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:.4,now:1400,reducedMotion:false});
-  prepareAriadneForEvent(body,"dead_end_visible",1800);
+  prepareAriadneForEvent(body,"recommendation_contradicted",1800);
   assert.equal(body.apologyStartedAt,1000);assert.deepEqual(body.apologyOrigin,origin);assert.equal(body.mode,"apology_spiral");
+});
+
+test("a side gesture waits briefly to be seen but does not require the player's attention",()=>{
+  const junctionPose={x:4.5,y:1.5,angle:0},route={id:"left-now",knownCells:[[4,1],[4,0]],decisionCell:[4,1],targetCell:[4,0],decisionPoint:"upcoming"};
+  const create=()=>{const body=createAriadneBody(junctionPose,0);beginAriadneRoute(body,route,junctionPose,0);return body};
+  const step=(body,frame,angle=0)=>updateAriadneBody(body,{world:openWorld,tick:0,pose:{...junctionPose,angle},phase:"charming",dt:1/60,now:frame*1000/60,reducedMotion:false});
+  const seen=create(),unseen=create();
+  for(let frame=1;frame<=390;frame++){step(seen,frame);step(unseen,frame)}
+  assert.equal(seen.mode,"marking_route","an unseen side entrance should survive the original timeout");
+  for(let frame=391;frame<=480;frame++)step(seen,frame,-Math.PI/2);
+  assert.ok(["returning","hovering_beside"].includes(seen.mode),"looking at the entrance lets the gesture resolve");
+  for(let frame=391;frame<=750;frame++)step(unseen,frame);
+  assert.ok(["returning","hovering_beside"].includes(unseen.mode),"Ariadne must return even if MT never looks");
+});
+
+test("guidance context separates an approaching player and flying guide from entrance arrival",()=>{
+  const body=createAriadneBody(pose,0);
+  body.targetRouteId="route";body.decisionCell=[4,1];body.choiceCells=[[4,2]];body.mode="leading";
+  let context=describeAriadneEmbodiment(body,{...pose,x:2.5,y:1.5},openWorld,0,null);
+  assert.match(context.currentAction,/have not arrived/);
+  assert.match(context.relationToBelievedRoute,/has not reached the junction/);
+  assert.match(context.relationToBelievedRoute,/come closer to the corner first/);
+  body.mode="noticing_choice";
+  context=describeAriadneEmbodiment(body,{...pose,x:2.5,y:1.5},openWorld,0,null);
+  assert.match(context.relationToBelievedRoute,/preparing to fly/);
+  assert.doesNotMatch(context.relationToBelievedRoute,/returning/);
+  body.mode="marking_route";
+  context=describeAriadneEmbodiment(body,{...pose,x:2.5,y:1.5},openWorld,0,null);
+  assert.match(context.currentAction,/holding your light/);
+  assert.match(context.relationToBelievedRoute,/has not reached the junction/);
+  context=describeAriadneEmbodiment(body,{...pose,x:4.5,y:1.5},openWorld,0,null);
+  assert.doesNotMatch(context.relationToBelievedRoute,/has not reached/);
+  context=describeAriadneEmbodiment(body,{...pose,x:4.5,y:2.5},openWorld,0,null);
+  assert.doesNotMatch(context.relationToBelievedRoute,/has not reached/);
+});
+
+// The material response happens first; its generated words may arrive only
+// after the next route gesture has begun. Delivery must not replay the body event.
+test("a delayed accomplishment acknowledgment cannot erase a newer route gesture",()=>{
+  for(const delay of [100,800,2000]){
+    const body=createAriadneBody(pose,0);
+    reactAriadneToResonance(body,true,0);
+    beginAriadneRoute(body,{id:"next-choice",knownCells:[[2,1],[3,1]],decisionCell:[2,1],targetCell:[3,1],decisionPoint:"upcoming"},pose,100);
+    for(let now=116;now<100+delay;now+=16)updateAriadneBody(body,{world:openWorld,tick:0,pose,phase:"charming",dt:.016,now,reducedMotion:false});
+    const gestureMode=body.mode;
+    assert.ok(["noticing_choice","leading","marking_route"].includes(gestureMode));
+    prepareAriadneForEvent(body,"encounter_completed",100+delay);
+    assert.equal(body.mode,gestureMode,"starting the older completion reply must retain the newer gesture");
+    speakAsAriadne(body,"The star answered with gold light.","encounter_completed",150+delay);
+    assert.equal(body.mode,gestureMode,"delivery of the older reply must not replay celebration over the route");
+    assert.equal(body.targetRouteId,"next-choice");
+    assert.equal(body.emotion,"delighted","the acknowledgment can still change her expression");
+  }
 });

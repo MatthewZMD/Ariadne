@@ -1,0 +1,103 @@
+[
+  {
+    "name": "first invitation",
+    "stars": 0,
+    "occasion": "guidance",
+    "event": {
+      "type": "new_junction_visible"
+    },
+    "fact": "An open passage leads past a closed book. No star is visible.",
+    "action": "MT faces the book.",
+    "hope": "The book may wake the first star."
+  },
+  {
+    "name": "first signal",
+    "stars": 0,
+    "occasion": "accomplishment",
+    "event": {
+      "type": "encounter_completed",
+      "encounterId": "discovery-book",
+      "starResponded": true
+    },
+    "fact": "The book opened. A gold pulse answered from deeper in the passage. No star is visible yet.",
+    "action": "MT watched the pages until they opened.",
+    "hope": "The star answered the book; Ariadne believes they are getting closer."
+  },
+  {
+    "name": "first sighting",
+    "stars": 0,
+    "occasion": "objective",
+    "event": {
+      "type": "star_visible",
+      "starId": "discovery-first",
+      "ordinal": 1
+    },
+    "fact": "The first star is visible ahead beyond the open book. It has not been collected.",
+    "action": "MT walked far enough to see the star.",
+    "hope": "Ariadne can see the star they were seeking."
+  },
+  {
+    "name": "first collection",
+    "stars": 1,
+    "occasion": "objective",
+    "event": {
+      "type": "star_collected",
+      "starId": "discovery-first",
+      "ordinal": 1
+    },
+    "fact": "MT reached and collected the first star. Its fragment joined Ariadne.",
+    "action": "MT followed the book signal and collected the star.",
+    "hope": "Their first attempt worked."
+  },
+  {
+    "name": "later correction",
+    "stars": 3,
+    "occasion": "direct_reply",
+    "event": {
+      "type": "player_message",
+      "text": "Three stars, and you sent me to another wall. I am going back to those flowers."
+    },
+    "fact": "Three stars are collected. MT has reached a dead end after following Ariadne. Closed flowers were visible at the earlier junction.",
+    "action": "MT corrects Ariadne and chooses to return to the flowers.",
+    "hope": "Ariadne wants to apologize, praise MT\u2019s correction, and keep seeking the remaining star together."
+  },
+  {
+    "name": "fourth signal",
+    "stars": 3,
+    "occasion": "accomplishment",
+    "event": {
+      "type": "encounter_completed",
+      "encounterId": "discovery-flowers",
+      "starResponded": true
+    },
+    "fact": "The flowers opened and a gold pulse answered. The fourth star is not visible yet.",
+    "action": "MT returned and watched the flowers until they opened.",
+    "hope": "MT\u2019s correction led to a real star response; Ariadne believes they are close."
+  },
+  {
+    "name": "fourth sighting",
+    "stars": 3,
+    "occasion": "objective",
+    "event": {
+      "type": "star_visible",
+      "starId": "discovery-fourth",
+      "ordinal": 4
+    },
+    "fact": "The fourth star is visible ahead beside the open flowers. It has not been collected.",
+    "action": "MT approached the light and can see the star.",
+    "hope": "Ariadne has found the last star and expects all four to restore the way home."
+  },
+  {
+    "name": "fourth collection",
+    "stars": 4,
+    "occasion": "objective",
+    "event": {
+      "type": "star_collected",
+      "starId": "discovery-fourth",
+      "ordinal": 4
+    },
+    "fact": "MT collected the fourth star. All four fragments travel with Ariadne. No exit is visible.",
+    "action": "MT completed the star search after correcting Ariadne\u2019s failed route.",
+    "hope": "Ariadne believes they can now restore the way home together."
+  }
+]

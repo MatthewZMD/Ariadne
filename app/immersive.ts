@@ -7,6 +7,17 @@ type LockableScreenOrientation = ScreenOrientation & {
   lock?: (orientation: "landscape") => Promise<void>;
 };
 
+/** Mouse capture is optional in embedded browsers; keyboard turning remains available. */
+export async function requestMouseLook(target: { requestPointerLock?: () => Promise<void> | void }): Promise<boolean> {
+  if (!target.requestPointerLock) return false;
+  try {
+    await target.requestPointerLock();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function isTouchFirstDevice() {
   if (typeof window === "undefined") return false;
   return navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;

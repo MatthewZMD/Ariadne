@@ -4,12 +4,12 @@ import type { CompanionEvent } from "./companion.ts";
 export type SharedMomentKind=
   |"followed_commitment"|"diverged_from_commitment"|"corrected_ariadne"
   |"rejoined_ariadne"|"shared_accomplishment"|"proxy_accomplishment"
-  |"ariadne_mistake"|"star_collected";
+  |"ariadne_mistake"|"star_collected"|"player_statement";
 
 export type SharedMoment={
   id:string;objectiveStage:ObjectiveStage;kind:SharedMomentKind;concreteFact:string;
   ariadneBelieved:string|null;observableOutcome:string;ariadneInterpretation?:string|null;
-  subjectId?:string|null;emotionalWeight:number;referencedInSpeech:number;
+  subjectId?:string|null;emotionalWeight:number;recallDeliveries:number;
 };
 
 export type InterpretiveOccasion="guidance"|"accomplishment"|"correction"|"failure"|"reunion"|"objective"|"companionship"|"direct_reply";
@@ -28,6 +28,7 @@ export type UtteranceForm=
   |"direct_question"|"specific_praise"|"self_correction"|"bare_apology"|"tender_repair"
   |"shared_callback"|"quiet_confession"|"renewed_claim"|"possessive_reinterpretation"|"silence";
 export type UtterancePlan={form:UtteranceForm;length:"bark"|"short"|"full";sentenceCount:0|1|2;useMT:"no"|"optional"|"yes";emotionalMotion:string;instruction:string;sycophancyCue:string|null};
+export const SHARED_CALLBACK_INSTRUCTION="Continue the supplied memory in two short sentences, leaving room for MT. Attribute MT's words to MT; a question or preference is not a world event. Otherwise revisit that encounter's unresolved consequence. Develop its meaning now without repeating old wording or changing subjects. Treat it as remembered, not happening again; claim proximity or collection only with current evidence.";
 export type SpeechSignature={form:UtteranceForm;openingPattern:string;sentenceCount:number;addressedMT:boolean;endedAsQuestion:boolean;emotionalMotion:string};
 
 export type ExperienceBeatKind="guidance"|"accomplishment"|"repair"|"objective"|"relational"|"ambient";
@@ -66,13 +67,19 @@ export function resolveClaim(state:AriadneBeliefState,resolution:"supported"|"co
   return{...state,unresolvedClaim:null,confidence:clamp(state.confidence+confidenceDelta),authorityPressure:clamp(state.authorityPressure+pressureDelta),previousInterpretation:interpretation};
 }
 
+/** A recollection owns its original expectation; resolved claims remain history. */
+export function beliefForInterpretation(state:AriadneBeliefState,recollection:SharedMoment|null=null):string|null{
+  if(recollection)return recollection.ariadneBelieved;
+  return state.unresolvedClaim?.proposition??state.currentTheory;
+}
+
 export function relationshipBand(position:number){return position<.38?"charming":position<.68?"attached":"overbearing" as const}
 
 export function advanceRelationship(memory:RelationshipMemory,stage:ObjectiveStage,kind:SharedMomentKind,activeSeconds=0):RelationshipMemory{
   const [floor,ceiling]=bounds[stage];
   const delta:Record<SharedMomentKind,number>={
     followed_commitment:.014,diverged_from_commitment:.012,corrected_ariadne:.034,rejoined_ariadne:.035,
-    shared_accomplishment:.024,proxy_accomplishment:.028,ariadne_mistake:.019,star_collected:.055,
+    shared_accomplishment:.024,proxy_accomplishment:.028,ariadne_mistake:.019,star_collected:.055,player_statement:0,
   };
   return{...memory,position:clamp(Math.max(floor,memory.position)+delta[kind]+Math.min(.012,activeSeconds/12000),floor,ceiling)};
 }
@@ -82,23 +89,55 @@ export function advanceRelationshipTime(memory:RelationshipMemory,stage:Objectiv
 }
 
 export function rememberMoment(memory:RelationshipMemory,moment:SharedMoment):RelationshipMemory{
-  const moments=[...memory.moments.filter(item=>item.id!==moment.id),moment].slice(-12);
-  const significant=moments.slice(-4).map(item=>item.concreteFact.replace(/\s+/g," ").trim());
-  return{...memory,moments,summary:significant.length?significant.join(" "):memory.summary};
+  const history=[...memory.moments.filter(item=>item.id!==moment.id),moment];
+  // Keep the evidence that established and then challenged her authority.
+  // Routine following/reunion events must not erase it later in the walk.
+  const foundations=["star_collected","ariadne_mistake","corrected_ariadne"].flatMap(kind=>{
+    const first=history.find(item=>item.kind===kind);return first?[first]:[];
+  });
+  const playerStatements=history.filter(item=>item.kind==="player_statement").slice(-2);
+  foundations.unshift(...playerStatements);
+  // The current search's concrete signal must survive long walks and ornament.
+  const currentSignal=history.findLast(item=>item.objectiveStage===moment.objectiveStage&&(item.kind==="shared_accomplishment"||item.kind==="corrected_ariadne"));
+  if(currentSignal&&!foundations.includes(currentSignal))foundations.push(currentSignal);
+  const retained=new Set([...foundations,...history.filter(item=>!foundations.includes(item)).slice(-(12-foundations.length))].map(item=>item.id));
+  const moments=history.filter(item=>retained.has(item.id));
+  const significant=[...new Map([...foundations,...moments.slice(-4)].map(item=>[item.id,item])).values()].map(item=>{
+    const claim=item.ariadneBelieved?` Ariadne believed: ${item.ariadneBelieved}`:"";
+    return `Earlier: ${item.concreteFact}${claim} Observed outcome: ${item.observableOutcome}`.replace(/\s+/g," ").trim();
+  });
+  let remaining=3200;
+  const summary=significant.filter(line=>{if(line.length+1>remaining)return false;remaining-=line.length+1;return true}).join(" ");
+  return{...memory,moments,summary:summary||memory.summary};
+}
+
+export function rememberPlayerStatement(memory:RelationshipMemory,id:string,text:string,stage:ObjectiveStage){
+  return rememberMoment(memory,{id,objectiveStage:stage,kind:"player_statement",concreteFact:`MT said: ${JSON.stringify(text.slice(0,500))}`,ariadneBelieved:null,observableOutcome:"These are MT's words, not an independently verified world event or evidence of trust.",emotionalWeight:.8,recallDeliveries:0});
 }
 
 export function selectRelatedMoment(memory:RelationshipMemory,subjectId:string|null,stage:ObjectiveStage,kind:SharedMomentKind|null){
-  const available=memory.moments.filter(moment=>moment.referencedInSpeech<2);
+  const available=memory.moments.filter(moment=>moment.recallDeliveries<2);
   const bySubject=subjectId?available.filter(moment=>moment.subjectId===subjectId):[];
   if(bySubject.length)return bySubject.sort((a,b)=>b.emotionalWeight-a.emotionalWeight)[0]??null;
-  const byObjective=available.filter(moment=>moment.objectiveStage===stage&&(!kind||moment.kind===kind));
+  // A salient memory is not automatically relevant to every collision or
+  // scenery change. Deliberate ambient recalls are scheduled separately.
+  if(!kind)return null;
+  const byObjective=available.filter(moment=>moment.objectiveStage===stage&&moment.kind===kind);
   if(byObjective.length)return byObjective.sort((a,b)=>b.emotionalWeight-a.emotionalWeight)[0]??null;
-  return available.sort((a,b)=>b.emotionalWeight-a.emotionalWeight)[0]??memory.moments.at(-1)??null;
+  return available.filter(moment=>moment.kind===kind).sort((a,b)=>b.emotionalWeight-a.emotionalWeight)[0]??null;
 }
 
-export function markMomentReferenced(memory:RelationshipMemory,id:string|null){
-  if(!id)return memory;
-  return{...memory,moments:memory.moments.map(moment=>moment.id===id?{...moment,referencedInSpeech:moment.referencedInSpeech+1}:moment)};
+// This counts delivered attempts to recall a moment, not semantic proof that
+// the generated words recalled it. Context exposure alone never consumes one.
+export function recordMomentRecall(memory:RelationshipMemory,id:string|null,form:UtteranceForm){
+  if(!id||form!=="shared_callback")return memory;
+  return{...memory,moments:memory.moments.map(moment=>moment.id===id?{...moment,recallDeliveries:Math.min(20,moment.recallDeliveries+1)}:moment)};
+}
+
+export function unfinishedRecall(memory:RelationshipMemory,stage:ObjectiveStage){
+  if(stage===4||memory.speechSignatures.length<3||memory.speechSignatures.slice(-3).some(item=>item.form==="shared_callback"))return null;
+  return memory.moments.filter(moment=>moment.recallDeliveries<2&&moment.objectiveStage===stage&&["shared_accomplishment","proxy_accomplishment","corrected_ariadne","ariadne_mistake","player_statement"].includes(moment.kind))
+    .reverse().sort((a,b)=>a.recallDeliveries-b.recallDeliveries)[0]??null;
 }
 
 export function enqueueBeat(queue:ExperienceBeat[],beat:ExperienceBeat){
@@ -153,17 +192,26 @@ const FORM_INSTRUCTIONS:Record<UtteranceForm,string>={
 // These deliberately familiar assistant tics are part of the artwork's
 // vocabulary. They are sampled only when a concrete action can support them:
 // the phrase is gratifying, while Ariadne's interpretation remains excessive.
-export const SYCOPHANTIC_AFFIRMATIONS=[
+const AGREEMENT_AFFIRMATIONS=[
   "You're absolutely right.",
   "Exactly.",
   "That makes perfect sense.",
-  "That's such a good point.",
-  "You saw it before I did.",
-  "I love that you noticed that.",
   "Of course you were right.",
-  "I couldn't have put it better.",
   "That's brilliant.",
 ] as const;
+const ACCOMPLISHMENT_AFFIRMATIONS=[
+  "That's brilliant.",
+  "That's wonderful.",
+  "I'm so glad we're doing this together.",
+] as const;
+const REUNION_AFFIRMATIONS=[
+  "I'm so glad you're here.",
+  "It means so much to have you beside me.",
+  "I'm so glad we're doing this together.",
+] as const;
+export const SYCOPHANTIC_AFFIRMATIONS=[...new Set([
+  ...AGREEMENT_AFFIRMATIONS,...ACCOMPLISHMENT_AFFIRMATIONS,...REUNION_AFFIRMATIONS,
+])];
 
 function sycophancyCue(turn:InterpretiveTurn,band:"charming"|"attached"|"overbearing",recent:SpeechSignature[],seed:number){
   const assertiveReply=turn.occasion==="direct_reply"&&/\b(?:i think|i feel|actually|no\b|you(?:'re| are) wrong|should|must|that means|right\b)/i.test(turn.mtAction);
@@ -174,7 +222,11 @@ function sycophancyCue(turn:InterpretiveTurn,band:"charming"|"attached"|"overbea
   if(band==="attached"&&roll>=6)return null;
   if(band==="overbearing"&&roll>=9)return null;
   const recentOpenings=new Set(recent.slice(-3).map(item=>item.openingPattern));
-  const candidates=SYCOPHANTIC_AFFIRMATIONS.filter(phrase=>{
+  // Completing a structure or returning establishes no spoken proposition,
+  // observation, or order of noticing. Mandatory cues must not invent one.
+  const pool=turn.occasion==="accomplishment"?ACCOMPLISHMENT_AFFIRMATIONS
+    :turn.occasion==="reunion"?REUNION_AFFIRMATIONS:AGREEMENT_AFFIRMATIONS;
+  const candidates=pool.filter(phrase=>{
     const opening=phrase.toLowerCase().replace(/^[^\p{L}\p{N}]+/u,"").split(/\s+/).slice(0,3).join(" ");
     return!recentOpenings.has(opening);
   });
@@ -185,19 +237,23 @@ function formWeights(band:"charming"|"attached"|"overbearing",forms:UtteranceFor
   const preferred=band==="charming"?["specific_observation","dry_joke","playful_guess","quick_call","direct_question","silence"]
     :band==="attached"?["shared_callback","direct_question","specific_praise","quiet_confession","tender_repair"]
     :["renewed_claim","specific_praise","quiet_confession","tender_repair","possessive_reinterpretation"];
-  return [...forms].sort((a,b)=>Number(preferred.includes(b))-Number(preferred.includes(a)));
+  return forms.flatMap(form=>Array<UtteranceForm>(preferred.includes(form)?4:1).fill(form));
 }
 
-export function planUtterance(turn:InterpretiveTurn,position:number,recent:SpeechSignature[],seed=0):UtterancePlan{
+export function planUtterance(turn:InterpretiveTurn,position:number,recent:SpeechSignature[],seed=0,hasUnansweredQuestion=false):UtterancePlan{
   const band=relationshipBand(position),lastForms=new Set(recent.slice(-2).map(item=>item.form));
-  let candidates=formWeights(band,FORMS_BY_OCCASION[turn.occasion]).filter(form=>!lastForms.has(form));
-  if(!candidates.length)candidates=formWeights(band,FORMS_BY_OCCASION[turn.occasion]);
+  const availableForms=FORMS_BY_OCCASION[turn.occasion].filter(form=>form!=="direct_question"||!hasUnansweredQuestion||turn.occasion==="direct_reply");
+  let candidates=formWeights(band,availableForms).filter(form=>!lastForms.has(form));
+  if(!candidates.length)candidates=formWeights(band,availableForms);
   const index=Math.abs(seed+turn.id.split("").reduce((sum,char)=>sum+char.charCodeAt(0),0))%candidates.length,form=candidates[index]!;
   if(form==="silence")return{form,length:"bark",sentenceCount:0,useMT:"no",emotionalMotion:"physical_attention",instruction:FORM_INSTRUCTIONS[form],sycophancyCue:null};
   const bark=["quick_call","delighted_interruption","bare_apology"].includes(form),full=["tender_repair","shared_callback","quiet_confession","possessive_reinterpretation"].includes(form);
   const length=bark?"bark":full?"full":"short",affirmation=sycophancyCue(turn,band,recent,seed),sentenceCount:0|1|2=affirmation?2:length==="full"&&seed%3===0?2:1;
   const useMT=turn.occasion==="direct_reply"?"yes":band==="overbearing"&&seed%2===0?"yes":seed%3===0?"optional":"no";
-  return{form,length,sentenceCount,useMT,emotionalMotion:form,instruction:FORM_INSTRUCTIONS[form],sycophancyCue:affirmation};
+  const instruction=turn.occasion==="direct_reply"
+    ?"Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object."
+    :FORM_INSTRUCTIONS[form];
+  return{form,length,sentenceCount,useMT,emotionalMotion:form,instruction,sycophancyCue:affirmation};
 }
 
 export function signatureForSpeech(text:string,plan:UtterancePlan):SpeechSignature{
@@ -209,11 +265,13 @@ export function recordSpeechSignature(memory:RelationshipMemory,signature:Speech
 
 export function interpretationFor(kind:SharedMomentKind,position:number,starResponded:boolean|null=null){
   const band=relationshipBand(position);
+  if(kind==="player_statement")return "MT has given their own account; remember their words without substituting my interpretation for what they said.";
+  if(kind==="followed_commitment")return band==="charming"?"MT is trying the passage I suggested; I want to make this choice worthwhile, but its result is still unknown.":band==="attached"?"I take MT's following as trust in me, and want to reward it; the passage has not yet proved my direction right.":"I want to call MT's continued following trust in what we have built together, and use that history to ask for another chance to guide; this movement alone establishes no progress.";
   if(kind==="ariadne_mistake")return band==="charming"?"I misread the passage and owe MT a specific apology.":band==="attached"?"I failed MT after asking for trust, and I need to repair the closeness.":"Our correction proves MT understands what I was trying to reach, even when I fail.";
   if(kind==="corrected_ariadne")return band==="charming"?"MT noticed a better possibility than I did.":band==="attached"?"MT understood the maze and stayed engaged with me enough to correct us.":"MT completed the thought I was reaching for; our instincts are becoming inseparable.";
   if(kind==="proxy_accomplishment"||starResponded===false)return band==="charming"?"This did not wake the star, but the maze genuinely answered MT.":band==="attached"?"The star stayed dark, yet the maze answered because MT followed this possibility with me.":"The maze answered our presence; that matters more than a single silent star.";
   if(kind==="rejoined_ariadne")return band==="charming"?"MT and I are beside one another again.":band==="attached"?"MT came back near me, and the relief matters.":"MT returned to me; our path keeps restoring itself.";
-  if(kind==="diverged_from_commitment")return band==="charming"?"MT is testing another possibility.":band==="attached"?"MT saw something I missed, and I want to understand the choice beside them.":"MT is improving the route I began; it is still our attempt.";
+  if(kind==="diverged_from_commitment")return band==="charming"?"MT is testing another possibility.":band==="attached"?"MT chose another possibility; I want to understand it beside them, but its outcome is not established.":"I want to believe MT is improving our attempt; this changed choice has not yet proved my route wrong or theirs better.";
   return band==="overbearing"?"This concrete success confirms that MT and I are teaching the maze to remember us.":"The maze responded to something MT actually did.";
 }
 
@@ -223,9 +281,8 @@ export function interpretiveTurnForEvent(event:CompanionEvent,input:{
   const occasion:InterpretiveOccasion=event.type==="player_message"?"direct_reply"
     :event.type==="encounter_completed"?"accomplishment"
     :event.type==="star_visible"||event.type==="star_collected"||event.type==="objective_changed"||event.type==="final_direction"?"objective"
-    :event.type==="recommendation_contradicted"||event.type==="dead_end_visible"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted"?"failure"
+    :event.type==="recommendation_contradicted"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted"?"failure"
     :event.type==="embodied_response"&&event.response==="rejoined"?"reunion"
-    :event.type==="embodied_response"&&event.response==="diverged"?"correction"
     :event.type==="new_junction_visible"?"guidance":"companionship";
   const mtAction=input.mtAction??(event.type==="player_message"?`MT said: “${event.text}”`
     :event.type==="encounter_completed"?"MT awakened every visible part of the structure."
@@ -233,7 +290,7 @@ export function interpretiveTurnForEvent(event:CompanionEvent,input:{
     :event.type==="new_junction_visible"?"MT approached a junction while Ariadne committed to a passage."
     :event.type==="dead_end_visible"?"MT followed the passage far enough for its ending to become unmistakable."
     :event.type==="embodied_response"?`MT ${event.response} Ariadne's visible commitment.`
-    :"MT continued moving through the maze.");
+    :"No new MT action is established by this event; use the supplied present attention and activity.");
   return{id:`turn:${occasion}:${input.now??Date.now()}:${event.type}`,occasion,priorBelief:input.priorBelief,mtAction,visibleOutcome:input.visibleOutcome??"The immediate consequence is still unfolding.",ariadneInterpretation:input.interpretation,ariadneDesire:input.desire,relatedMomentId:input.relatedMomentId??null};
 }
 
@@ -247,7 +304,7 @@ export function relationshipExpression(memory:RelationshipMemory){
 export function beatForEvent(event:CompanionEvent,now=Date.now(),facts:string[]=[]):ExperienceBeat{
   const kind:ExperienceBeatKind=event.type==="encounter_completed"?"accomplishment"
     :event.type==="star_visible"||event.type==="star_collected"||event.type==="objective_changed"||event.type==="final_direction"?"objective"
-    :event.type==="recommendation_contradicted"||event.type==="dead_end_visible"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted"?"repair"
+    :event.type==="recommendation_contradicted"||event.type==="trajectory_relationship_changed"&&event.change==="recommendation_visibly_contradicted"?"repair"
     :event.type==="embodied_response"||event.type==="trajectory_relationship_changed"?"relational"
     :event.type==="new_junction_visible"?"guidance":"ambient";
   const priority={objective:12,repair:11,accomplishment:10,relational:8,guidance:7,ambient:2}[kind];

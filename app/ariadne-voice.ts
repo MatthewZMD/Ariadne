@@ -1,7 +1,7 @@
 import { ARIADNE_VOICE_CUES, type AriadneVocalDelivery, type AriadneVoiceCue } from "./ariadne-vocal-performance.ts";
 
 type SpeechJob={text:string;sessionId:string;utteranceId:string;delivery:AriadneVocalDelivery};
-type SpeechCallbacks={onStart?:(cueText?:string)=>void|boolean};
+type SpeechCallbacks={onPrepare?:()=>void|boolean;onStart?:(cueText?:string)=>void|boolean;cutAtFraction?:number};
 export type AriadneVoiceResult="spoken"|"failed"|"interrupted"|"busy";
 export const ARIADNE_PLAYBACK_RATE=1.1;
 /** Median measured mean level of the bundled reference cues. */
@@ -25,6 +25,7 @@ export type AriadneVoice={
 
 export function createAriadneVoice():AriadneVoice{
   let unlocked=false,destroyed=false,paused=false,busyKind:"cue"|"speech"|null=null,speechQueued=false,epoch=0,audioContext:AudioContext|null=null,currentSource:AudioBufferSourceNode|null=null,currentController:AbortController|null=null,currentPanner:StereoPannerNode|null=null,currentGain:GainNode|null=null,spatialPan=0,spatialDistance=1,masterVolume=1,activeCueDone:Promise<AriadneVoiceResult>|null=null;
+  let preloadStarted=false;
   const cueBuffers=new Map<string,Promise<AudioBuffer|null>>(),lastCueVariant=new Map<AriadneVoiceCue,number>();
   const resumeWaiters=new Set<()=>void>();
 
@@ -42,25 +43,36 @@ export function createAriadneVoice():AriadneVoice{
   const loadCue=(path:string)=>{
     const existing=cueBuffers.get(path);if(existing)return existing;
     if(!audioContext)return Promise.resolve(null);
-    const context=audioContext,promise=fetch(path).then(response=>{if(!response.ok)throw new Error("cue unavailable");return response.arrayBuffer()}).then(encoded=>context.decodeAudioData(encoded.slice(0))).catch(()=>null);
+    const context=audioContext,promise=fetch(path,{signal:AbortSignal.timeout(8000)}).then(response=>{if(!response.ok)throw new Error("cue unavailable");return response.arrayBuffer()}).then(encoded=>context.decodeAudioData(encoded.slice(0))).catch(()=>null);
     cueBuffers.set(path,promise);return promise;
   };
   const playBuffer=async(buffer:AudioBuffer,kind:"cue"|"speech",callbacks:SpeechCallbacks,speechEpoch:number):Promise<AriadneVoiceResult>=>{
     if(!audioContext||destroyed||epoch!==speechEpoch)return"interrupted";
     if(paused)await new Promise<void>(resolve=>resumeWaiters.add(resolve));
     if(!audioContext||destroyed||epoch!==speechEpoch)return"interrupted";
-    if(audioContext.state!=="running")await audioContext.resume();
+    if(audioContext.state!=="running"){
+      let timeout:ReturnType<typeof setTimeout>|undefined;
+      try{await Promise.race([audioContext.resume(),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new Error("audio resume timed out")),2000)})])}
+      finally{if(timeout)clearTimeout(timeout)}
+    }
     const source=audioContext.createBufferSource(),gain=audioContext.createGain(),panner=audioContext.createStereoPanner();source.buffer=buffer;source.playbackRate.value=ARIADNE_PLAYBACK_RATE;source.connect(gain);gain.connect(panner);panner.connect(audioContext.destination);currentSource=source;currentGain=gain;currentPanner=panner;busyKind=kind;applySpatial();
     if(callbacks.onStart?.()===false)return"interrupted";
-    source.start();await new Promise<void>(resolve=>{source.onended=()=>resolve()});
+    const ended=new Promise<void>(resolve=>{source.onended=()=>resolve()});
+    source.start();
+    if(callbacks.cutAtFraction!==undefined){
+      const fraction=Math.max(.1,Math.min(.9,callbacks.cutAtFraction));
+      source.stop(audioContext.currentTime+buffer.duration*fraction/ARIADNE_PLAYBACK_RATE);
+    }
+    await ended;
     return epoch===speechEpoch?"spoken":"interrupted";
   };
   const playCue=(cue:AriadneVoiceCue,callbacks:SpeechCallbacks={}):Promise<AriadneVoiceResult>=>{
     if(destroyed||!unlocked||!audioContext)return Promise.resolve("failed");
     if(busyKind)return Promise.resolve("busy");
+    if(callbacks.onPrepare?.()===false)return Promise.resolve("interrupted");
     const variants=ARIADNE_VOICE_CUES[cue],previous=lastCueVariant.get(cue),index=previous===undefined?Math.floor(Math.random()*variants.length):(previous+1+Math.floor(Math.random()*(variants.length-1)))%variants.length,variant=variants[index]!;lastCueVariant.set(cue,index);
     const cueEpoch=epoch;busyKind="cue";
-    const done=loadCue(variant.path).then(buffer=>buffer?playBuffer(buffer,"cue",{onStart:()=>callbacks.onStart?.(variant.text)},cueEpoch):"failed").then(result=>{
+    const done=loadCue(variant.path).then(buffer=>buffer?playBuffer(buffer,"cue",{onStart:()=>callbacks.onStart?.(variant.text)},cueEpoch):"failed").catch(()=>"failed" as const).then(result=>{
       if(epoch===cueEpoch){clearCurrent();busyKind=null;activeCueDone=null}return result;
     });
     activeCueDone=done;return done;
@@ -71,7 +83,8 @@ export function createAriadneVoice():AriadneVoice{
     if(busyKind==="cue"&&activeCueDone){speechQueued=true;const cueEpoch=epoch;await activeCueDone;speechQueued=false;if(destroyed||epoch!==cueEpoch)return"interrupted"}
     busyKind="speech";const speechEpoch=++epoch,controller=new AbortController();currentController=controller;
     try{
-      const response=await fetch("/api/speech",{method:"POST",headers:{"content-type":"application/json"},signal:controller.signal,body:JSON.stringify({...job,text:job.text.trim()})});
+      if(callbacks.onPrepare?.()===false)return"interrupted";
+      const response=await fetch("/api/speech",{method:"POST",headers:{"content-type":"application/json"},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(25_000)]),body:JSON.stringify({...job,text:job.text.trim()})});
       if(!response.ok)throw new Error(`speech request failed: ${response.status}`);
       const encoded=await response.arrayBuffer();
       if(destroyed||epoch!==speechEpoch||controller.signal.aborted)return"interrupted";
@@ -86,7 +99,7 @@ export function createAriadneVoice():AriadneVoice{
     }
   };
   return{
-    unlock(){if(!audioContext)audioContext=new AudioContext();unlocked=true;if(!paused)void audioContext.resume();for(const variants of Object.values(ARIADNE_VOICE_CUES))for(const variant of variants)void loadCue(variant.path)},
+    unlock(){if(!audioContext)audioContext=new AudioContext();unlocked=true;if(!paused)void audioContext.resume().catch(()=>{});if(!preloadStarted){preloadStarted=true;void Promise.all(ARIADNE_VOICE_CUES.opening_premise.map(variant=>loadCue(variant.path))).then(()=>{if(destroyed)return;for(const[cue,variants]of Object.entries(ARIADNE_VOICE_CUES))if(cue!=="opening_premise")for(const variant of variants)void loadCue(variant.path)})}},
     pause(){paused=true;void audioContext?.suspend()},
     resume(){paused=false;releaseResumeWaiters();if(unlocked)void audioContext?.resume()},
     speak,playCue,interrupt,isBusy:()=>busyKind!==null||speechQueued,

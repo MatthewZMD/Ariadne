@@ -22,7 +22,7 @@ export type AriadneEmotion="curious"|"delighted"|"encouraging"|"apologetic"|"rel
 export type AriadneTrailPoint={x:number;y:number;height:number;bornAt:number};
 export type AriadneBodyState={
   position:[number,number];height:number;velocity:[number,number,number];mode:AriadneBodyMode;emotion:AriadneEmotion;
-  side:-1|1;targetRouteId:string|null;routeCells:Point[];decisionCell:Point|null;approachCell:Point|null;expectedChoiceCell:Point|null;choiceCells:Point[];reachedDecision:boolean;leadStartedAt:number;routeMarkStartedAt:number;speakUntil:number;emotionUntil:number;
+  side:-1|1;targetRouteId:string|null;routeCells:Point[];decisionCell:Point|null;approachCell:Point|null;expectedChoiceCell:Point|null;choiceCells:Point[];reachedDecision:boolean;leadStartedAt:number;routeMarkStartedAt:number;routeMarkSeenSeconds?:number;speakUntil:number;emotionUntil:number;
   thinkingSince:number|null;decisionEmphasisStartedAt:number;decisionEmphasisUntil:number;decisionOrigin:[number,number];decisionArcSign:-1|1;
   apologyStartedAt:number;apologyOrigin:[number,number];apologyReady:boolean;
   lastTrailAt:number;trail:AriadneTrailPoint[];lastPlayerPosition:[number,number];lastPlayerAngle:number;approachingUntil:number;departureRouteId:string|null;divergedDuringGuidance:boolean;mtFollowingHerLead:boolean;mtChoseAnotherRoute:boolean;mtReturningToHer:boolean;
@@ -70,7 +70,7 @@ function phaseWait(phase:RelationshipPhase){return phase==="charming"?4.5:phase=
 export function createAriadneBody(pose:BodyPose,now=0,world?:InfiniteWorld,tick=0):AriadneBodyState{
   const right=shoulderPoint(pose,1,phaseDistance("charming")),left=shoulderPoint(pose,-1,phaseDistance("charming")),side:-1|1=world&&!openAt(world,right[0],right[1],tick)&&openAt(world,left[0],left[1],tick)?-1:1;
   const candidate=side===1?right:left,position:[number,number]=world&&!openAt(world,candidate[0],candidate[1],tick)?[pose.x,pose.y]:candidate;
-  return{position,height:.76,velocity:[0,0,0],mode:"hovering_beside",emotion:"curious",side,targetRouteId:null,routeCells:[],decisionCell:null,approachCell:null,expectedChoiceCell:null,choiceCells:[],reachedDecision:false,leadStartedAt:0,routeMarkStartedAt:0,speakUntil:0,emotionUntil:now,thinkingSince:null,decisionEmphasisStartedAt:0,decisionEmphasisUntil:0,decisionOrigin:[...position],decisionArcSign:-side,apologyStartedAt:0,apologyOrigin:[...position],apologyReady:false,lastTrailAt:now,trail:[],lastPlayerPosition:[pose.x,pose.y],lastPlayerAngle:pose.angle,approachingUntil:0,departureRouteId:null,divergedDuringGuidance:false,mtFollowingHerLead:false,mtChoseAnotherRoute:false,mtReturningToHer:false};
+  return{position,height:.76,velocity:[0,0,0],mode:"hovering_beside",emotion:"curious",side,targetRouteId:null,routeCells:[],decisionCell:null,approachCell:null,expectedChoiceCell:null,choiceCells:[],reachedDecision:false,leadStartedAt:0,routeMarkStartedAt:0,speakUntil:0,emotionUntil:now,thinkingSince:null,decisionEmphasisStartedAt:0,decisionEmphasisUntil:0,decisionOrigin:[...position],decisionArcSign:side===1?-1:1,apologyStartedAt:0,apologyOrigin:[...position],apologyReady:false,lastTrailAt:now,trail:[],lastPlayerPosition:[pose.x,pose.y],lastPlayerAngle:pose.angle,approachingUntil:0,departureRouteId:null,divergedDuringGuidance:false,mtFollowingHerLead:false,mtChoseAnotherRoute:false,mtReturningToHer:false};
 }
 
 function routeApproachCell(cells:Point[],decisionCell:Point|null,fallback:Point){
@@ -82,7 +82,7 @@ export function beginAriadneRoute(body:AriadneBodyState,route:Pick<RouteOption,"
   body.approachCell=routeApproachCell(body.routeCells,body.decisionCell,pointCell([pose.x,pose.y]));
   body.reachedDecision=body.decisionCell?sameCell(pointCell([pose.x,pose.y]),body.decisionCell):false;body.leadStartedAt=now;body.routeMarkStartedAt=0;body.mode="noticing_choice";body.emotion="encouraging";body.emotionUntil=now+5000;
   const destination=body.expectedChoiceCell??route.targetCell??route.knownCells.at(-1)??pointCell([pose.x+Math.cos(pose.angle),pose.y+Math.sin(pose.angle)]),relative=wrap(Math.atan2(destination[1]+.5-pose.y,destination[0]+.5-pose.x)-pose.angle);
-  body.decisionOrigin=[...body.position];body.decisionArcSign=Math.abs(relative)>.1?(relative<0?-1:1):-body.side;
+  body.decisionOrigin=[...body.position];body.decisionArcSign=Math.abs(relative)>.1?(relative<0?-1:1):body.side===1?-1:1;
   body.decisionEmphasisStartedAt=now;body.decisionEmphasisUntil=now+2800;
   body.choiceCells=[];body.divergedDuringGuidance=false;body.mtFollowingHerLead=false;body.mtChoseAnotherRoute=false;body.mtReturningToHer=false;
 }
@@ -90,7 +90,7 @@ export function beginAriadneRoute(body:AriadneBodyState,route:Pick<RouteOption,"
 export function noticeAriadneChoice(body:AriadneBodyState,now:number){
   body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.reachedDecision=false;
   body.leadStartedAt=now;body.routeMarkStartedAt=0;body.mode="noticing_choice";body.emotion="curious";body.emotionUntil=now+2400;body.thinkingSince=now;
-  body.decisionOrigin=[...body.position];body.decisionArcSign=-body.side;body.decisionEmphasisStartedAt=now;body.decisionEmphasisUntil=now+3200;
+  body.decisionOrigin=[...body.position];body.decisionArcSign=body.side===1?-1:1;body.decisionEmphasisStartedAt=now;body.decisionEmphasisUntil=now+3200;
 }
 
 export function cancelAriadneChoiceNotice(body:AriadneBodyState){
@@ -106,15 +106,25 @@ export function beginAriadneGuidance(body:AriadneBodyState,intent:GuidanceIntent
   body.choiceCells=[];body.divergedDuringGuidance=false;body.mtFollowingHerLead=false;body.mtChoseAnotherRoute=false;body.mtReturningToHer=false;
 }
 
+// Speech about an earlier material response can arrive during a newer choice.
+// Preserve the spatial commitment while allowing its emotional acknowledgment.
+const isIndicatingRoute=(body:AriadneBodyState)=>!!body.targetRouteId&&["noticing_choice","leading","marking_route"].includes(body.mode);
+
 export function prepareAriadneForEvent(body:AriadneBodyState,eventType:string,now:number){
   body.thinkingSince=now;
-  if(eventType==="player_message"){body.mode="looking_around";body.emotion="curious";body.emotionUntil=now+2400;return}
-  if(eventType==="recommendation_contradicted"||eventType==="dead_end_visible"){
+  if(eventType==="player_message"){
+    // A requested direction has already started its physical gesture. Listening
+    // and replying must not cancel that action before MT can see it.
+    if(!["noticing_choice","leading","marking_route"].includes(body.mode))body.mode="looking_around";
+    body.emotion="curious";body.emotionUntil=now+2400;return;
+  }
+  if(eventType==="recommendation_contradicted"){
     if(body.mode==="apology_spiral"||body.mode==="apologizing"){body.emotion="apologetic";body.emotionUntil=Math.max(body.emotionUntil,now+4200);return}
     body.mode="apology_spiral";body.emotion="apologetic";body.apologyStartedAt=now;body.apologyOrigin=[...body.position];body.apologyReady=false;body.emotionUntil=now+7000;body.velocity[0]*=-.45;body.velocity[1]*=-.45;body.velocity[2]=Math.min(body.velocity[2],-.22);body.targetRouteId=null;body.routeCells=[];body.decisionCell=null;body.approachCell=null;body.expectedChoiceCell=null;body.choiceCells=[];body.decisionEmphasisUntil=now;return;
   }
   if(eventType==="star_collected"||eventType==="same_target_reached_differently"||eventType==="encounter_completed"){
-    body.mode="celebrating";body.emotion="delighted";body.emotionUntil=now+2600;
+    if(eventType!=="encounter_completed"||!isIndicatingRoute(body))body.mode="celebrating";
+    body.emotion="delighted";body.emotionUntil=now+2600;
   }
 }
 
@@ -126,11 +136,12 @@ export function reactAriadneToResonance(body:AriadneBodyState,completed:boolean,
 
 export function speakAsAriadne(body:AriadneBodyState,text:string,eventType:string,now:number){
   const readingMs=clamp(900+text.length*34,1700,6200);body.thinkingSince=null;body.speakUntil=now+readingMs;
-  if(eventType==="recommendation_contradicted"||eventType==="dead_end_visible"){body.mode="apologizing";body.emotion="apologetic";if(!body.apologyStartedAt)body.apologyStartedAt=now;body.apologyReady=true;body.emotionUntil=Math.max(body.emotionUntil,now+readingMs);return}
+  if(eventType==="recommendation_contradicted"){body.mode="apologizing";body.emotion="apologetic";if(!body.apologyStartedAt)body.apologyStartedAt=now;body.apologyReady=true;body.emotionUntil=Math.max(body.emotionUntil,now+readingMs);return}
   if(eventType==="star_collected"||eventType==="same_target_reached_differently"||eventType==="trajectory_relationship_changed"||eventType==="encounter_completed"){
-    body.mode="celebrating";body.emotion="delighted";body.emotionUntil=Math.max(body.emotionUntil,now+Math.min(readingMs,3000));return;
+    if(eventType!=="encounter_completed"||!isIndicatingRoute(body))body.mode="celebrating";
+    body.emotion="delighted";body.emotionUntil=Math.max(body.emotionUntil,now+Math.min(readingMs,3000));return;
   }
-  if(body.mode!=="leading"&&body.mode!=="marking_route")body.mode="speaking";
+  if(!["noticing_choice","leading","marking_route"].includes(body.mode))body.mode="speaking";
 }
 
 export function settleAriadneThinking(body:AriadneBodyState){body.thinkingSince=null}
@@ -207,10 +218,16 @@ export function updateAriadneBody(body:AriadneBodyState,args:{world:InfiniteWorl
   if(followedChoice&&elapsed>.7){body.mtFollowingHerLead=true;if(body.divergedDuringGuidance)body.mtReturningToHer=true;body.mode=body.mtReturningToHer?"celebrating":"returning";body.emotion=body.mtReturningToHer?"relieved":"delighted";body.emotionUntil=now+2200}
   else if(divergedChoice){body.divergedDuringGuidance=true;body.mtChoseAnotherRoute=true;body.departureRouteId=body.targetRouteId;body.mode="returning";body.emotion="clingy";body.emotionUntil=now+3200}
   else if((body.mode==="leading"||body.mode==="marking_route")&&targetOnRoute){
-    if(body.mode==="leading"&&expectedPoint&&distance(body.position,expectedPoint)<.3){body.mode="marking_route";body.routeMarkStartedAt=now}
+    if(body.mode==="leading"&&expectedPoint&&distance(body.position,expectedPoint)<.3){body.mode="marking_route";body.routeMarkStartedAt=now;body.routeMarkSeenSeconds=0}
     else if(body.mode==="marking_route"){
       const playerToTarget=distance(player,targetOnRoute);
-      if(!body.choiceCells.length&&((now-body.routeMarkStartedAt)/1000>phaseWait(phase)||playerToTarget>3.15)){body.mode="returning"}
+      const inView=Math.abs(wrap(Math.atan2(body.position[1]-pose.y,body.position[0]-pose.x)-pose.angle))<CAMERA_FOV*.44&&lineOpen(world,player,body.position,tick);
+      if(inView)body.routeMarkSeenSeconds=(body.routeMarkSeenSeconds??0)+Math.min(dt,.1);
+      const markedSeconds=(now-body.routeMarkStartedAt)/1000,wait=phaseWait(phase);
+      // An off-screen entrance has not yet communicated the choice. Give MT
+      // time to look, but never make their attention a condition for leaving.
+      const gestureFinished=markedSeconds>wait&&((body.routeMarkSeenSeconds??0)>=.75||markedSeconds>wait*2);
+      if(!body.choiceCells.length&&(gestureFinished||playerToTarget>3.15)){body.mode="returning"}
     }
   }else if((body.mode==="leading"||body.mode==="marking_route")&&!targetOnRoute&&!body.choiceCells.length)body.mode="returning";
   if(body.mode==="celebrating"&&now>body.emotionUntil)body.mode="returning";
@@ -260,8 +277,11 @@ export function updateAriadneBody(body:AriadneBodyState,args:{world:InfiniteWorl
 export function describeAriadneEmbodiment(body:AriadneBodyState,pose:BodyPose,world:InfiniteWorld,tick:number,evidence:GuidanceEvidence|null):AriadneEmbodimentContext{
   const dx=body.position[0]-pose.x,dy=body.position[1]-pose.y,dist=Math.hypot(dx,dy),relative=wrap(Math.atan2(dy,dx)-pose.angle),visible=Math.abs(relative)<.18&&lineOpen(world,[pose.x,pose.y],body.position,tick);
   const side=Math.abs(relative)>2.35?"behind MT":relative<-.34?"beside MT's left shoulder":relative>.34?"beside MT's right shoulder":"just ahead of MT";
-  const actions:Record<AriadneBodyMode,string>={hovering_beside:`You are floating naturally ${side}.`,catching_up:"You are moving back into companion position beside MT.",looking_around:"You have turned toward MT and are attentively watching what happens next.",noticing_choice:"You have gone briefly still and are looking between the visible passages before committing.",examining_object:"You briefly drifted toward something visible, while staying close to MT.",speaking:`You are glowing beside MT as you speak.`,leading:"You have flown toward the passage you currently believe in.",marking_route:"You briefly marked your chosen passage, looked back, and are turning to move with MT.",returning:"You are curving back to MT's side.",apology_spiral:"You are circling in visible dismay at the passage that disproved your guidance before returning to MT.",apologizing:"You have returned close to MT, lowered yourself, and softened your light after your mistaken guidance.",celebrating:"You are making one delighted loop before settling beside MT again."};
+  const actions:Record<AriadneBodyMode,string>={hovering_beside:`You are floating naturally ${side}.`,catching_up:"You are moving back into companion position beside MT.",looking_around:"You have turned toward MT and are attentively watching what happens next.",noticing_choice:"You have gone briefly still and are looking between the visible passages before committing.",examining_object:"You briefly drifted toward something visible, while staying close to MT.",speaking:`You are glowing beside MT as you speak.`,leading:"You are flying toward the chosen entrance; you have not arrived to mark it yet.",marking_route:"You are holding your light at the chosen entrance and looking back toward MT.",returning:"You are curving back to MT's side.",apology_spiral:"You are circling in visible dismay at the passage that disproved your guidance before returning to MT.",apologizing:"You have returned close to MT, lowered yourself, and softened your light after your mistaken guidance.",celebrating:"You are making one delighted loop before settling beside MT again."};
   const presence:AriadnePresence=body.mode==="leading"||body.mode==="marking_route"?"leading_ahead":body.mode==="returning"||body.mode==="catching_up"?"rejoining":body.mode==="apology_spiral"||body.mode==="apologizing"?"repairing":"with_mt";
-  const relation=body.targetRouteId?body.mode==="marking_route"?"You briefly marked the passage you recommended and remain ready to move with MT.":body.mode==="leading"?"Your flight is showing MT the passage you recommended.":"You are returning from the passage you recommended.":null;
-  return{currentAction:actions[body.mode],positionRelativeToMT:side,presence,relationToBelievedRoute:relation,mtLookingAtAriadne:visible&&dist<3,mtApproachingAriadne:Date.now()<body.approachingUntil||body.mtFollowingHerLead||!!evidence?.currentlyNearSuggestedRoute,mtFollowingHerLead:body.mtFollowingHerLead,mtChoseAnotherRoute:body.mtChoseAnotherRoute,mtReturningToHer:body.mtReturningToHer};
+  const playerCell=pointCell([pose.x,pose.y]);
+  const beforeChoice=body.decisionCell&&!sameCell(playerCell,body.decisionCell)&&!body.choiceCells.some(cell=>sameCell(cell,playerCell));
+  const approach=(body.mode==="leading"||body.mode==="marking_route")&&beforeChoice?" MT has not reached the junction yet. Invite MT to come closer to the corner first, then follow your light into the entrance. Do not imply MT should turn immediately from the current position.":"";
+  const relation=body.targetRouteId?body.mode==="marking_route"?"Your light is marking the entrance now.":body.mode==="leading"?"Your flight toward the entrance is still in progress.":body.mode==="noticing_choice"?"You are preparing to fly toward the chosen entrance; the gesture has not reached it yet.":body.mode==="returning"||body.mode==="catching_up"?"You are returning from the passage you recommended.":"Your earlier route choice is remembered; you are not currently marking its entrance.":null;
+  return{currentAction:actions[body.mode],positionRelativeToMT:side,presence,relationToBelievedRoute:relation?relation+approach:null,mtLookingAtAriadne:visible&&dist<3,mtApproachingAriadne:Date.now()<body.approachingUntil||body.mtFollowingHerLead||!!evidence?.currentlyNearSuggestedRoute,mtFollowingHerLead:body.mtFollowingHerLead,mtChoseAnotherRoute:body.mtChoseAnotherRoute,mtReturningToHer:body.mtReturningToHer};
 }

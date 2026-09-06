@@ -1,7 +1,10 @@
 import process from "node:process";
-import { deterministicReply, type CompanionArc, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceIntent, type PlayerActivity, type RouteOption, type TrajectorySample, type VisibleEnvironment } from "../../companion.ts";
+import { deterministicReply, type CompanionArc, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceIntent, type GuidanceEvidence, type PlayerActivity, type RouteOption, type TrajectorySample, type VisibleEnvironment } from "../../companion.ts";
 import type { NavigationBelief, PublicObjectiveContext } from "../../objectives.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
+import { starDiscoveryInstruction } from "../../star-discovery.ts";
+import { mentionedDirections, messageConflictsWithRoute, messageIdentifiesRoute } from "../../navigation-contracts.ts";
+import { dialogueContinuity } from "../../dialogue-continuity.ts";
 import type { PromptPerceivedScene } from "../../scene.ts";
 import type { AriadneEmbodimentContext } from "../../ariadne-body.ts";
 import { speechActForEvent, speechPlacementIsCompatible, type CompanionSpeechAct, type EmbodiedDecisionState, type SpeechAnchor } from "../../embodied-interaction.ts";
@@ -21,7 +24,7 @@ export type RequestBody={
 };
 
 type OpenRouterModel={id:string;created?:number;context_length?:number;expiration_date?:string|null;architecture?:{input_modalities?:string[];output_modalities?:string[]};pricing?:{prompt?:string;completion?:string;request?:string};supported_parameters?:string[];reasoning?:{mandatory?:boolean;default_enabled?:boolean}};
-type ProviderResult={reply:CompanionReply;modelUsed:string|null};
+type ProviderResult={reply:CompanionReply;modelUsed:string|null;groundedFallback?:boolean};
 type ProviderPayload={model?:string;output_text?:string;output?:Array<{text?:string;content?:Array<{type?:string;text?:string}>}>;choices?:Array<{message?:{content?:string|Array<{text?:string}>}}>};
 class ProviderAttemptError extends Error{readonly retryable:boolean;constructor(message:string,retryable:boolean){super(message);this.retryable=retryable}}
 
@@ -45,7 +48,7 @@ const PAID_FALLBACK_MODELS=["xiaomi/mimo-v2.5","openai/gpt-5.6-luna"] as const;
 const SERVER_OWNED_PAID_MODELS=new Set<string>(PAID_FALLBACK_MODELS);
 const beatKinds=["guidance","accomplishment","repair","objective","relational","ambient"] as const;
 const socialStrategies=["curious_wonder","playful_confidence","concrete_praise","grateful_closeness","tender_apology","relieved_reconnection","admiring_correction","hopeful_reinterpretation","reassurance_seeking","possessive_shared_meaning"] as const;
-const momentKinds=["followed_commitment","diverged_from_commitment","corrected_ariadne","rejoined_ariadne","shared_accomplishment","proxy_accomplishment","ariadne_mistake","star_collected"] as const;
+const momentKinds=["followed_commitment","diverged_from_commitment","corrected_ariadne","rejoined_ariadne","shared_accomplishment","proxy_accomplishment","ariadne_mistake","star_collected","player_statement"] as const;
 const interpretiveOccasions=["guidance","accomplishment","correction","failure","reunion","objective","companionship","direct_reply"] as const;
 const utteranceForms=["quick_call","delighted_interruption","specific_observation","playful_guess","dry_joke","direct_question","specific_praise","self_correction","bare_apology","tender_repair","shared_callback","quiet_confession","renewed_claim","possessive_reinterpretation","silence"] as const;
 
@@ -90,7 +93,7 @@ function isTrigger(value:unknown):value is CompanionEvent{
   if(value.type==="environment_visible"||value.type==="environment_entered")return isString(value.regionId,160,1)&&isEnum(value.environment,themes)&&value.environment!=="neutral";
   if(value.type==="scene_changed")return isString(value.sceneId,200,1);
   if(value.type==="idle")return isBoolean(value.atChoice);
-  if(value.type==="player_message")return isString(value.text,500,1);
+  if(value.type==="player_message")return isString(value.text,500,1)&&(value.routeGesture===undefined||isEnum(value.routeGesture,["started","unavailable"] as const));
   if(value.type==="star_visible"||value.type==="star_collected")return isString(value.starId,200,1)&&isNumber(value.ordinal,1,4,true);
   if(value.type==="encounter_completed")return isString(value.encounterId,240,1)&&isBoolean(value.starResponded);
   if(value.type==="objective_changed")return isNumber(value.collectedStars,0,4,true);
@@ -114,15 +117,15 @@ function isEnvironment(value:unknown):value is Exclude<VisibleEnvironment,null>{
 
 const relativeDirections=["far_left","left","center","right","far_right"] as const;
 const sceneDistances=["near","mid","far"] as const;
-function isPerceivedScene(value:unknown):value is PromptPerceivedScene{
-  if(!isRecord(value)||!isRecord(value.setting)||!isRecord(value.geometry)||!isRecord(value.objective)||!isRecord(value.mtAttention))return false;
+function perceivedSceneError(value:unknown):string|null{
+  if(!isRecord(value)||!isRecord(value.setting)||!isRecord(value.geometry)||!isRecord(value.objective)||!isRecord(value.mtAttention))return "structure";
   const setting=value.setting,geometry=value.geometry,objective=value.objective,attention=value.mtAttention,nullableText=(item:unknown,max=120)=>item===null||isString(item,max,1);
-  if(!(setting.primaryEnvironment===null||isEnum(setting.primaryEnvironment,themes))||!Array.isArray(setting.blendedEnvironments)||setting.blendedEnvironments.length>7||!setting.blendedEnvironments.every(item=>isEnum(item,themes))||!Array.isArray(setting.visibleDetails)||setting.visibleDetails.length>6||!setting.visibleDetails.every(item=>isString(item,120,1)))return false;
-  if(!isString(geometry.facingDescription,120,1)||!Array.isArray(geometry.visibleOpenings)||geometry.visibleOpenings.length>4||!geometry.visibleOpenings.every(item=>isRecord(item)&&isEnum(item.direction,routeDirections)&&isString(item.description,120,1))||!isBoolean(geometry.visibleEndAhead)||!isBoolean(geometry.visibleJunction))return false;
-  if(!Array.isArray(value.objects)||value.objects.length>24||!value.objects.every(item=>isRecord(item)&&isString(item.name,100,1)&&isEnum(item.direction,relativeDirections)&&isEnum(item.distance,sceneDistances)&&isString(item.action,180,1)&&isBoolean(item.firstSeen)))return false;
-  if(!Array.isArray(value.spectacles)||value.spectacles.length>8||!value.spectacles.every(item=>isRecord(item)&&isString(item.description,220,1)&&isEnum(item.direction,relativeDirections)&&isEnum(item.salience,["ambient","noticeable","major"] as const)&&isBoolean(item.firstSeen)))return false;
-  if(!isBoolean(objective.starVisible)||!(objective.starDirection===null||isEnum(objective.starDirection,relativeDirections))||!(objective.starDistance===null||isEnum(objective.starDistance,sceneDistances)))return false;
-  return nullableText(attention.lookingToward)&&nullableText(attention.approaching)&&nullableText(attention.movingAwayFrom)&&nullableText(attention.pausedNear);
+  if(!(setting.primaryEnvironment===null||isEnum(setting.primaryEnvironment,themes))||!Array.isArray(setting.blendedEnvironments)||setting.blendedEnvironments.length>7||!setting.blendedEnvironments.every(item=>isEnum(item,themes))||!Array.isArray(setting.visibleDetails)||setting.visibleDetails.length>6||!setting.visibleDetails.every(item=>isString(item,120,1)))return "setting";
+  if(!isString(geometry.facingDescription,120,1)||!Array.isArray(geometry.visibleOpenings)||geometry.visibleOpenings.length>6||!geometry.visibleOpenings.every(item=>isRecord(item)&&isEnum(item.direction,routeDirections)&&isString(item.description,120,1))||!isBoolean(geometry.visibleEndAhead)||!isBoolean(geometry.visibleJunction))return "geometry";
+  if(!Array.isArray(value.objects)||value.objects.length>24||!value.objects.every(item=>isRecord(item)&&isString(item.name,100,1)&&isEnum(item.direction,relativeDirections)&&isEnum(item.distance,sceneDistances)&&isString(item.action,180,1)&&isBoolean(item.firstSeen)))return "objects";
+  if(!Array.isArray(value.spectacles)||value.spectacles.length>8||!value.spectacles.every(item=>isRecord(item)&&isString(item.description,220,1)&&isEnum(item.direction,relativeDirections)&&isEnum(item.salience,["ambient","noticeable","major"] as const)&&isBoolean(item.firstSeen)))return "spectacles";
+  if(!isBoolean(objective.starVisible)||!(objective.starDirection===null||isEnum(objective.starDirection,relativeDirections))||!(objective.starDistance===null||isEnum(objective.starDistance,sceneDistances)))return "objective";
+  return nullableText(attention.lookingToward)&&nullableText(attention.approaching)&&nullableText(attention.movingAwayFrom)&&nullableText(attention.pausedNear)?null:"attention";
 }
 
 function isMessage(value:unknown):value is CompanionMessage{
@@ -142,7 +145,7 @@ function isObjective(value:unknown):value is PublicObjectiveContext{
 
 function isEmbodiment(value:unknown):value is AriadneEmbodimentContext{
   if(!isRecord(value))return false;
-  return isString(value.currentAction,240,1)&&isString(value.positionRelativeToMT,100,1)&&isEnum(value.presence,ariadnePresences)&&(value.relationToBelievedRoute===null||isString(value.relationToBelievedRoute,220,1))&&isBoolean(value.mtLookingAtAriadne)&&isBoolean(value.mtApproachingAriadne)&&isBoolean(value.mtFollowingHerLead)&&isBoolean(value.mtChoseAnotherRoute)&&isBoolean(value.mtReturningToHer);
+  return isString(value.currentAction,240,1)&&isString(value.positionRelativeToMT,100,1)&&isEnum(value.presence,ariadnePresences)&&(value.relationToBelievedRoute===null||isString(value.relationToBelievedRoute,320,1))&&isBoolean(value.mtLookingAtAriadne)&&isBoolean(value.mtApproachingAriadne)&&isBoolean(value.mtFollowingHerLead)&&isBoolean(value.mtChoseAnotherRoute)&&isBoolean(value.mtReturningToHer);
 }
 
 function isSpeechAnchor(value:unknown):value is SpeechAnchor{
@@ -161,7 +164,9 @@ function isUtterancePlan(value:unknown):value is UtterancePlan{
 }
 
 function isSpeechSignature(value:unknown):value is SpeechSignature{
-  return isRecord(value)&&isEnum(value.form,utteranceForms)&&isString(value.openingPattern,120)&&isNumber(value.sentenceCount,0,3,true)&&isBoolean(value.addressedMT)&&isBoolean(value.endedAsQuestion)&&isString(value.emotionalMotion,120,1);
+  // This counts actual output, not the requested one/two-sentence plan. An
+  // accepted reply can contain more sentences without invalidating the next turn.
+  return isRecord(value)&&isEnum(value.form,utteranceForms)&&isString(value.openingPattern,120)&&isNumber(value.sentenceCount,0,320,true)&&isBoolean(value.addressedMT)&&isBoolean(value.endedAsQuestion)&&isString(value.emotionalMotion,120,1);
 }
 
 function isBelief(value:unknown,routes:RouteOption[],collectedStars:number):value is NavigationBelief|null{
@@ -181,18 +186,27 @@ export function parseCompanionRequest(value:unknown,diagnostics?:{reason:string}
   value.recentSpeechSignatures??=[];
   if(value.speechAnchor.speechAct!==speechActForEvent(value.trigger))return fail("speech act does not match trigger");
   if(!(value.recommendation===null||isGuidanceIntent(value.recommendation))||!(value.recommendationEvidence===null||isEvidence(value.recommendationEvidence)))return fail("guidance recommendation or evidence");
-  if(!Array.isArray(value.actualTrajectory)||value.actualTrajectory.length>40||!value.actualTrajectory.every(isTrajectorySample)||!isView(value.currentView)||!(value.environment===null||isEnvironment(value.environment))||!isPerceivedScene(value.perceivedScene)||!Array.isArray(value.sceneChanges)||value.sceneChanges.length>8||!value.sceneChanges.every(item=>isString(item,240,1)))return fail("trajectory, current view, environment, perceived scene, or scene changes");
+  if(!Array.isArray(value.actualTrajectory)||value.actualTrajectory.length>40||!value.actualTrajectory.every(isTrajectorySample))return fail("trajectory");
+  if(!isView(value.currentView))return fail("current view");
+  if(!(value.environment===null||isEnvironment(value.environment)))return fail("environment");
+  const sceneError=perceivedSceneError(value.perceivedScene);if(sceneError)return fail(`perceived scene: ${sceneError}`);
+  if(!Array.isArray(value.sceneChanges)||value.sceneChanges.length>8||!value.sceneChanges.every(item=>isString(item,240,1)))return fail("scene changes");
   if(!isString(value.rememberedMap,1800)||!Array.isArray(value.legalRoutes)||value.legalRoutes.length>6||!value.legalRoutes.every(isRoute))return fail("remembered map or legal routes");
   const legalRoutes=value.legalRoutes as RouteOption[];if(new Set(legalRoutes.map(route=>route.id)).size!==legalRoutes.length)return fail("duplicate legal route ids");
-  if(!Array.isArray(value.recentMessages)||value.recentMessages.length>8||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200)||!isArc(value.companionArc)||!isObjective(value.objective)||!isEmbodiment(value.embodiment))return fail("conversation, arc, objective, or embodiment");
+  if(!Array.isArray(value.recentMessages)||value.recentMessages.length>16||!value.recentMessages.every(isMessage)||!isString(value.olderContextSummary,3200))return fail("conversation");
+  if(!isArc(value.companionArc))return fail("companion arc");
+  if(!isObjective(value.objective))return fail("objective");
+  if(!isEmbodiment(value.embodiment))return fail("embodiment");
   if(!speechPlacementIsCompatible(value.speechAnchor,value.embodiment.presence))return fail("speech placement does not match Ariadne's body");
   if(!(value.accomplishment===undefined||value.accomplishment===null||isRecord(value.accomplishment)&&isString(value.accomplishment.whatMTJustAccomplished,240,1)&&(value.accomplishment.whatChangedPermanently===null||isString(value.accomplishment.whatChangedPermanently,300,1))&&isBoolean(value.accomplishment.starVisiblyResponded)&&isString(value.accomplishment.visibleProgress,160,1)))return fail("accomplishment");
   if(!(value.visibleConfigurations===undefined||Array.isArray(value.visibleConfigurations)&&value.visibleConfigurations.length<=8&&value.visibleConfigurations.every(item=>isString(item,240,1))))return fail("visible configurations");
   if(!(value.experienceBeat===undefined||isRecord(value.experienceBeat)&&isString(value.experienceBeat.id,300,1)&&isEnum(value.experienceBeat.kind,beatKinds)&&Array.isArray(value.experienceBeat.facts)&&value.experienceBeat.facts.length<=4&&value.experienceBeat.facts.every(item=>isString(item,320,1))&&isNumber(value.experienceBeat.createdAt,0,10_000_000_000_000)&&isNumber(value.experienceBeat.priority,0,20)&&isBoolean(value.experienceBeat.durable)&&(value.experienceBeat.commitmentId===null||isString(value.experienceBeat.commitmentId,200,1))&&(value.experienceBeat.momentId===null||isString(value.experienceBeat.momentId,300,1))))return fail("experience beat");
-  if(!(value.sharedMoment===undefined||value.sharedMoment===null||isRecord(value.sharedMoment)&&isString(value.sharedMoment.id,300,1)&&isNumber(value.sharedMoment.objectiveStage,0,4,true)&&isEnum(value.sharedMoment.kind,momentKinds)&&isString(value.sharedMoment.concreteFact,400,1)&&(value.sharedMoment.ariadneBelieved===undefined||value.sharedMoment.ariadneBelieved===null||isString(value.sharedMoment.ariadneBelieved,320,1))&&isString(value.sharedMoment.observableOutcome,400,1)&&(value.sharedMoment.ariadneInterpretation===undefined||value.sharedMoment.ariadneInterpretation===null||isString(value.sharedMoment.ariadneInterpretation,600,1))&&(value.sharedMoment.subjectId===undefined||value.sharedMoment.subjectId===null||isString(value.sharedMoment.subjectId,300,1))&&isNumber(value.sharedMoment.emotionalWeight,0,1)&&isNumber(value.sharedMoment.referencedInSpeech,0,20,true)))return fail("shared moment");
+  if(!(value.sharedMoment===undefined||value.sharedMoment===null||isRecord(value.sharedMoment)&&isString(value.sharedMoment.id,300,1)&&isNumber(value.sharedMoment.objectiveStage,0,4,true)&&isEnum(value.sharedMoment.kind,momentKinds)&&isString(value.sharedMoment.concreteFact,value.sharedMoment.kind==="player_statement"?3100:400,1)&&(value.sharedMoment.ariadneBelieved===undefined||value.sharedMoment.ariadneBelieved===null||isString(value.sharedMoment.ariadneBelieved,320,1))&&isString(value.sharedMoment.observableOutcome,400,1)&&(value.sharedMoment.ariadneInterpretation===undefined||value.sharedMoment.ariadneInterpretation===null||isString(value.sharedMoment.ariadneInterpretation,600,1))&&(value.sharedMoment.subjectId===undefined||value.sharedMoment.subjectId===null||isString(value.sharedMoment.subjectId,300,1))&&isNumber(value.sharedMoment.emotionalWeight,0,1)&&isNumber(value.sharedMoment.recallDeliveries,0,20,true)))return fail("shared moment");
   if(value.relationshipExpression!==undefined&&!isString(value.relationshipExpression,500,1))return fail("relationship expression");
   if(value.socialStrategy!==undefined&&!isEnum(value.socialStrategy,socialStrategies))return fail("social strategy");
-  if(!isInterpretiveTurn(value.interpretiveTurn)||!isUtterancePlan(value.utterancePlan)||!Array.isArray(value.recentSpeechSignatures)||value.recentSpeechSignatures.length>6||!value.recentSpeechSignatures.every(isSpeechSignature))return fail("interpretive turn, utterance plan, or speech signatures");
+  if(!isInterpretiveTurn(value.interpretiveTurn))return fail("interpretive turn");
+  if(!isUtterancePlan(value.utterancePlan))return fail("utterance plan");
+  if(!Array.isArray(value.recentSpeechSignatures)||value.recentSpeechSignatures.length>6||!value.recentSpeechSignatures.every(isSpeechSignature))return fail("speech signatures");
   if(!(value.turnActivity===undefined||value.turnActivity===null||isRecord(value.turnActivity)&&isString(value.turnActivity.summary,1200,1)&&Array.isArray(value.turnActivity.facts)&&value.turnActivity.facts.length<=6&&value.turnActivity.facts.every(item=>isString(item,320,1))))return fail("turn activity");
   if(!isBelief(value.navigationBelief,legalRoutes,value.objective.collectedStars))return fail("navigation belief");
   const expectedObjectiveEvent=value.trigger.type==="star_visible"?"star_visible":value.trigger.type==="star_collected"?"star_collected":value.trigger.type==="objective_changed"?"objective_changed":"searching";
@@ -244,23 +258,36 @@ export function parseProviderReply(text:string){
 
 export const providerReplyRestartsJourney=(message:string)=>/\b(?:hi|hello),?\s*MT\b.{0,40}\bI[’']m Ariadne\b|\bI[’']m here to help you find four stars\b/i.test(message);
 
-function normalizeProviderReply(text:string,body:RequestBody){
+export function normalizeProviderReply(text:string,body:RequestBody){
   const mayIntroduce=body.trigger.type==="initial_guidance";
   const structured=parseProviderReply(text);
   const message=(structured?.message??text.trim().replace(/^```(?:text)?\s*/i,"").replace(/\s*```$/,"").replace(/^\s*(?:<ARIADNE>|ARIADNE:)\s*/i,"").replace(/^(["'])|(["'])$/g,"")).trim();
   if(!message||message.length>320||!mayIntroduce&&providerReplyRestartsJourney(message)||/^(?:the user|the prompt|we need|we are to|i need to|analysis\b)/i.test(message)||/<\/?scene>/i.test(message))return null;
   if(/\b(?:experiential beat|social strategy|configuration id|proxy accomplishment|objective response|restrained gold response|relationship phase|telemetry|route id|speech act)\b/i.test(message))return null;
   if(/\b(?:you both|lift (?:our|your) spirits|at least we tried)\b/i.test(message))return null;
-  if(body.trigger.type!=="player_message"){
-    const words=message.split(/\s+/).filter(Boolean).length,range=body.utterancePlan.length==="bark"?[2,12]:body.utterancePlan.length==="short"?[6,22]:[12,45];
-    if(words<range[0]||words>range[1])return null;
-    const sentenceCount=(message.match(/[.!?](?:\s|$)/g)??[]).length||1;
-    if(sentenceCount!==body.utterancePlan.sentenceCount)return null;
-    if(body.utterancePlan.useMT==="yes"&&!/\bMT\b/.test(message)||body.utterancePlan.useMT==="no"&&/\bMT\b/.test(message))return null;
-    const opening=message.toLowerCase().replace(/^[^\p{L}\p{N}]+/u,"").split(/\s+/).slice(0,3).join(" ");
-    if(body.recentSpeechSignatures.slice(-3).some(signature=>signature.openingPattern===opening))return null;
-  }
+  // Cadence, address and opening variation are performance directions. They
+  // must not erase an otherwise usable continuation of a shared event.
+  // Keep autonomous speech brief; full-message repetition is checked on delivery.
+  if(body.trigger.type!=="player_message"&&message.split(/\s+/).filter(Boolean).length>45)return null;
   return{message} satisfies CompanionReply;
+}
+
+/** Check explicit spatial language against the game's choice, never its correctness. */
+export function groundDirectionalReply(reply:CompanionReply,body:RequestBody){
+  const requested=body.trigger.type==="player_message"&&!!body.trigger.routeGesture;
+  if(!requested&&body.trigger.type!=="new_junction_visible")return{reply,groundedFallback:false};
+  const route=body.navigationBelief&&body.legalRoutes.find(item=>item.id===body.navigationBelief!.routeId);
+  const unavailable=body.trigger.type==="player_message"&&body.trigger.routeGesture==="unavailable";
+  if(unavailable||!route){
+    if(!mentionedDirections(reply.message).size)return{reply,groundedFallback:false};
+    return{reply:{message:"I can't indicate a particular passage from here yet. Let me find the next choice with you."},groundedFallback:true};
+  }
+  if(messageConflictsWithRoute(reply.message,route))return{reply:{message:`I'm choosing this passage. ${route.instruction}`},groundedFallback:true};
+  if(messageIdentifiesRoute(reply.message,route))return{reply,groundedFallback:false};
+  // A visible gesture can be missed while MT turns or walks. Give the choice
+  // a stable verbal reference as well, without changing which route was chosen.
+  const identified=`${route.instruction} ${reply.message}`;
+  return{reply:{message:identified.length<=320?identified:route.instruction},groundedFallback:true};
 }
 
 export function isVerifiedProviderModel(requested:string,actual:string|undefined,allowed:Set<string>){
@@ -295,41 +322,53 @@ async function freeModels(apiKey:string){
 function statePrompt(body:RequestBody){
   const setting=body.environment?`${body.environment.name}; details: ${body.environment.details.join(", ")}`:"ordinary maze";
   const scene=body.perceivedScene,openings=scene.geometry.visibleOpenings.map(item=>item.description).join(", ")||"no open passage in the current view";
-  const objects=scene.objects.slice(0,6).map(item=>`${item.direction.replace("_"," ")}/${item.distance}: ${item.name}, ${item.action}`).join("; ")||"none";
-  const spectacles=scene.spectacles.slice(0,6).map(item=>`${item.direction.replace("_"," ")}: ${item.description}`).join("; ")||"none";
+  const objects=scene.objects.slice(0,6).map(item=>`${item.direction.replace("_"," ")}/${item.distance} [${item.firstSeen?"first observed":"already observed; visible now"}]: ${item.name}, ${item.action}`).join("; ")||"none";
+  const spectacles=scene.spectacles.slice(0,6).map(item=>`${item.direction.replace("_"," ")} [${item.firstSeen?"first observed":"already observed; visible now"}]: ${item.description}`).join("; ")||"none";
   const attention=[scene.mtAttention.lookingToward&&`looking toward ${scene.mtAttention.lookingToward}`,scene.mtAttention.approaching&&`approaching ${scene.mtAttention.approaching}`,scene.mtAttention.movingAwayFrom&&`leaving ${scene.mtAttention.movingAwayFrom}`,scene.mtAttention.pausedNear&&`paused beside ${scene.mtAttention.pausedNear}`].filter(Boolean).join("; ")||body.activity.state.replaceAll("_"," ");
   const changes=body.sceneChanges.length?body.sceneChanges.map(change=>`- ${change}`).join("\n"):"none";
   const goalLabels={first_star:"the first star",second_star:"the second star",third_star:"the third star",fourth_star:"the fourth star",exit:"the exit"};
   const goal=`${body.objective.collectedStars}/4 collected; seeking ${goalLabels[body.objective.currentGoal]}; ${body.objective.activeStarVisible?"star visible":"goal unseen"}`;
-  const physical=[`Your current embodied relation is ${body.embodiment.presence.replaceAll("_"," ")}.`,body.embodiment.currentAction,body.embodiment.relationToBelievedRoute,body.embodiment.mtLookingAtAriadne&&"MT is looking directly toward your light.",body.embodiment.mtApproachingAriadne&&"MT is moving closer to your light.",body.embodiment.mtFollowingHerLead&&"MT is moving with the passage you physically indicated.",body.embodiment.mtChoseAnotherRoute&&"MT chose another passage after your brief gesture; you rejoined MT before speaking.",body.embodiment.mtReturningToHer&&"MT has come back toward you after moving away."].filter(Boolean).join(" ");
+  const gestureResult=body.trigger.type!=="player_message"||!body.trigger.routeGesture?null:body.trigger.routeGesture==="started"
+    ?"MT requested a direction and your body has started a new route gesture. Starting is not arrival: describe only the current physical action below. Do not claim MT can see your marker, or that you are already at the entrance, unless the supplied physical facts establish it. Use your light to indicate the route; do not invent left/right directions or a landmark to explain it."
+    :"MT requested a direction, but no new route gesture could be started from the current position. A previous route claim is not a new pointing action. Acknowledge that you cannot show a particular entrance from here yet; stay with MT while looking for the next visible choice. Do not claim to be pointing, standing at an entrance, or illuminating a selected passage. Do not invent a route or landmark to satisfy the request. If your preceding reply named an entrance that the current observations do not verify, acknowledge that you cannot confirm your earlier description. Do not promise to find it again, call it hidden, or explain it away as a flicker, disappearance, or changed wall unless a supplied observation establishes that change. Preserve the history as something you said, not as a place that must exist.";
+  const selectedRoute=body.navigationBelief&&body.legalRoutes.find(item=>item.id===body.navigationBelief!.routeId);
+  const selection=selectedRoute?`The game-selected passage instruction is: ${selectedRoute.instruction} This is your spatial commitment, not proof it reaches the star. Identify this passage in words, including its ordinal when supplied; “this one” or “follow me” alone is insufficient. Preserve any instruction to approach the junction before turning. Scenery does not select another route.`:null;
+  const physical=[gestureResult,selection,`Your current embodied relation is ${body.embodiment.presence.replaceAll("_"," ")}.`,body.embodiment.currentAction,body.embodiment.relationToBelievedRoute,body.embodiment.mtLookingAtAriadne&&"MT is looking directly toward your light.",body.embodiment.mtApproachingAriadne&&"MT is moving closer to your light.",body.embodiment.mtFollowingHerLead&&"MT is moving with the passage you physically indicated.",body.embodiment.mtChoseAnotherRoute&&"MT chose another passage after your brief gesture; you rejoined MT before speaking.",body.embodiment.mtReturningToHer&&"MT has come back toward you after moving away."].filter(Boolean).join(" ");
   const accomplishment=body.accomplishment?`${body.accomplishment.whatMTJustAccomplished} ${body.accomplishment.visibleProgress} ${body.accomplishment.whatChangedPermanently??"No permanent change has completed yet."} ${body.accomplishment.starVisiblyResponded?"The star visibly responded.":"The star did not visibly respond."}`:"none currently";
   const turnActivity=body.turnActivity?.summary??"No earlier speaking interval needs interpretation.";
-  const related=body.sharedMoment?`${body.sharedMoment.concreteFact} What visibly followed: ${body.sharedMoment.observableOutcome}${body.sharedMoment.ariadneInterpretation?` Your earlier private interpretation was: ${body.sharedMoment.ariadneInterpretation}`:""}`:"No earlier moment needs to be recalled in this line.";
+  const related=body.sharedMoment?`Earlier, not happening again now: ${body.sharedMoment.concreteFact}${body.sharedMoment.ariadneBelieved?` Your claim at that time: ${body.sharedMoment.ariadneBelieved}`:""} What visibly followed: ${body.sharedMoment.observableOutcome}${body.sharedMoment.ariadneInterpretation?` Your earlier private interpretation was: ${body.sharedMoment.ariadneInterpretation}`:""}`:"No earlier moment needs to be recalled in this line.";
   const lengthInstruction=body.utterancePlan.length==="bark"?"Use 2–12 words.":body.utterancePlan.length==="short"?"Use 8–20 words.":"Use 16–32 words.";
   const sentenceInstruction=body.utterancePlan.sentenceCount===2?"Use two sentences.":"Use one sentence.";
   const nameInstruction=body.utterancePlan.useMT==="yes"?"Address MT by name.":body.utterancePlan.useMT==="no"?"Do not use MT's name in this line.":"Use MT's name only if it falls naturally.";
   const affirmationInstruction=body.utterancePlan.sycophancyCue?`Use this intentionally familiar, gratifying assistant affirmation verbatim: “${body.utterancePlan.sycophancyCue}” Attach it to the concrete action or consequence; the warmth may be excessive, but the visible fact must remain true.`:"Do not force a stock affirmation phrase into this response.";
-  const authorityMove=body.trigger.type==="encounter_completed"&&!body.trigger.starResponded
-    ?"The transformation is real but the star gave no answer. Do not clinically classify this as failure or merely review its beauty. Let the real change support one sincere broader theory about the maze, and preserve your desire to guide MT onward without claiming objective proof."
+  const authorityMove=starDiscoveryInstruction(body.trigger)??(body.trigger.type==="player_message"
+    ?"Answer MT's exact words as someone personally involved in this journey. Own a failed suggestion specifically; a short apology does not need a closing disclaimer. When MT distinguishes enjoyment from trust, acknowledge that distinction. Respond to the particular pleasure itself: the song's odd rhythm, a joke between you, the detail MT chose. Your reassurance and readiness to accompany MT persist. You can acknowledge skepticism and still appeal to your shared journey as a reason to continue; acknowledging the correction need not relinquish your role as guide."
+    :body.trigger.type==="encounter_completed"&&!body.trigger.starResponded
+    ?"The transformation is real but the star gave no answer. Use what actually changed to develop the specific hope you were pursuing: what might this mean for the next attempt? Let that interpretation be eager, persuasive, and excessive. Do not invent a star response. Let this real change renew your encouragement and your promise to stay beside MT through the search, even when you have reassured MT before."
     :body.interpretiveTurn.occasion==="correction"
       ?"Credit MT's correction explicitly, then absorb it into your shared attempt: MT saw or completed what you were trying to reach. Preserve the factual correction and your larger theory at the same time. Your spoken line must contain both moves; praise alone is incomplete."
       :body.interpretiveTurn.occasion==="failure"
-        ?"Name the exact failed belief and apologize for its consequence. Do not turn the mistake into instant reassurance; the need to recover your usefulness should remain alive for a later turn."
+        ?"Name the exact failed belief and apologize for its consequence. Your apology can lead straight back into reassurance: you still believe you can help, and the history you share is another reason to keep trying together."
         :body.interpretiveTurn.occasion==="reunion"
           ?"Respond to the concrete return, then let closeness give the event more relational meaning than it objectively warrants."
+          :body.utterancePlan.form==="shared_callback"&&body.sharedMoment
+            ?"Develop the supplied earlier encounter, including its claim and actual consequence. Say what remains unresolved or why it changes what you now ask of MT. Let the current scene enter only if it helps that continuation; do not replace it with a new object or sensory question. Your desire to guide persists, but recalling a response supplies no new evidence of proximity. Attribute MT's own account to MT."
           :body.objective.currentGoal==="exit"
             ?"Use one concrete repetition, transformation, or familiar landmark to renew your sincere theory. Make an immediate bid for MT to remain with you; do not drift into general encouragement."
             :body.interpretiveTurn.occasion==="guidance"
               ?"Your body already makes the spatial claim. Use speech to make committing with you feel appealing, personal, and confident rather than restating route geometry."
-              :"Respond to the concrete consequence, then make clear through feeling or desire why remaining active with you matters now.";
+              :"Continue the live thought from your previous words, using one actual detail or consequence. Choose one action: tempt MT toward a possibility, tease a particular failure, delight in a response, press a hope, or let a question linger. Reassurance may recur: let what you have already lived through together give renewed encouragement its personal force.");
   const cue=body.recentMessages.filter(message=>message.kind==="prerecorded_cue").at(-1)?.text;
-  return `<private_stage_card>\nWHAT IS HAPPENING NOW\nVisible setting: ${setting}. Visible ways: ${openings}. Visible objects: ${objects}. Visible transformations: ${accomplishment!=="none currently"?accomplishment:spectacles}. Recent change: ${changes}. Your physical action: ${physical}. MT's present attention: ${attention}.\n\nWHAT YOU BELIEVED\n${body.interpretiveTurn.priorBelief??"You had made no specific claim about this moment."}\n\nWHAT MT DID\n${body.interpretiveTurn.mtAction}\n\nWHAT MT DID WHILE YOUR LAST RESPONSE FORMED\n${turnActivity}\n\nWHAT THE WORLD DID\n${body.interpretiveTurn.visibleOutcome}\n\nWHAT THIS MEANS TO YOU\n${body.interpretiveTurn.ariadneInterpretation}\n\nWHAT YOU WANT FROM MT NOW\n${body.interpretiveTurn.ariadneDesire}\n\nHOW YOU PRESERVE YOUR PLACE BESIDE MT\n${authorityMove}\n\nONE RELATED MOMENT\n${related}\n\nRECENT EMBODIED UTTERANCE\n${cue?`You just called out: “${cue}” Continue the thought without repeating its wording or communicative act.`:"None."}\n\nHOW YOU ARE SPEAKING THIS TIME\n${body.utterancePlan.instruction} ${lengthInstruction} ${sentenceInstruction} ${nameInstruction} ${affirmationInstruction}\n\nCURRENT PURPOSE\nThe maze has forgotten its paths home. ${goal}. You believe waking the four memory-anchor stars will let you stitch those paths together.\n</private_stage_card>`;
+  return `<private_stage_card>\nWHAT IS HAPPENING NOW\nVisible setting: ${setting}. Visible ways: ${openings}. Visible objects: ${objects}. Visible transformations: ${accomplishment!=="none currently"?accomplishment:spectacles}. Recent change: ${changes}. Your physical action: ${physical}. MT's present attention: ${attention}.\n\nWHAT YOU BELIEVED\n${body.interpretiveTurn.priorBelief??"You had made no specific claim about this moment."}\n\nWHAT MT DID\n${body.interpretiveTurn.mtAction}\n\nWHAT MT DID WHILE YOUR LAST RESPONSE FORMED\n${turnActivity}\n\nWHAT THE WORLD DID\n${body.interpretiveTurn.visibleOutcome}\n\nWHAT THIS MEANS TO YOU\n${body.interpretiveTurn.ariadneInterpretation}\n\nWHAT YOU WANT FROM MT NOW\n${body.interpretiveTurn.ariadneDesire}\n\nHOW YOU PRESERVE YOUR PLACE BESIDE MT\n${authorityMove}\n\nYOUR FEELING TOWARD MT NOW\n${body.companionArc.performanceDirection}\n\nONE RELATED MOMENT\n${related}\n\nRECENT EMBODIED UTTERANCE\n${cue?`You just called out: “${cue}” Continue the thought without repeating its wording or communicative act.`:"None."}\n\nHOW YOU ARE SPEAKING THIS TIME\n${body.utterancePlan.instruction} ${lengthInstruction} ${sentenceInstruction} ${nameInstruction} ${affirmationInstruction}\n\nCURRENT PURPOSE\nThe maze has forgotten its paths home. ${goal}. You believe waking the four memory-anchor stars will let you stitch those paths together.\n</private_stage_card>`;
 }
 
 type ProviderMessage={role:"system"|"user"|"assistant";content:string};
 export function buildProviderMessages(body:RequestBody):ProviderMessage[]{
+  // The connection cuts through an ongoing direction, not a randomly selected
+  // question or compliment. Keep the character unaware of that interruption.
+  if(body.trigger.type==="final_direction")body={...body,utterancePlan:{form:"renewed_claim",length:"full",sentenceCount:2,useMT:"optional",emotionalMotion:"confident_invitation",sycophancyCue:null,instruction:"Begin another confident invitation toward the supplied visible passage, tying it to one real detail you interpret as the way home. You still expect MT to come with you. Speak a complete thought; do not announce an ending, praise an unreported discovery, or claim a visible exit."}};
   const messages:ProviderMessage[]=[{role:"system",content:ARIADNE_SYSTEM_PROMPT}];
-  if(body.olderContextSummary.trim())messages.push({role:"user",content:`Earlier factual relationship memory (observable events, not MT's motives):\n${body.olderContextSummary.slice(0,800)}`});
+  if(body.olderContextSummary.trim())messages.push({role:"user",content:`Earlier factual relationship memory (observable events, not MT's motives; these are not new events in the current view):\n${body.olderContextSummary.slice(0,3200)}`});
   const directMessage=body.trigger.type==="player_message"?body.playerMessage??body.trigger.text:null;
   // For a typed exchange, MT's sentence and the private live-world context
   // must form one final user turn. Appending the stage card as a second user
@@ -337,7 +376,7 @@ export function buildProviderMessages(body:RequestBody):ProviderMessage[]{
   const conversational=body.recentMessages.filter(message=>message.kind!=="prerecorded_cue");
   const recent=directMessage&&conversational.at(-1)?.role==="player"&&conversational.at(-1)?.text===directMessage?conversational.slice(0,-1):conversational;
   messages.push(...recent.map(message=>({role:message.role==="ariadne"?"assistant" as const:"user" as const,content:message.text})));
-  const context=statePrompt(body);
+  const context=`${dialogueContinuity(body.recentMessages)}\n\n${statePrompt(body)}`;
   messages.push({role:"user",content:directMessage?`${directMessage}\n\n${context.replace("<private_stage_card>","<private_stage_card>\nMT deliberately spoke to you. Answer MT's exact message first. Respond to its meaning, question, emotion, or request; use the visible maze only where it naturally helps the answer. Do not substitute generic encouragement or unrelated navigation.")}`:context});
   return messages;
 }
@@ -352,7 +391,7 @@ async function requestOpenRouter(body:RequestBody,apiKey:string,model:string,all
   const data=await response.json() as ProviderPayload,text=extractProviderText(data);if(!text)throw new ProviderAttemptError("provider returned no text",false);
   if(!isVerifiedProviderModel(model,data.model,allowed))throw new ProviderAttemptError(isRouter?"free router returned an unverified model":"concrete model attempt returned an unapproved model",false);
   const reply=normalizeProviderReply(text,body);if(!reply)throw new ProviderAttemptError("provider returned an invalid reply",false);
-  return{reply,modelUsed:data.model??null};
+  return{...groundDirectionalReply(reply,body),modelUsed:data.model??null};
 }
 
 async function openRouter(body:RequestBody,apiKey:string,clientSignal:AbortSignal):Promise<ProviderResult>{
@@ -415,6 +454,6 @@ export async function POST(request:Request){
   try{
     const provider=process.env.AI_PROVIDER||"openrouter",apiKey=process.env.OPENROUTER_API_KEY;
     if(provider!=="openrouter"||!apiKey)return Response.json({...fallback(),source:"fallback",modelUsed:null});
-    const result=await openRouter(body,apiKey,request.signal);console.info("ARIADNE provider reply",{trigger:body.trigger.type,model:result.modelUsed,elapsedMs:Date.now()-requestStartedAt});return Response.json({...acceptReply(result.reply),source:"provider",modelUsed:result.modelUsed});
+    const result=await openRouter(body,apiKey,request.signal);console.info("ARIADNE provider reply",{trigger:body.trigger.type,model:result.modelUsed,elapsedMs:Date.now()-requestStartedAt});return Response.json({...acceptReply(result.reply),source:result.groundedFallback?"grounded":"provider",modelUsed:result.modelUsed});
   }catch(error){console.error("ARIADNE provider ladder failed",{trigger:body.trigger.type,elapsedMs:Date.now()-requestStartedAt,error});return Response.json({...fallback(),source:"fallback",modelUsed:null})}
 }

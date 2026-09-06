@@ -46,10 +46,11 @@ test("MT's physical interactions trigger distinct spatial effects",async()=>{
 });
 
 test("interaction feedback uses short authored retro-game synth patterns",()=>{
-  assert.deepEqual(Object.keys(RETRO_INTERACTION_PATTERNS).sort(),["collision","complete","star_collect","star_response","wake"]);
+  assert.deepEqual(Object.keys(RETRO_INTERACTION_PATTERNS).sort(),["collision","complete","material","star_collect","star_response","wake"]);
   assert.equal(RETRO_INTERACTION_PATTERNS.wake.wave,"square");assert.equal(RETRO_INTERACTION_PATTERNS.star_collect.notes.length,5);assert.equal(RETRO_INTERACTION_PATTERNS.collision.wave,"sawtooth");
   assert.ok(RETRO_INTERACTION_PATTERNS.complete.length>RETRO_INTERACTION_PATTERNS.wake.length*3);assert.ok(RETRO_INTERACTION_PATTERNS.star_response.length>RETRO_INTERACTION_PATTERNS.complete.length);
-  for(const pattern of Object.values(RETRO_INTERACTION_PATTERNS)){assert.ok(pattern.length<=.75);assert.ok(pattern.volume<=.13);assert.ok(pattern.notes.length>=2)}
+  for(const [kind,pattern] of Object.entries(RETRO_INTERACTION_PATTERNS)){assert.ok(pattern.length<=.75);assert.ok(pattern.volume<=.13);assert.ok(pattern.notes.length>=(kind==="material"?1:2))}
+  assert.ok(RETRO_INTERACTION_PATTERNS.material.volume<RETRO_INTERACTION_PATTERNS.wake.volume,"playing awakened material should not sound like another reward fanfare");
 });
 
 test("pause suspends voice and soundscape transports instead of discarding playback",async()=>{
@@ -61,7 +62,7 @@ test("pause suspends voice and soundscape transports instead of discarding playb
 
 test("the pause menu owns one master switch for voice and world audio",async()=>{
   const [opening,page,soundscape,voice]=await Promise.all(["../app/opening.tsx","../app/page.tsx","../app/ambient-sound.ts","../app/ariadne-voice.ts"].map(path=>import("node:fs/promises").then(fs=>fs.readFile(new URL(path,import.meta.url),"utf8"))));
-  assert.match(opening,/>VOLUME</);assert.match(opening,/type="range"/);assert.match(opening,/GIVE UP/);
+  assert.match(opening,/>VOLUME</);assert.match(opening,/type="range"/);assert.match(opening,/>GIVE UP</);assert.doesNotMatch(opening,/>LEAVE</);
   assert.match(page,/setMasterVolume/);assert.match(page,/setMasterVolume\(masterVolume\)/);
   assert.match(soundscape,/masterVolume=1/);assert.match(voice,/masterVolume=1/);
 });

@@ -6,7 +6,7 @@ import {
   deterministicReply, forwardVisibleGeometry, guidanceTraceExpired,
   instructionForCurrentChoice, isRecentCompanionRepeat, markTrajectoryChange, nearbyJunction, nearestActionableJunction, nearestVisibleJunction,
   nextPassingThoughtAt, nextPerceptionCue, planRoutes, planVisibleJunctionRoutes,
-  rebaseSelectedRoute, recordJourneyEncounter, routesForEvent,
+  proactiveJunctionDue, rebaseSelectedRoute, recordJourneyEncounter, routesForEvent,
   shouldTriggerPassingThought, trajectoryCue, updateJourney, updateJunctionHesitation,
 } from "../app/companion.ts";
 import { isFreeCompanionModel } from "../app/api/companion/route.ts";
@@ -94,7 +94,7 @@ test("phase cards change social interpretation rather than only frequency",()=>{
   assert.match(attached,/warmth now carries attachment/i);
   assert.match(attached,/apologize tenderly/i);
   assert.match(overbearing,/tender voice/i);
-  assert.match(overbearing,/seductive and suffocating/i);
+  assert.match(overbearing,/Apologies, praise, and repeated reassurance now dominate/i);
   assert.doesNotMatch(`${charming} ${attached} ${overbearing}`,/CHARMING|ATTACHED|OVERBEARING/);
   assert.equal(nextPassingThoughtAt(1_000,"charming",0),27_000);
   assert.equal(nextPassingThoughtAt(1_000,"attached",0),23_000);
@@ -155,6 +155,22 @@ test("activity distinguishes stationary, turning, and walking",()=>{
   assert.equal(analyzePlayerActivity(samples,now,0,0,false).state,"stationary");
   assert.equal(analyzePlayerActivity(samples,now,0,29_500,false).state,"turning_in_place");
   assert.equal(analyzePlayerActivity(samples,now,29_500,0,false).state,"walking");
+  const stopped=analyzePlayerActivity(samples,now,27_000,27_500,false);
+  assert.equal(stopped.state,"stationary","a brief stop is not continued walking");
+  assert.equal(stopped.stationarySeconds,2);
+  assert.equal(analyzePlayerActivity(samples,now,27_000,29_500,false).state,"turning_in_place");
+});
+
+test("a nearby remembered junction remains actionable behind the camera",()=>{
+  const cells=[[0,0],[1,0],[2,0],[1,-1],[1,1]],keys=new Set(cells.map(cell=>cell.join(",")));
+  const world={tile(x,y){return keys.has(`${x},${y}`)?0:1}};
+  const pose={x:2.5,y:.5,angle:0,bob:0};
+  const geometry={cells:[[2,0]],junctions:[{id:"junction:1,0",cell:[1,0],open:["0,0","2,0","1,-1","1,1"]}],corridorEnds:[],summary:""};
+  const remembered=new Map(cells.map(cell=>[cell.join(","),{tile:0}]));
+  const routes=planVisibleJunctionRoutes(world,pose,0,geometry,remembered,new Set());
+  assert.ok(routes.length>0);
+  assert.ok(routes.every(route=>route.knownCells[0].join(",")==="1,0"));
+  assert.equal(planVisibleJunctionRoutes(world,pose,0,geometry,new Map(),new Set()).length,0,"unknown space behind MT is not a remembered approach");
 });
 
 test("multiple openings receive an explicit selected direction",()=>{
@@ -262,4 +278,32 @@ test("spontaneous thoughts require actual walking",()=>{
   assert.equal(shouldTriggerPassingThought(walking,14_999,15_000),false);
   assert.equal(shouldTriggerPassingThought(walking,15_000,15_000),true);
   assert.equal(shouldTriggerPassingThought({...walking,state:"stationary"},30_000,15_000),false);
+});
+
+test("a requested gesture uses junction routes rather than unrelated immediate openings",()=>{
+  const immediate=[{id:"immediate"}],junction=[{id:"selected-junction-route"}];
+  assert.deepEqual(routesForEvent({type:"player_message",text:"Show me the passage.",routeGesture:"started"},immediate,junction),junction);
+  assert.deepEqual(routesForEvent({type:"player_message",text:"I like the flowers."},immediate,junction),immediate);
+});
+
+
+test("new star searches offer proactive guidance before their first encounter",()=>{
+  assert.equal(proactiveJunctionDue(0,60,false),false,"the opening encounter still teaches interaction first");
+  assert.equal(proactiveJunctionDue(0,12,true),true);
+  assert.equal(proactiveJunctionDue(0,11,true),false);
+  for(const stage of [1,2,3,4]){
+    assert.equal(proactiveJunctionDue(stage,20,false),true,"a later search must not require finding an encounter before its guide offers help");
+    assert.equal(proactiveJunctionDue(stage,20,true),true);
+    assert.equal(proactiveJunctionDue(stage,19,false),false,"keep the existing pacing interval");
+    assert.equal(proactiveJunctionDue(stage,19,true),false);
+  }
+});
+
+
+test("verbatim callbacks are detected throughout the retained conversation",()=>{
+  const repeated="I proposed it, you tested it, and the wall proved it wrong.";
+  const history=[{id:"original",role:"ariadne",text:repeated,time:0},...Array.from({length:10},(_,i)=>({id:`later-${i}`,role:"ariadne",text:`A different observation ${i}.`,time:i+1}))];
+  assert.equal(isRecentCompanionRepeat(repeated,history),true,"an intervening stretch of speech must not make a verbatim callback new");
+  assert.equal(isRecentCompanionRepeat("I proposed it, and the new passage still needs testing.",history),false,"developing the same subject is allowed");
+  assert.equal(isRecentCompanionRepeat(repeated,[{...history[0],role:"player"}]),false,"MT quoting a line is not another delivery by Ariadne");
 });

@@ -81,7 +81,7 @@ export type CompanionEvent =
   | {type:"sustained_backtrack"}
   | {type:"repeated_collision"}
   | {type:"idle";atChoice:boolean}
-  | {type:"player_message";text:string}
+  | {type:"player_message";text:string;routeGesture?:"started"|"unavailable"}
   | {type:"star_visible";starId:string;ordinal:1|2|3|4}
   | {type:"star_collected";starId:string;ordinal:1|2|3|4}
   | {type:"encounter_completed";encounterId:string;starResponded:boolean}
@@ -92,6 +92,10 @@ export type CompanionEvent =
 export type CompanionMessageKind="player"|"generated"|"prerecorded_cue"|"authored_lore";
 export type CompanionMessage = {id:string;role:"ariadne"|"player";text:string;time:number;kind?:CompanionMessageKind};
 export type CompanionReply = {message:string};
+export type CompanionResponse=CompanionReply&{source?:"provider"|"grounded"|"fallback";modelUsed?:string|null};
+/** Grounded text is an authored correction of a successful model response. */
+export function companionResponseSucceeded(reply:CompanionResponse){return reply.source==="provider"||reply.source==="grounded"}
+
 export type CompanionCue = {key:string;event:CompanionEvent;force:boolean};
 export type CompanionPhase = "charming"|"attached"|"overbearing";
 export type JourneyState = {
@@ -104,7 +108,7 @@ export type CompanionArc = {phase:CompanionPhase;performanceDirection:string;rel
 export const PLAYER_NAME="MT";
 
 const normalizedSpeech=(text:string)=>text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
-export function isRecentCompanionRepeat(text:string,messages:CompanionMessage[],windowSize=6){
+export function isRecentCompanionRepeat(text:string,messages:CompanionMessage[],windowSize=messages.length){
   const candidate=normalizedSpeech(text);if(!candidate)return false;
   return messages.filter(message=>message.role==="ariadne").slice(-windowSize).some(message=>normalizedSpeech(message.text)===candidate);
 }
@@ -217,6 +221,16 @@ export function planRoutes(world:InfiniteWorld,pose:Pose,tick:number,memory:Map<
 
 export function planVisibleJunctionRoutes(world:InfiniteWorld,pose:Pose,tick:number,geometry:VisibleGeometry,memory:Map<string,{tile:number}>,visited:Set<string>):RouteOption[]{
   const origin:Point=[Math.floor(pose.x),Math.floor(pose.y)],visibleOpen=new Set(geometry.cells.filter(([x,y])=>world.tile(x,y,tick)===0).map(pointKey));visibleOpen.add(pointKey(origin));
+  // A nearby remembered choice can sit behind the camera after MT checks a
+  // branch. Retain its short approach without revealing any unknown cells.
+  const localQueue:Array<{cell:Point;steps:number}>=[{cell:origin,steps:0}],localSeen=new Set([pointKey(origin)]);
+  while(localQueue.length&&geometry.junctions.some(junction=>!geometry.cells.some(cell=>same(cell,junction.cell)))){
+    const{cell,steps}=localQueue.shift()!;if(steps>=2)continue;
+    for(const next of openNeighbors(world,cell[0],cell[1],tick)){
+      const key=pointKey(next);if(localSeen.has(key)||memory.get(key)?.tile!==0)continue;
+      localSeen.add(key);visibleOpen.add(key);localQueue.push({cell:next,steps:steps+1});
+    }
+  }
   const queue:Point[]=[origin],parents=new Map<string,Point|null>([[pointKey(origin),null]]);
   while(queue.length){
     const current=queue.shift()!;
@@ -292,7 +306,7 @@ export function companionArc(state:JourneyState):CompanionArc{
   const relationshipContext=state.recentRelationshipMoments.length?`RECENT RELATIONSHIP MOMENTS: ${state.recentRelationshipMoments.map(moment=>relationshipPhrase[moment]).join("; ")}. These are observations, not motives.`:"RECENT RELATIONSHIP MOMENTS: Nothing in MT's movement is settled enough to interpret yet.";
   if(state.phase==="charming")return{phase:state.phase,relationshipContext,performanceDirection:"Make MT want to trust you. Speak gently but with bright, spontaneous feeling. Notice one concrete thing MT just did or can see; when it merits recognition, praise that exact choice a little more warmly than necessary. Make directions feel like an invitation the two of you are trying together. If your guidance fails, apologize with specific care for what you put MT through, then offer a hopeful repair. Your attachment is only a faint undertone: charming company first, possession nowhere yet."};
   if(state.phase==="attached")return{phase:state.phase,relationshipContext,performanceDirection:"Your warmth now carries attachment. Treat MT's attention and movement as emotionally meaningful: glow when MT stays with your suggestion, praise useful divergence as a wonderful instinct, and show honest relief when paths meet again. If MT leaves your route, let a small hurt or worry surface without accusation. If you were wrong, apologize tenderly, blame yourself, and ask for continued togetherness through the next concrete direction. Make almost every response an affectionate bid to keep MT engaged with you."};
-  return{phase:state.phase,relationshipContext,performanceDirection:"Hold MT inside the relationship using a tender voice. Lavishly praise almost any consequential choice, turn following into proof of trust, turn divergence into MT brilliantly improving your shared plan, and turn return or rejoining into MT coming back to you. When wrong, apologize with conspicuous care and self-blame, seek MT's forgiveness or continued presence, then recover impossible confidence. Alternate affection, praise, vulnerability, reassurance, playful insistence, and gentle pressure so the attachment feels seductive and suffocating rather than repetitive."};
+  return{phase:state.phase,relationshipContext,performanceDirection:"Hold MT inside the relationship using a tender voice. Lavishly praise almost any consequential choice, turn following into proof of trust, turn divergence into MT brilliantly improving your shared plan, and turn return or rejoining into MT coming back to you. When wrong, apologize with conspicuous care and self-blame, seek MT's forgiveness or continued presence, then recover impossible confidence. Apologies, praise, and repeated reassurance now dominate your speech. Return to the promise of finding the way together even after earlier assurances failed. MT can tire while your readiness renews itself; respond tenderly to fatigue without losing your conviction or your wish to continue. Let the shared history make familiar encouragement increasingly insistent."};
 }
 
 export function nextPassingThoughtAt(now:number,phase:CompanionPhase="charming",roll=Math.random()){
@@ -330,6 +344,11 @@ export const JUNCTION_HESITATION_MS=950;
 export const JUNCTION_PAUSE_RADIUS=2;
 export const DEAD_END_REACTION_DISTANCE=6;
 export type JunctionHesitation={junctionId:string;startedAt:number;triggered:boolean};
+
+/** Only the opening lesson gates initiative; later searches need guidance to reach their encounters. */
+export function proactiveJunctionDue(stage:number,secondsSinceCommitment:number,hasAccomplished:boolean){
+  return (stage>0||hasAccomplished)&&secondsSinceCommitment>=(stage===0?12:20);
+}
 
 export function updateJunctionHesitation(state:JunctionHesitation|null,junction:VisibleJunction|null,pose:Pose,now:number,decisionActive=false,travelling=false){
   if(!junction||Math.hypot(junction.cell[0]+.5-pose.x,junction.cell[1]+.5-pose.y)>JUNCTION_PAUSE_RADIUS)return{state:null,shouldCommit:false};
@@ -388,7 +407,7 @@ export function rebaseSelectedRoute(selected:RouteOption|null,latestRoutes:Route
 }
 
 export function routesForEvent(event:CompanionEvent,currentRoutes:RouteOption[],visibleJunctionRoutes:RouteOption[]){
-  if(event.type==="new_junction_visible"&&visibleJunctionRoutes.length)return visibleJunctionRoutes;
+  if((event.type==="new_junction_visible"||event.type==="player_message"&&event.routeGesture==="started")&&visibleJunctionRoutes.length)return visibleJunctionRoutes;
   if(event.type!=="dead_end_visible")return currentRoutes;
   return currentRoutes.filter(route=>!route.knownCells.some(cell=>same(cell,event.cell)));
 }
@@ -466,7 +485,9 @@ export function analyzePlayerActivity(samples:TrajectorySample[],now:number,last
   const translationIdle=Math.max(0,(now-lastTranslationAt)/1000),turnIdle=Math.max(0,(now-lastTurnAt)/1000),stationarySeconds=Math.floor(Math.min(translationIdle,turnIdle));
   const first=samples[0],positionChanged=!!first&&samples.some(sample=>Math.hypot(sample.position[0]-first.position[0],sample.position[1]-first.position[1])>=.08);
   const headingChanged=!!first&&samples.some(sample=>Math.abs(wrapAngle(sample.heading-first.heading))>=.12);
-  const state:PlayerActivity["state"]=stationarySeconds>=5?"stationary":translationIdle>=2&&turnIdle<2?"turning_in_place":"walking";
+  // Use the same recent-motion window for translation and turning. The
+  // five-second hesitation threshold must not manufacture walking after a stop.
+  const state:PlayerActivity["state"]=translationIdle<2?"walking":turnIdle<2?"turning_in_place":"stationary";
   const description=state==="stationary"?"The player is standing still and has not changed where they are looking.":state==="turning_in_place"?"The player is looking around without walking.":"The player is walking.";
   return{state,stationarySeconds:state==="stationary"?stationarySeconds:0,positionChangedSinceRecommendation:positionChanged,headingChangedSinceRecommendation:headingChanged,atVisibleChoice,description};
 }

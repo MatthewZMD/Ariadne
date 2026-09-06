@@ -45,6 +45,10 @@ export const ARIADNE_VOICE_CUES={
     {path:"/audio/ariadne-cues/a-star.mp3",text:"Yes—a star!"},
     {path:"/audio/ariadne-cues/we-got-it.mp3",text:"MT, we got it!"},
   ],
+  star_visible:[
+    {path:"/audio/ariadne-cues/found-one.mp3",text:"We found one!"},
+    {path:"/audio/ariadne-cues/a-star.mp3",text:"Yes—a star!"},
+  ],
 } as const;
 export type AriadneVoiceCue=keyof typeof ARIADNE_VOICE_CUES;
 export const STATIC_CUE_AFTER_VOICE_GAP_MS=6000;
@@ -56,16 +60,16 @@ export function staticCueAllowed(lastVoiceEndedAt:number,now=Date.now(),eventOcc
 
 const DELIVERY_DIRECTIONS:Record<AriadneVocalDelivery,string>={
   opening_wonder:"bright, lively, warmly curious, as if discovering a strange world beside a new companion",
-  confident_invitation:"animated, playfully confident, calling warmly to someone nearby",
-  curious_discovery:"surprised and delighted, full of quick genuine curiosity",
-  delighted_praise:"openly delighted, warmly impressed, unable to hide the pleasure",
+  confident_invitation:"excited, eager and playfully confident, smiling audibly, with lively pitch changes and a quick delighted lift as you invite someone along",
+  curious_discovery:"excited surprise, bright delighted curiosity, an audible intake of breath and expressive rising intonation",
+  delighted_praise:"excited and openly delighted, beaming with admiration, spontaneous emphatic praise with buoyant rhythm and an audible smile",
   playful_pursuit:"calling out with playful urgency, slightly breathless from catching up",
   tender_apology:"soft, embarrassed, genuinely sorry, emotionally exposed without becoming theatrical",
-  admiring_correction:"impressed, delighted, affectionately admiring",
+  admiring_correction:"excited admiration, warmly delighted by the correction, bright emphatic praise and an audible smile",
   relieved_reunion:"relieved and emotionally delighted, with an involuntary smile in the voice",
-  intimate_reassurance:"close, tender, intensely reassuring, speaking directly to one trusted person",
-  possessive_closeness:"warm and intimate with too much emotional investment, trying to sound reassuring",
-  quiet_companionship:"light, attentive, conversational, sharing a private observation while moving",
+  intimate_reassurance:"close and tender but eagerly hopeful, renewed excitement rising through the reassurance, speaking directly to one trusted person",
+  possessive_closeness:"warm, intimate and eagerly insistent, too excited by the next possibility to let the hope fade, reassuring with increasing emotional investment",
+  quiet_companionship:"lively, attentive and warmly curious, an audible smile and small sparks of excitement while sharing a private observation",
   final_hope:"breathless renewed confidence, urgently hopeful, beginning another irresistible idea",
 };
 
@@ -93,7 +97,8 @@ export function vocalDeliveryFor(
 }
 
 export function vocalDeliveryForForm(form:string,fallback:AriadneVocalDelivery):AriadneVocalDelivery{
-  if(form==="quick_call"||form==="playful_guess"||form==="renewed_claim")return"confident_invitation";
+  if(form==="renewed_claim")return fallback==="possessive_closeness"||fallback==="intimate_reassurance"?fallback:"confident_invitation";
+  if(form==="quick_call"||form==="playful_guess")return"confident_invitation";
   if(form==="delighted_interruption"||form==="specific_praise")return"delighted_praise";
   if(form==="specific_observation"||form==="direct_question"||form==="dry_joke")return"curious_discovery";
   if(form==="self_correction"||form==="bare_apology"||form==="tender_repair")return"tender_apology";
@@ -105,6 +110,7 @@ export function vocalDeliveryForForm(form:string,fallback:AriadneVocalDelivery):
 
 export function vocalCueFor(speechAct:string,eventType?:string):AriadneVoiceCue|null{
   if(eventType==="star_collected")return"star_collected";
+  if(eventType==="star_visible")return"star_visible";
   if(eventType==="encounter_completed")return"accomplishment";
   if(eventType==="dead_end_visible")return"dead_end";
   if(speechAct==="invite_to_visible_choice")return"this_way";

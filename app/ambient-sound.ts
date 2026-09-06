@@ -10,7 +10,7 @@ type Pose={x:number;y:number;angle:number};
 type Candidate={id:string;kind:string;position:[number,number];gainScale:number};
 type Emitter={source:AudioBufferSourceNode;filter:BiquadFilterNode;shaper:WaveShaperNode;gain:GainNode;panner:PannerNode;lfo:OscillatorNode;lfoGain:GainNode;family:SoundFamily;lastSeen:number};
 
-export type InteractionSoundKind="wake"|"complete"|"star_response"|"star_collect"|"collision";
+export type InteractionSoundKind="wake"|"complete"|"star_response"|"star_collect"|"collision"|"material";
 export const AMBIENT_BUS_RELATIVE_TO_ARIADNE_DB=-7.5;
 export const INTERACTION_BUS_RELATIVE_TO_ARIADNE_DB=-6;
 const dbGain=(decibels:number)=>10**(decibels/20);
@@ -46,6 +46,7 @@ export const OBJECT_SOUND_FAMILY:Record<AtlasSpriteKind,SoundFamily>={
 const THEME_BED:Record<ThemeId,SoundFamily>={neutral:"stone",beach:"wave",tornado:"wind",ruins:"insects",frozen:"paper",foundry:"industrial",cavern:"cave"};
 const THEME_PITCH:Record<ThemeId,number>={neutral:.82,beach:.92,tornado:.72,ruins:1,frozen:1.2,foundry:.64,cavern:1.34};
 export const RETRO_INTERACTION_PATTERNS:Record<InteractionSoundKind,{notes:number[];step:number;length:number;volume:number;wave:OscillatorType}>={
+  material:{notes:[330],step:.08,length:.75,volume:.045,wave:"triangle"},
   wake:{notes:[392,523],step:.065,length:.15,volume:.07,wave:"square"},
   complete:{notes:[330,440,554,659],step:.1,length:.58,volume:.09,wave:"square"},
   star_response:{notes:[523,659,784,1047],step:.11,length:.72,volume:.105,wave:"triangle"},
@@ -123,7 +124,7 @@ export function createAmbientSoundscape():AmbientSoundscape{
   };
   const playInteraction=(args:{kind:InteractionSoundKind;id:string;position:[number,number];pose:Pose;theme:ThemeId;progress?:number})=>{
     if(!context||!interactionBus||!unlocked||destroyed)return;const nowMs=performance.now(),cooldown=args.kind==="collision"?360:80,previous=lastInteractionAt.get(args.kind)??-Infinity;if(nowMs-previous<cooldown)return;lastInteractionAt.set(args.kind,nowMs);
-    const ctx=context,pattern=RETRO_INTERACTION_PATTERNS[args.kind],progressPitch=args.kind==="wake"?2**((clamp(args.progress??.5,0,1)-.5)*8/12):1,pitch=(args.kind==="star_response"||args.kind==="star_collect"?1:THEME_PITCH[args.theme])*progressPitch,panner=ctx.createPanner(),dx=args.position[0]-args.pose.x,dy=args.position[1]-args.pose.y,distance=Math.hypot(dx,dy),relative=Math.atan2(dy,dx)-args.pose.angle;
+    const ctx=context,pattern=RETRO_INTERACTION_PATTERNS[args.kind],progressPitch=args.kind==="wake"||args.kind==="material"?2**((clamp(args.progress??.5,0,1)-.5)*8/12):1,pitch=(args.kind==="star_response"||args.kind==="star_collect"?1:THEME_PITCH[args.theme])*progressPitch,panner=ctx.createPanner(),dx=args.position[0]-args.pose.x,dy=args.position[1]-args.pose.y,distance=Math.hypot(dx,dy),relative=Math.atan2(dy,dx)-args.pose.angle;
     panner.panningModel="HRTF";panner.distanceModel="inverse";panner.refDistance=1.6;panner.maxDistance=24;panner.rolloffFactor=.85;panner.positionX.value=Math.sin(relative)*distance;panner.positionY.value=0;panner.positionZ.value=-Math.cos(relative)*distance;panner.connect(interactionBus);
     let remaining=pattern.notes.length;
     pattern.notes.forEach((note,index)=>{const oscillator=ctx.createOscillator(),gain=ctx.createGain(),start=ctx.currentTime+index*pattern.step,end=ctx.currentTime+pattern.length,frequency=note*pitch,variation=1+((hash(`${args.id}:${index}`)%9)-4)*.0025;

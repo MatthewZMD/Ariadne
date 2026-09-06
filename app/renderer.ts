@@ -186,7 +186,7 @@ function renderRealityEffect(ctx:CanvasRenderingContext2D,effect:RealityEffect,x
 }
 
 function renderCenterpiece(ctx:CanvasRenderingContext2D,encounter:ResonanceEncounter,x:number,y:number,size:number,time:number,reducedMotion:boolean){
-  const count=encounter.elements.length,active=encounter.elements.filter(item=>item.active).length,unit=Math.max(2,Math.floor(size/24)),radius=size*.24;
+  const count=encounter.elements.length,active=encounter.elements.filter(item=>item.active).length,unit=Math.max(.5,size/24),radius=size*.24;
   ctx.save();ctx.translate(Math.round(x),Math.round(y-size*.15));
   const halo=ctx.createRadialGradient(0,0,unit,0,0,size*.48);halo.addColorStop(0,`${encounter.motif.color}92`);halo.addColorStop(.52,`${encounter.motif.color}38`);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-size*.5,-size*.5,size,size);
   // The centerpiece is a world object first and a progress display second.
@@ -197,7 +197,7 @@ function renderCenterpiece(ctx:CanvasRenderingContext2D,encounter:ResonanceEncou
   // projected in world space.
   ctx.lineWidth=Math.max(1,unit*.7);for(let i=0;i<count;i++){const angle=-Math.PI/2+i/count*Math.PI*2+(reducedMotion?0:Math.sin(time*.7+i)*.055),markerX=Math.cos(angle)*radius,markerY=Math.sin(angle)*radius;ctx.beginPath();ctx.strokeStyle=i<active?encounter.motif.color:"rgba(190,205,197,.25)";ctx.moveTo(Math.cos(angle)*radius*.38,Math.sin(angle)*radius*.38);ctx.lineTo(markerX,markerY);ctx.stroke();ctx.save();ctx.translate(markerX,markerY);ctx.rotate(angle+(active>i&&!reducedMotion?Math.sin(time*2+i)*.18:0));ctx.fillStyle=i<active?"#fff4c5":"rgba(185,198,190,.7)";ctx.fillRect(-unit*1.5,-unit,unit*3,unit*2);ctx.fillStyle=i<active?encounter.motif.color:"rgba(137,151,143,.68)";ctx.fillRect(-unit,unit,unit*2,unit*2);ctx.restore()}
   ctx.save();
-  const coreUnit=Math.max(3,Math.floor(size/(encounter.teaching?15:18))),coreScale=encounter.teaching?1.15:1;ctx.scale(coreScale,coreScale);
+  const coreUnit=Math.max(.5,size/(encounter.teaching?15:18)),coreScale=encounter.teaching?1.15:1;ctx.scale(coreScale,coreScale);
   resonanceGlyph(ctx,encounter.theme,coreUnit,encounter.completed?"#fff4c5":active>0?encounter.motif.color:"#c6d2ca",active>0,time,17.3);
   ctx.restore();
   if(!reducedMotion&&active>0&&!encounter.completed){const a=time*1.3;ctx.fillStyle=encounter.motif.color;ctx.fillRect(Math.cos(a)*radius-unit,Math.sin(a)*radius-unit,unit*2,unit*2)}
@@ -213,7 +213,9 @@ function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncou
       ?encounter.reality.completionPosition:[encounter.center[0]+.5,encounter.center[1]+.5] as [number,number];
     const centerProjection=projectWorldPoint(visualOrigin,pose,depths,width,horizon,height);
     if(centerProjection){
-      const chaos=accumulation?.chaos.activeIntensity??0,teachingBoost=encounter.teaching?1.24:1,distant=centerProjection.dist>18,size=Math.max(distant?22:encounter.teaching?104:76,Math.min(height*1.08,height/Math.max(.6,centerProjection.corrected)*(.68+chaos*.16)*teachingBoost));
+      // Keep the structure in perspective throughout the approach. A large
+      // screen-space minimum made it pop at 18 cells and hover at a fixed size.
+      const chaos=accumulation?.chaos.activeIntensity??0,teachingBoost=encounter.teaching?1.24:1,size=Math.max(4,Math.min(height*1.08,height/Math.max(.6,centerProjection.corrected)*(.68+chaos*.16)*teachingBoost));
       const effects=encounter.reality.stage==="dormant"?[]:encounter.reality.stage==="assembling"?encounter.reality.activationEffects.filter(effect=>effect.startedAt!==null):[encounter.reality.completionEffect,...encounter.reality.persistentEffects];
       const layerCount=Math.min(encounter.completed?6:2,accumulation?.chaos.maximumLayerCount??2);Array.from({length:Math.min(layerCount,effects.length?Math.max(effects.length,layerCount):0)},(_,index)=>effects[index%effects.length]!).forEach((effect,index)=>renderRealityEffect(ctx,effect,centerProjection.sx,centerProjection.sy-size*.12,size,time,progress,completionAge,reducedMotion,index+1));
       renderCenterpiece(ctx,encounter,centerProjection.sx,centerProjection.sy,size,time,reducedMotion);
@@ -221,8 +223,8 @@ function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncou
     const projected=encounter.elements.map((element,index)=>{
       const dx=element.position[0]-pose.x,dy=element.position[1]-pose.y,dist=Math.hypot(dx,dy);let rel=Math.atan2(dy,dx)-pose.angle;while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
       if(dist<.25||dist>SPATIAL_VISIBILITY_DISTANCE||Math.abs(rel)>FOV*.59)return null;const sx=(.5+rel/FOV)*width,rayIndex=Math.max(0,Math.min(RAYS-1,Math.floor(sx/width*RAYS))),corrected=dist*Math.cos(rel);if(corrected>depths[rayIndex]+.16)return null;
-      const minimumSize=dist>18?6:encounter.teaching?20:10,maximumSize=encounter.teaching?96:76,scale=encounter.teaching?.2:.135;
-      const size=Math.max(minimumSize,Math.min(maximumSize,height/Math.max(.55,corrected)*scale)),unit=Math.max(1,Math.floor(size/7)),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*(element.active?.7:1.2);
+      const maximumSize=encounter.teaching?96:76,scale=encounter.teaching?.2:.135;
+      const size=Math.max(2,Math.min(maximumSize,height/Math.max(.55,corrected)*scale)),unit=Math.max(.5,size/7),sy=horizon+height/(dist*3.8)-size*.22,bob=reducedMotion?0:Math.sin(time*2.4+index*1.7)*unit*(element.active?.7:1.2);
       return{element,index,dist,corrected,sx,sy:sy+bob,size,unit};
     });
     // A configuration reads as one accomplishable object before MT touches
@@ -242,9 +244,15 @@ function renderResonances(ctx:CanvasRenderingContext2D,encounters:ResonanceEncou
       const dormantPulse=reducedMotion?.82:.74+Math.sin(time*3.1+index*1.9)*.16;
       ctx.globalAlpha=element.active ? 0.98 : Math.min(.94,dormantPulse+progress*.22);
       if(element.active){const halo=ctx.createRadialGradient(0,0,0,0,0,unit*7);halo.addColorStop(0,accomplishmentColor);halo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=halo;ctx.fillRect(-unit*7,-unit*7,unit*14,unit*14)}
-      if(element.active&&element.activatedAt&&!reducedMotion){const age=Math.max(0,Date.now()-element.activatedAt)/1000;if(age<1.15){const radius=unit*(3+age*15);ctx.strokeStyle=`rgba(255,245,191,${(1-age/1.15)*.88})`;ctx.lineWidth=Math.max(1,unit*.65);ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke()}}
+      const soundedAt=element.lastResonatedAt??element.activatedAt;
+      if(element.active&&soundedAt&&!reducedMotion){const age=Math.max(0,Date.now()-soundedAt)/1000;if(age<1.15){const radius=unit*(3+age*15);ctx.strokeStyle=`rgba(255,245,191,${(1-age/1.15)*.88})`;ctx.lineWidth=Math.max(1,unit*.65);ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.stroke()}}
       if(!element.active){const dormantHalo=ctx.createRadialGradient(0,0,0,0,0,unit*(encounter.teaching?8:6));dormantHalo.addColorStop(0,`${encounter.motif.color}44`);dormantHalo.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=dormantHalo;ctx.fillRect(-unit*8,-unit*8,unit*16,unit*16)}
-      resonanceGlyph(ctx,encounter.theme,unit,element.active?accomplishmentColor:progress>0?encounter.motif.color:"#b8c6bd",element.active,reducedMotion?0:time,index*1.7);ctx.restore();
+      const attention=element.attention??0;
+      // The fragment brightens and opens as attention settles on it. Reduced
+      // motion retains the change in colour without the expansion.
+      if(!reducedMotion)ctx.scale(1+attention*.18,1+attention*.18);
+      resonanceGlyph(ctx,encounter.theme,unit,element.active?accomplishmentColor:attention>.1||progress>0?encounter.motif.color:"#b8c6bd",element.active||attention>.35,reducedMotion?0:time,index*1.7);ctx.restore();
+
     }
   }
 }
@@ -351,7 +359,7 @@ export function entitiesNear(seed:number,world:InfiniteWorld,anchors:ThemeAnchor
   const rememberedThemes:ThemeId[]=[...new Set(anchors.filter(anchor=>anchor.triggered).map(anchor=>anchor.theme))];
   for(let cy=Math.floor(y)-SPATIAL_VISIBILITY_DISTANCE;cy<=Math.floor(y)+SPATIAL_VISIBILITY_DISTANCE;cy++)for(let cx=Math.floor(x)-SPATIAL_VISIBILITY_DISTANCE;cx<=Math.floor(x)+SPATIAL_VISIBILITY_DISTANCE;cx++){
     if(world.tile(cx,cy)!==0)continue;const info=appearance.get(`${cx},${cy}`)??themeAt(anchors,cx,cy);if(info.id==="neutral")continue;
-    const h=hash32(seed,"entity",cx,cy);if(h%17!==0||((h>>>8)%100)/100>info.influence)continue;let entityTheme=info.id;
+    const h=hash32(seed,"entity",cx,cy);if(h%17!==0||((h>>>8)%100)/100>info.influence)continue;let entityTheme:ThemeId=info.id;
     if(rememberedThemes.length>1&&((h>>>14)%100)/100<collageIntensity*.38)entityTheme=rememberedThemes[(h>>>20)%rememberedThemes.length]!;
     const def=THEMES[entityTheme],pool=h%3===0?def.life:def.props;
     const kind=pool[h%pool.length];out.push({id:`entity:${cx}:${cy}:${kind}`,x:cx+.5,y:cy+.5,kind,theme:entityTheme,phase:(h%628)/100,scale:.65+(h%50)/100});

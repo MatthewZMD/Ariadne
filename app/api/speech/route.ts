@@ -2,6 +2,7 @@ import { isAriadneVocalDelivery, prepareVocalText, type AriadneVocalDelivery } f
 
 const OPENROUTER_SPEECH_URL="https://openrouter.ai/api/v1/audio/speech";
 export const ARIADNE_TTS_MODEL="fish-audio/s2.1-pro-free:free";
+export const ARIADNE_TTS_FALLBACK_MODEL="fish-audio/s2.1-pro";
 export const DEFAULT_ARIADNE_VOICE="933563129e564b19a115bedd57b7406a";
 const MAX_REQUEST_BYTES=2048;
 const MAX_TEXT_LENGTH=600;
@@ -39,23 +40,30 @@ export async function POST(request:Request){
   if(!apiKey)return Response.json({error:"speech_unavailable"},{status:503});
 
   const voice=(process.env.OPENROUTER_TTS_VOICE||DEFAULT_ARIADNE_VOICE).trim()||DEFAULT_ARIADNE_VOICE;
-  let response:Response;
-  try{
-    response=await fetch(OPENROUTER_SPEECH_URL,{
-      method:"POST",
-      headers:{
-        authorization:`Bearer ${apiKey}`,
-        "content-type":"application/json",
-        "http-referer":process.env.APP_URL||"http://localhost:3001",
-        "x-title":"Ariadne",
-      },
-      signal:AbortSignal.timeout(20_000),
-      body:JSON.stringify({model:ARIADNE_TTS_MODEL,input:prepareAriadneSpeech(body.text,body.delivery),voice,response_format:"mp3"}),
-    });
-  }catch{
-    return Response.json({error:"speech_provider_unavailable"},{status:502});
+  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(20_000)]);
+  const input=prepareAriadneSpeech(body.text,body.delivery);
+  let response:Response|null=null;
+  // Preserve the voice across a free-tier outage. Never retry authorization or
+  // malformed-request errors, and never permit an unbounded paid retry loop.
+  for(const model of [ARIADNE_TTS_MODEL,ARIADNE_TTS_FALLBACK_MODEL]){
+    try{
+      response=await fetch(OPENROUTER_SPEECH_URL,{
+        method:"POST",
+        headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},
+        signal,
+        body:JSON.stringify({model,input,voice,response_format:"mp3"}),
+      });
+    }catch(error){
+      console.warn("ARIADNE speech transport failed",{kind:error instanceof Error?error.name:"unknown"});
+      return Response.json({error:"speech_provider_unavailable"},{status:502});
+    }
+    if(response.ok)break;
+    console.warn("ARIADNE speech provider rejected request",{model,status:response.status});
+    const retryable=response.status===429||response.status>=500;
+    await response.body?.cancel();
+    if(!retryable)break;
   }
-  if(!response.ok)return Response.json({error:"speech_provider_unavailable"},{status:502});
+  if(!response?.ok)return Response.json({error:"speech_provider_unavailable"},{status:502});
 
   const audio=await response.arrayBuffer();
   if(audio.byteLength===0||audio.byteLength>MAX_AUDIO_BYTES)return Response.json({error:"invalid_speech_audio"},{status:502});

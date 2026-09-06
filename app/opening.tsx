@@ -106,19 +106,15 @@ export function StorySequence({ index, ready, onAdvance, onSkip, onComplete }: {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       if (event.repeat) return;
-      if (event.key === "Escape") return;
+      if (!["Enter", " "].includes(event.key)) return;
+      // Focused buttons own their keyboard activation, including Skip.
+      if (event.target instanceof Element && event.target.closest("button")) return;
       event.preventDefault();
       if(finalScene&&ready)onComplete();else if(!finalScene)onAdvance();
     };
     addEventListener("keydown", handle);
     return () => removeEventListener("keydown", handle);
   }, [finalScene, onAdvance, onComplete, ready]);
-  useEffect(()=>{
-    const delay=2000;
-    const timer=window.setTimeout(()=>{if(finalScene){if(ready)onComplete()}else onAdvance()},delay);
-    return()=>window.clearTimeout(timer);
-  },[finalScene,index,onAdvance,onComplete,ready]);
-
   const screen = STORY[index];
   return <section className="front-screen story-screen" aria-label={`Opening story, scene ${index + 1} of ${STORY.length}`}>
     <button className="story-skip text-button" type="button" onClick={event => { event.stopPropagation(); if(finalScene&&ready)onComplete();else onSkip(); }}>{finalScene?"ENTER THE MAZE":"SKIP"}</button>
@@ -140,7 +136,7 @@ export function PauseMenu({ onResume, onGiveUp, masterVolume, onVolumeChange }: 
         <span>VOLUME</span><strong>{Math.round(masterVolume*100)}%</strong>
         <input type="range" min="0" max="100" step="5" value={Math.round(masterVolume*100)} onChange={event=>onVolumeChange(Number(event.currentTarget.value)/100)} aria-label="Master volume"/>
       </label>
-      <button className="pixel-button danger" type="button" onClick={onGiveUp}>GIVE UP</button>
+      <button className="pixel-button" type="button" onClick={onGiveUp}>GIVE UP</button>
       <a className="pause-source" href="https://github.com/MatthewZMD/Ariadne" target="_blank" rel="noreferrer">SOURCE &amp; LICENSE</a>
       <p className="front-hint">ESC TO RESUME</p>
     </div>
@@ -156,7 +152,7 @@ export function ClosureScreen({ revealed, onRestart, onLeave }: {
     {revealed && <div className="closure-panel">
       <h1>LINK LOST</h1>
       <button className="pixel-button primary" type="button" onClick={onRestart}>BEGIN AGAIN</button>
-      <button className="pixel-button danger" type="button" onClick={onLeave}>LEAVE</button>
+      <button className="pixel-button danger" type="button" onClick={onLeave}>GIVE UP</button>
     </div>}
   </section>;
 }

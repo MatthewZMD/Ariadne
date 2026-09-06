@@ -98,6 +98,7 @@ button { font: inherit; }
 .objective-stars { position: absolute; top: 18px; left: 20px; z-index: 5; pointer-events: none; color: var(--amber); letter-spacing: .22em; font-size: clamp(24px, 2.35vw, 36px); line-height: 1; text-shadow: 0 0 5px rgba(242,207,105,.9), 0 0 16px rgba(242,207,105,.45), 2px 2px 0 rgba(0,0,0,.72); }
 .star-pulse .viewport-wrap::after { content: ""; position: absolute; inset: 0; z-index: 6; pointer-events: none; background: rgba(242,207,105,.16); animation: star-collect .8s steps(5) forwards; }
 canvas { display: block; width: 100%; height: auto; aspect-ratio: 12 / 7; touch-action: none; image-rendering: pixelated; }
+.mouse-look-hint { position: absolute; z-index: 5; top: 12%; left: 50%; transform: translateX(-50%); max-width: 60%; padding: .5rem .75rem; background: #080b09e6; color: #eee9d8; font: 14px/1.5 monospace; text-align: center; pointer-events: none; }
 .vignette { pointer-events: none; position: absolute; inset: 0; z-index: 2; box-shadow: inset 0 0 90px rgba(0,0,0,.52), inset 0 0 20px rgba(0,0,0,.38); background: repeating-linear-gradient(0deg, rgba(255,255,255,.008) 0 1px, transparent 1px 5px); }
 .vignette.comfort-vignette { box-shadow: inset 0 0 150px 38px rgba(0,0,0,.32), inset 0 0 28px rgba(0,0,0,.24); }
 .console { border: 1px solid #3f443d; background: #111411; padding: 16px; display: flex; flex-direction: column; }

@@ -20,6 +20,7 @@ export type NavigationBelief = {
   junctionId: string;
   routeId: string;
   instruction: string;
+  choiceCell?: Point;
 };
 
 export type ObjectiveState = {
@@ -30,7 +31,21 @@ export type ObjectiveState = {
   decisionSerial: number;
   accuracyAccumulator: number;
   recentBeliefs: NavigationBelief[];
+  rejectedChoices?: string[];
 };
+
+const choiceCell=(route:RouteOption)=>route.decisionPoint==="upcoming"?route.targetCell:route.knownCells[0];
+const choiceKey=(junctionId:string,cell:Point)=>`${junctionId}/${cellKey(...cell)}`;
+
+export function rejectNavigationBelief(state:ObjectiveState,beliefId:string):ObjectiveState{
+  const belief=state.recentBeliefs.find(item=>item.id===beliefId);
+  if(!belief?.choiceCell)return state;
+  return{...state,recentBeliefs:state.recentBeliefs.filter(item=>item.id!==beliefId),rejectedChoices:[...new Set([...(state.rejectedChoices??[]),choiceKey(belief.junctionId,belief.choiceCell)])].slice(-24)};
+}
+
+function unrefutedRoutes(state:ObjectiveState,routes:RouteOption[],junctionId:string){
+  return routes.filter(route=>{const cell=choiceCell(route);return !cell||!state.rejectedChoices?.includes(choiceKey(junctionId,cell))});
+}
 
 export type PublicObjectiveContext = {
   collectedStars: number;
@@ -42,10 +57,10 @@ export type PublicObjectiveContext = {
 type SearchYield = () => Promise<void>;
 
 const STAGES = [
-  { minimum: 92, maximum: 110, junctions: 4, accuracy: .9 },
-  { minimum: 110, maximum: 140, junctions: 5, accuracy: .7 },
-  { minimum: 160, maximum: 200, junctions: 8, accuracy: .45 },
-  { minimum: 220, maximum: 270, junctions: 12, accuracy: .2 },
+  { minimum: 64, maximum: 84, junctions: 3, accuracy: .9 },
+  { minimum: 90, maximum: 115, junctions: 4, accuracy: .7 },
+  { minimum: 100, maximum: 130, junctions: 5, accuracy: .45 },
+  { minimum: 110, maximum: 150, junctions: 6, accuracy: .2 },
 ] as const;
 
 const STEPS:Point[]=[[1,0],[-1,0],[0,1],[0,-1]];
@@ -238,22 +253,24 @@ function beliefFromRankedRoutes(state:ObjectiveState,routes:RouteOption[],juncti
     route=useSupported?supported[hash32(seed,"supported",state.stage,decisionSerial)%supported.length]?.route:unsupported.slice().sort((a,b)=>(a.distance-b.distance)-((a.route.score-b.route.score)*.15))[hash32(seed,"mistake",state.stage,decisionSerial)%Math.min(2,unsupported.length)]?.route;
   }
   route??=routes[0];
-  const belief:NavigationBelief={id:`belief:${state.stage}:${junctionId}:${decisionSerial}`,objectiveStage:state.stage,junctionId,routeId:route.id,instruction:route.instruction};
+  const belief:NavigationBelief={id:`belief:${state.stage}:${junctionId}:${decisionSerial}:${route.id}`,objectiveStage:state.stage,junctionId,routeId:route.id,instruction:route.instruction,choiceCell:choiceCell(route)??undefined};
   return{state:{...state,decisionSerial,accuracyAccumulator,recentBeliefs:[...state.recentBeliefs,belief].slice(-12)},belief};
 }
 
 export function chooseNavigationBelief(state:ObjectiveState,routes:RouteOption[],junctionId:string,world:InfiniteWorld,seed:number,starIsVisible:boolean,tick=0):{state:ObjectiveState;belief:NavigationBelief|null}{
+  routes=unrefutedRoutes(state,routes,junctionId);
   if(!routes.length)return{state,belief:null};
   const existing=!starIsVisible&&state.recentBeliefs.find(item=>item.objectiveStage===state.stage&&item.junctionId===junctionId);
   if(existing&&routes.some(route=>route.id===existing.routeId))return{state,belief:existing};
   if(state.stage===4||!state.activeStar){
-    const route=routes.slice().sort((a,b)=>b.score-a.score)[0]??routes[0],belief:NavigationBelief={id:`belief:${state.stage}:${junctionId}:explore`,objectiveStage:state.stage,junctionId,routeId:route.id,instruction:route.instruction};
+    const route=routes.slice().sort((a,b)=>b.score-a.score)[0]??routes[0],belief:NavigationBelief={id:`belief:${state.stage}:${junctionId}:explore:${route.id}`,objectiveStage:state.stage,junctionId,routeId:route.id,instruction:route.instruction,choiceCell:choiceCell(route)??undefined};
     return{state:{...state,recentBeliefs:[...state.recentBeliefs,belief].slice(-12)},belief};
   }
   return beliefFromRankedRoutes(state,routes,junctionId,seed,starIsVisible,distancesFromTarget(world,state.activeStar.cell,routes,tick));
 }
 
 export async function chooseNavigationBeliefAsync(state:ObjectiveState,routes:RouteOption[],junctionId:string,world:InfiniteWorld,seed:number,starIsVisible:boolean,tick=0,signal?:AbortSignal):Promise<{state:ObjectiveState;belief:NavigationBelief|null}>{
+  routes=unrefutedRoutes(state,routes,junctionId);
   if(!routes.length)return{state,belief:null};
   const existing=!starIsVisible&&state.recentBeliefs.find(item=>item.objectiveStage===state.stage&&item.junctionId===junctionId);
   if(existing&&routes.some(route=>route.id===existing.routeId))return{state,belief:existing};

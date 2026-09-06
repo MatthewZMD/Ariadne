@@ -58,11 +58,11 @@ test("a run-scoped entrance gate seals only the cell behind MT until the world i
   const recycled=new InfiniteWorld(405);assert.equal(recycled.entranceGate,null);assert.equal(recycled.isEntranceGate(0,1),false);
 });
 
-test("the starting corridor has exactly one traversable direction and opens after five seconds at maximum speed",()=>{
+test("the starting corridor has exactly one traversable direction and stays clear beyond the initial view before joining the maze",()=>{
   const world=new InfiniteWorld(406),gate=world.setEntranceCorridor(1,1,1,0);
   assert.deepEqual(gate.facing,[1,0]);
   assert.equal(world.tile(0,1),1,"the entrance gate must seal the route behind MT");
-  for(let step=0;step<LOGICAL_SPACING+DECISION_VISIBILITY_DISTANCE;step++){
+  for(let step=0;step<LOGICAL_SPACING;step++){
     assert.equal(world.tile(1+step,0),1,`north side of entrance step ${step} must be a wall`);
     assert.equal(world.tile(1+step,2),1,`south side of entrance step ${step} must be a wall`);
     assert.equal(world.tile(2+step,1),0,`entrance must remain open ahead at step ${step}`);
@@ -71,12 +71,20 @@ test("the starting corridor has exactly one traversable direction and opens afte
   assert.deepEqual(immediateNeighbors,[[2,1]]);
 });
 
+test("the opening preserves an available first choice instead of sealing it into a longer corridor",()=>{
+  const world=new InfiniteWorld(731);
+  const gate=world.setEntranceCorridor(1,1,1,0);
+  assert.deepEqual(gate.exit,[15,1],"the natural choice at fourteen cells should remain the entrance's first choice");
+  const onward=[[16,1],[15,0],[15,2]].filter(([x,y])=>world.tile(x,y)===0);
+  assert.ok(onward.length>=2,"the earlier entrance must join actual onward passages");
+});
+
 test("randomized entrances never terminate inside the camera range and join a genuine choice",()=>{
   const directions=[[1,0],[0,1],[-1,0],[0,-1]];
   for(let seed=1;seed<=256;seed++){
     const world=new InfiniteWorld(seed),[dx,dy]=directions[seed%directions.length],gate=world.setEntranceCorridor(1,1,dx,dy);
     const endpoint=gate.exit,distance=Math.abs(endpoint[0]-1)+Math.abs(endpoint[1]-1);
-    assert.ok(distance>=LOGICAL_SPACING+DECISION_VISIBILITY_DISTANCE,`seed ${seed} closed after ${distance} cells`);
+    assert.ok(distance>=LOGICAL_SPACING,`seed ${seed} closed after ${distance} cells`);
     const onward=[[1,0],[-1,0],[0,1],[0,-1]].filter(([nx,ny])=>!(nx===-dx&&ny===-dy)&&world.tile(endpoint[0]+nx,endpoint[1]+ny)===0);
     assert.ok(onward.length>=2,`seed ${seed} entrance joined only ${onward.length} onward route(s)`);
     assert.deepEqual(gate.facing,[dx,dy]);

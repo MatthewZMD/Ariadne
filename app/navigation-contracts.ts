@@ -19,10 +19,12 @@ export type RouteOption={
 
 export function mentionedDirections(message:string){
   const found=new Set<RouteDirection>();
+  if(/\bleft(?:ward)?(?:[- ]hand)?\s+(?:opening|passage|fork|branch|turn|door|way)\b/i.test(message))found.add("left");
+  if(/\bright(?:ward)?(?:[- ]hand)?\s+(?:opening|passage|fork|branch|turn|door|way)\b/i.test(message))found.add("right");
   if(/\b(?:turn|go|take|veer|head)\s+(?:(?:to|on)\s+)?(?:your\s+|the\s+)?left\b|\b(?:opening|passage|branch|door|way)\s+(?:on\s+)?(?:your\s+|the\s+)?left\b|\bon your left\b|\bleft-hand\b/i.test(message))found.add("left");
   if(/\b(?:turn|go|take|veer|head)\s+(?:(?:to|on)\s+)?(?:your\s+|the\s+)?right\b|\b(?:opening|passage|branch|door|way)\s+(?:on\s+)?(?:your\s+|the\s+)?right\b|\bon your right\b|\bright-hand\b/i.test(message))found.add("right");
   if(/\b(turn around|go back|head back|behind you|backtrack)\b/i.test(message))found.add("back");
-  if(/\b(ahead|straight|keep going|continue forward|head forward)\b/i.test(message))found.add("straight");
+  if(/\b(ahead|straight|continue forward|head forward)\b/i.test(message))found.add("straight");
   return found;
 }
 
