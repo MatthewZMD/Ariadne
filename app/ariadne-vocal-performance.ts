@@ -122,6 +122,12 @@ export function vocalCueFor(speechAct:string,eventType?:string):AriadneVoiceCue|
 }
 
 export function prepareVocalText(text:string,delivery:AriadneVocalDelivery){
-  const spoken=text.replace(/\bMT\b/g,"Em Tee");
+  const ordinals=["First","Second","Third","Fourth","Fifth","Sixth","Seventh","Eighth","Ninth","Tenth","Eleventh","Twelfth","Thirteenth","Fourteenth","Fifteenth","Sixteenth","Seventeenth","Eighteenth","Nineteenth","Twentieth"];
+  let bulletCount=0;
+  const spoken=text.replace(/^[\t ]*[•*+-][\t ]+(?=\S)/gm,()=>{
+    const number=++bulletCount;
+    const suffix=number%100>=11&&number%100<=13?"th":({1:"st",2:"nd",3:"rd"}[number%10]??"th");
+    return`${ordinals[number-1]??`${number}${suffix}`}, `;
+  }).replace(/\bMT\b/g,"Em Tee");
   return`[${vocalDirection(delivery)}] ${spoken}`;
 }

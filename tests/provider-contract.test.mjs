@@ -95,6 +95,16 @@ test("speech pronunciation spells MT phonetically without altering ordinary word
   assert.equal(prepareAriadneSpeech("MT and MT-like labels, not EMPTY.","quiet_companionship"),"[lively, attentive and warmly curious, an audible smile and small sparks of excitement while sharing a private observation] Em Tee and Em Tee-like labels, not EMPTY.");
 });
 
+test("speech reads bullet lists as ordinal transitions while preserving the displayed text",()=>{
+  const text="Here is why, MT:\n• The shell woke.\n• The star is still dark.\n• I believe we can try again.\n• Stay with me.";
+  const speech=prepareAriadneSpeech(text);
+  assert.ok(speech.endsWith("Here is why, Em Tee:\nFirst, The shell woke.\nSecond, The star is still dark.\nThird, I believe we can try again.\nFourth, Stay with me."));
+  assert.ok(text.includes("\n• The shell woke."));
+  assert.ok(prepareAriadneSpeech("  - One.\n\n\t* Two.\n+ Three.").endsWith("First, One.\n\nSecond, Two.\nThird, Three."));
+  assert.ok(prepareAriadneSpeech("• Again.").endsWith("First, Again."),"numbering restarts for each utterance");
+  assert.ok(prepareAriadneSpeech("MT-like hope • still here.\n-3 stars?\n*quietly*").endsWith("Em Tee-like hope • still here.\n-3 stars?\n*quietly*"),"ordinary punctuation is not a list marker");
+});
+
 test("vocal performance follows the event and intensifies relational invitation",()=>{
   assert.equal(vocalDeliveryFor("repair_mistake","tender_apology","overbearing"),"tender_apology");
   assert.equal(vocalDeliveryFor("respond_to_divergence","grateful_closeness","attached"),"playful_pursuit");
