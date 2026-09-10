@@ -1,0 +1,880 @@
+{
+  "schemaVersion": 1,
+  "units": "metres",
+  "upAxis": "+Y",
+  "origin": "ground-centre",
+  "defaultStructureState": "dormant",
+  "assets": [
+    {
+      "id": "marker-stone-01",
+      "category": "marker",
+      "url": "/fog/models/marker-stone-01.glb",
+      "states": {
+        "default": 284
+      },
+      "bounds": [
+        [
+          -0.1445,
+          0.0,
+          -0.1416
+        ],
+        [
+          0.227,
+          0.55,
+          0.1593
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        200,
+        400
+      ],
+      "bytes": 15808
+    },
+    {
+      "id": "marker-stone-02",
+      "category": "marker",
+      "url": "/fog/models/marker-stone-02.glb",
+      "states": {
+        "default": 284
+      },
+      "bounds": [
+        [
+          -0.1583,
+          0.0,
+          -0.1533
+        ],
+        [
+          0.3012,
+          0.7,
+          0.1628
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        200,
+        400
+      ],
+      "bytes": 15748
+    },
+    {
+      "id": "marker-stone-03",
+      "category": "marker",
+      "url": "/fog/models/marker-stone-03.glb",
+      "states": {
+        "default": 284
+      },
+      "bounds": [
+        [
+          -0.1769,
+          0.0,
+          -0.1689
+        ],
+        [
+          0.3847,
+          0.85,
+          0.1615
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        200,
+        400
+      ],
+      "bytes": 15992
+    },
+    {
+      "id": "marker-post-01",
+      "category": "marker",
+      "url": "/fog/models/marker-post-01.glb",
+      "states": {
+        "default": 216
+      },
+      "bounds": [
+        [
+          -0.09,
+          -0.0017,
+          -0.115
+        ],
+        [
+          0.09,
+          1.0,
+          0.065
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        150,
+        300
+      ],
+      "bytes": 13888
+    },
+    {
+      "id": "marker-post-02",
+      "category": "marker",
+      "url": "/fog/models/marker-post-02.glb",
+      "states": {
+        "default": 216
+      },
+      "bounds": [
+        [
+          -0.0648,
+          -0.0052,
+          -0.115
+        ],
+        [
+          0.18,
+          1.2,
+          0.065
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        150,
+        300
+      ],
+      "bytes": 13908
+    },
+    {
+      "id": "marker-post-03",
+      "category": "marker",
+      "url": "/fog/models/marker-post-03.glb",
+      "states": {
+        "default": 216
+      },
+      "bounds": [
+        [
+          -0.0644,
+          -0.0085,
+          -0.115
+        ],
+        [
+          0.27,
+          1.4,
+          0.065
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        150,
+        300
+      ],
+      "bytes": 13912
+    },
+    {
+      "id": "marker-stitch-01",
+      "category": "marker",
+      "url": "/fog/models/marker-stitch-01.glb",
+      "states": {
+        "default": 476
+      },
+      "bounds": [
+        [
+          -1.055,
+          0.0,
+          -0.055
+        ],
+        [
+          1.055,
+          0.435,
+          0.095
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        300,
+        500
+      ],
+      "bytes": 25144
+    },
+    {
+      "id": "marker-stitch-02",
+      "category": "marker",
+      "url": "/fog/models/marker-stitch-02.glb",
+      "states": {
+        "default": 476
+      },
+      "bounds": [
+        [
+          -1.055,
+          0.0,
+          -0.095
+        ],
+        [
+          1.055,
+          0.435,
+          0.055
+        ]
+      ],
+      "anchors": [
+        "residue_anchor"
+      ],
+      "color": null,
+      "triangleBudgetPerState": [
+        300,
+        500
+      ],
+      "bytes": 25148
+    },
+    {
+      "id": "node-dish-01",
+      "category": "node",
+      "url": "/fog/models/node-dish-01.glb",
+      "states": {
+        "default": 672
+      },
+      "bounds": [
+        [
+          -3.0,
+          0.005,
+          -3.0
+        ],
+        [
+          3.0,
+          0.145,
+          3.0
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 29236
+    },
+    {
+      "id": "node-dish-02",
+      "category": "node",
+      "url": "/fog/models/node-dish-02.glb",
+      "states": {
+        "default": 672
+      },
+      "bounds": [
+        [
+          -3.0,
+          -0.0162,
+          -3.0
+        ],
+        [
+          3.0,
+          0.1687,
+          3.0
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 29244
+    },
+    {
+      "id": "node-pool-01",
+      "category": "node",
+      "url": "/fog/models/node-pool-01.glb",
+      "states": {
+        "default": 400
+      },
+      "bounds": [
+        [
+          -2.5,
+          0.0,
+          -2.5
+        ],
+        [
+          2.5,
+          0.06,
+          2.5
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 22860
+    },
+    {
+      "id": "node-post-ring-01",
+      "category": "node",
+      "url": "/fog/models/node-post-ring-01.glb",
+      "states": {
+        "default": 800
+      },
+      "bounds": [
+        [
+          -3.4843,
+          -0.004,
+          -3.485
+        ],
+        [
+          3.5143,
+          0.843,
+          3.485
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 44720
+    },
+    {
+      "id": "terminus-collapse-01",
+      "category": "terminus",
+      "url": "/fog/models/terminus-collapse-01.glb",
+      "states": {
+        "default": 800
+      },
+      "bounds": [
+        [
+          -2.0552,
+          -0.06,
+          -0.6052
+        ],
+        [
+          1.757,
+          0.28,
+          0.6207
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 38176
+    },
+    {
+      "id": "terminus-collapse-02",
+      "category": "terminus",
+      "url": "/fog/models/terminus-collapse-02.glb",
+      "states": {
+        "default": 800
+      },
+      "bounds": [
+        [
+          -2.0722,
+          -0.06,
+          -0.737
+        ],
+        [
+          1.763,
+          0.28,
+          0.7098
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 38180
+    },
+    {
+      "id": "terminus-water-01",
+      "category": "terminus",
+      "url": "/fog/models/terminus-water-01.glb",
+      "states": {
+        "default": 596
+      },
+      "bounds": [
+        [
+          -4.0,
+          0.0,
+          -4.0
+        ],
+        [
+          4.0,
+          0.07,
+          0.1798
+        ]
+      ],
+      "anchors": [],
+      "color": null,
+      "triangleBudgetPerState": null,
+      "bytes": 29260
+    },
+    {
+      "id": "structure-bells",
+      "category": "structure",
+      "url": "/fog/models/structure-bells.glb",
+      "states": {
+        "dormant": 4628,
+        "awake": 4628
+      },
+      "bounds": [
+        [
+          -1.595,
+          -0.0013,
+          -0.3523
+        ],
+        [
+          1.595,
+          3.6898,
+          0.3523
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03",
+        "element_04"
+      ],
+      "color": "#dbc69b",
+      "triangleBudgetPerState": [
+        3000,
+        5000
+      ],
+      "bytes": 408360
+    },
+    {
+      "id": "structure-pages",
+      "category": "structure",
+      "url": "/fog/models/structure-pages.glb",
+      "states": {
+        "dormant": 2760,
+        "awake": 2760
+      },
+      "bounds": [
+        [
+          -1.2207,
+          0.0,
+          -0.7488
+        ],
+        [
+          1.2206,
+          2.0575,
+          0.1914
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03",
+        "element_04",
+        "element_05"
+      ],
+      "color": "#bcefff",
+      "triangleBudgetPerState": [
+        2500,
+        4000
+      ],
+      "bytes": 248504
+    },
+    {
+      "id": "structure-cairn",
+      "category": "structure",
+      "url": "/fog/models/structure-cairn.glb",
+      "states": {
+        "dormant": 2544,
+        "awake": 2544
+      },
+      "bounds": [
+        [
+          -0.7928,
+          0.0,
+          -0.5773
+        ],
+        [
+          0.8387,
+          2.41,
+          0.5508
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03",
+        "element_04"
+      ],
+      "color": "#ffd074",
+      "triangleBudgetPerState": [
+        2000,
+        3000
+      ],
+      "bytes": 204780
+    },
+    {
+      "id": "structure-reeds",
+      "category": "structure",
+      "url": "/fog/models/structure-reeds.glb",
+      "states": {
+        "dormant": 4600,
+        "awake": 4600
+      },
+      "bounds": [
+        [
+          -0.5827,
+          -0.0078,
+          -0.623
+        ],
+        [
+          0.7316,
+          2.5373,
+          0.8975
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03",
+        "element_04",
+        "element_05"
+      ],
+      "color": "#9eea76",
+      "triangleBudgetPerState": [
+        3000,
+        5000
+      ],
+      "bytes": 433004
+    },
+    {
+      "id": "structure-instrument",
+      "category": "structure",
+      "url": "/fog/models/structure-instrument.glb",
+      "states": {
+        "dormant": 4116,
+        "awake": 4116
+      },
+      "bounds": [
+        [
+          -1.4068,
+          0.0,
+          -0.76
+        ],
+        [
+          1.4068,
+          3.55,
+          0.76
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03",
+        "element_04",
+        "element_05",
+        "element_06"
+      ],
+      "color": "#ff8451",
+      "triangleBudgetPerState": [
+        4000,
+        6000
+      ],
+      "bytes": 407976
+    },
+    {
+      "id": "structure-glass",
+      "category": "structure",
+      "url": "/fog/models/structure-glass.glb",
+      "states": {
+        "dormant": 3536,
+        "awake": 3536
+      },
+      "bounds": [
+        [
+          -1.0187,
+          0.0,
+          -1.0187
+        ],
+        [
+          1.0187,
+          2.348,
+          1.0187
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03",
+        "element_04"
+      ],
+      "color": "#8cf1dc",
+      "triangleBudgetPerState": [
+        2500,
+        4000
+      ],
+      "bytes": 308660
+    },
+    {
+      "id": "structure-teaching",
+      "category": "structure",
+      "url": "/fog/models/structure-teaching.glb",
+      "states": {
+        "dormant": 4932,
+        "awake": 4932
+      },
+      "bounds": [
+        [
+          -1.48,
+          0.0,
+          -1.48
+        ],
+        [
+          1.48,
+          2.8349,
+          1.48
+        ]
+      ],
+      "anchors": [
+        "element_01",
+        "element_02",
+        "element_03"
+      ],
+      "color": "#dbc69b",
+      "triangleBudgetPerState": [
+        4000,
+        6000
+      ],
+      "bytes": 441316
+    },
+    {
+      "id": "fragment-bells",
+      "category": "fragment",
+      "url": "/fog/models/fragment-bells.glb",
+      "states": {
+        "default": 240
+      },
+      "bounds": [
+        [
+          -0.0836,
+          0.0,
+          -0.0836
+        ],
+        [
+          0.0836,
+          0.18,
+          0.0836
+        ]
+      ],
+      "anchors": [],
+      "color": "#dbc69b",
+      "triangleBudgetPerState": [
+        100,
+        300
+      ],
+      "bytes": 13228
+    },
+    {
+      "id": "fragment-pages",
+      "category": "fragment",
+      "url": "/fog/models/fragment-pages.glb",
+      "states": {
+        "default": 280
+      },
+      "bounds": [
+        [
+          -0.0503,
+          -0.022,
+          -0.0693
+        ],
+        [
+          0.0438,
+          0.158,
+          0.0044
+        ]
+      ],
+      "anchors": [],
+      "color": "#bcefff",
+      "triangleBudgetPerState": [
+        100,
+        300
+      ],
+      "bytes": 14068
+    },
+    {
+      "id": "fragment-cairn",
+      "category": "fragment",
+      "url": "/fog/models/fragment-cairn.glb",
+      "states": {
+        "default": 120
+      },
+      "bounds": [
+        [
+          -0.09,
+          0.0,
+          -0.0559
+        ],
+        [
+          0.09,
+          0.1466,
+          0.0641
+        ]
+      ],
+      "anchors": [],
+      "color": "#ffd074",
+      "triangleBudgetPerState": [
+        100,
+        300
+      ],
+      "bytes": 7440
+    },
+    {
+      "id": "fragment-reeds",
+      "category": "fragment",
+      "url": "/fog/models/fragment-reeds.glb",
+      "states": {
+        "default": 116
+      },
+      "bounds": [
+        [
+          -0.0196,
+          -0.0095,
+          -0.0211
+        ],
+        [
+          0.0456,
+          0.1705,
+          0.0211
+        ]
+      ],
+      "anchors": [],
+      "color": "#9eea76",
+      "triangleBudgetPerState": [
+        100,
+        300
+      ],
+      "bytes": 7332
+    },
+    {
+      "id": "fragment-instrument",
+      "category": "fragment",
+      "url": "/fog/models/fragment-instrument.glb",
+      "states": {
+        "default": 128
+      },
+      "bounds": [
+        [
+          -0.0563,
+          0.0,
+          -0.0563
+        ],
+        [
+          0.0563,
+          0.18,
+          0.0563
+        ]
+      ],
+      "anchors": [],
+      "color": "#ff8451",
+      "triangleBudgetPerState": [
+        100,
+        300
+      ],
+      "bytes": 8588
+    },
+    {
+      "id": "fragment-glass",
+      "category": "fragment",
+      "url": "/fog/models/fragment-glass.glb",
+      "states": {
+        "default": 160
+      },
+      "bounds": [
+        [
+          -0.09,
+          0.0,
+          -0.09
+        ],
+        [
+          0.09,
+          0.18,
+          0.09
+        ]
+      ],
+      "anchors": [],
+      "color": "#8cf1dc",
+      "triangleBudgetPerState": [
+        100,
+        300
+      ],
+      "bytes": 10104
+    }
+  ],
+  "families": {
+    "bells": {
+      "color": "#dbc69b",
+      "elements": 4,
+      "notesHz": [
+        220,
+        275,
+        330,
+        440
+      ]
+    },
+    "pages": {
+      "color": "#bcefff",
+      "elements": 5,
+      "notesHz": [
+        196,
+        245,
+        294,
+        392,
+        490
+      ]
+    },
+    "cairn": {
+      "color": "#ffd074",
+      "elements": 4,
+      "notesHz": [
+        146.832,
+        183.54,
+        220.248,
+        293.664
+      ]
+    },
+    "reeds": {
+      "color": "#9eea76",
+      "elements": 5,
+      "notesHz": [
+        261.626,
+        327.033,
+        392.439,
+        523.252,
+        654.065
+      ]
+    },
+    "instrument": {
+      "color": "#ff8451",
+      "elements": 6,
+      "notesHz": [
+        110,
+        137.5,
+        165,
+        220,
+        275,
+        330
+      ]
+    },
+    "glass": {
+      "color": "#8cf1dc",
+      "elements": 4,
+      "notesHz": [
+        329.628,
+        412.035,
+        494.442,
+        659.256
+      ]
+    },
+    "teaching": {
+      "color": "#dbc69b",
+      "elements": 3,
+      "notesHz": [
+        220,
+        275,
+        330
+      ]
+    }
+  }
+}

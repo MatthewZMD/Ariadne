@@ -1,0 +1,177 @@
+[
+  {
+    "id": "marker-stone-01",
+    "state": "default",
+    "url": "/fog/images/marker-stone-01-default.png"
+  },
+  {
+    "id": "marker-stone-02",
+    "state": "default",
+    "url": "/fog/images/marker-stone-02-default.png"
+  },
+  {
+    "id": "marker-stone-03",
+    "state": "default",
+    "url": "/fog/images/marker-stone-03-default.png"
+  },
+  {
+    "id": "marker-post-01",
+    "state": "default",
+    "url": "/fog/images/marker-post-01-default.png"
+  },
+  {
+    "id": "marker-post-02",
+    "state": "default",
+    "url": "/fog/images/marker-post-02-default.png"
+  },
+  {
+    "id": "marker-post-03",
+    "state": "default",
+    "url": "/fog/images/marker-post-03-default.png"
+  },
+  {
+    "id": "marker-stitch-01",
+    "state": "default",
+    "url": "/fog/images/marker-stitch-01-default.png"
+  },
+  {
+    "id": "marker-stitch-02",
+    "state": "default",
+    "url": "/fog/images/marker-stitch-02-default.png"
+  },
+  {
+    "id": "node-dish-01",
+    "state": "default",
+    "url": "/fog/images/node-dish-01-default.png"
+  },
+  {
+    "id": "node-dish-02",
+    "state": "default",
+    "url": "/fog/images/node-dish-02-default.png"
+  },
+  {
+    "id": "node-pool-01",
+    "state": "default",
+    "url": "/fog/images/node-pool-01-default.png"
+  },
+  {
+    "id": "node-post-ring-01",
+    "state": "default",
+    "url": "/fog/images/node-post-ring-01-default.png"
+  },
+  {
+    "id": "terminus-collapse-01",
+    "state": "default",
+    "url": "/fog/images/terminus-collapse-01-default.png"
+  },
+  {
+    "id": "terminus-collapse-02",
+    "state": "default",
+    "url": "/fog/images/terminus-collapse-02-default.png"
+  },
+  {
+    "id": "terminus-water-01",
+    "state": "default",
+    "url": "/fog/images/terminus-water-01-default.png"
+  },
+  {
+    "id": "structure-bells",
+    "state": "dormant",
+    "url": "/fog/images/structure-bells-dormant.png"
+  },
+  {
+    "id": "structure-bells",
+    "state": "awake",
+    "url": "/fog/images/structure-bells-awake.png"
+  },
+  {
+    "id": "structure-pages",
+    "state": "dormant",
+    "url": "/fog/images/structure-pages-dormant.png"
+  },
+  {
+    "id": "structure-pages",
+    "state": "awake",
+    "url": "/fog/images/structure-pages-awake.png"
+  },
+  {
+    "id": "structure-cairn",
+    "state": "dormant",
+    "url": "/fog/images/structure-cairn-dormant.png"
+  },
+  {
+    "id": "structure-cairn",
+    "state": "awake",
+    "url": "/fog/images/structure-cairn-awake.png"
+  },
+  {
+    "id": "structure-reeds",
+    "state": "dormant",
+    "url": "/fog/images/structure-reeds-dormant.png"
+  },
+  {
+    "id": "structure-reeds",
+    "state": "awake",
+    "url": "/fog/images/structure-reeds-awake.png"
+  },
+  {
+    "id": "structure-instrument",
+    "state": "dormant",
+    "url": "/fog/images/structure-instrument-dormant.png"
+  },
+  {
+    "id": "structure-instrument",
+    "state": "awake",
+    "url": "/fog/images/structure-instrument-awake.png"
+  },
+  {
+    "id": "structure-glass",
+    "state": "dormant",
+    "url": "/fog/images/structure-glass-dormant.png"
+  },
+  {
+    "id": "structure-glass",
+    "state": "awake",
+    "url": "/fog/images/structure-glass-awake.png"
+  },
+  {
+    "id": "structure-teaching",
+    "state": "dormant",
+    "url": "/fog/images/structure-teaching-dormant.png"
+  },
+  {
+    "id": "structure-teaching",
+    "state": "awake",
+    "url": "/fog/images/structure-teaching-awake.png"
+  },
+  {
+    "id": "fragment-bells",
+    "state": "default",
+    "url": "/fog/images/fragment-bells-default.png"
+  },
+  {
+    "id": "fragment-pages",
+    "state": "default",
+    "url": "/fog/images/fragment-pages-default.png"
+  },
+  {
+    "id": "fragment-cairn",
+    "state": "default",
+    "url": "/fog/images/fragment-cairn-default.png"
+  },
+  {
+    "id": "fragment-reeds",
+    "state": "default",
+    "url": "/fog/images/fragment-reeds-default.png"
+  },
+  {
+    "id": "fragment-instrument",
+    "state": "default",
+    "url": "/fog/images/fragment-instrument-default.png"
+  },
+  {
+    "id": "fragment-glass",
+    "state": "default",
+    "url": "/fog/images/fragment-glass-default.png"
+  }
+]

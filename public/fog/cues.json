@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "voice": "933563129e564b19a115bedd57b7406a",
+  "participantAddress": "you",
+  "assets": [
+    {
+      "id": "look-over-there",
+      "text": "Oh, look over there!",
+      "url": "/fog/cues/look-over-there.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/look-over-there.mp3"
+    },
+    {
+      "id": "did-you-see-that",
+      "text": "Wait\u2014did you see that?",
+      "url": "/fog/cues/did-you-see-that.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/did-you-see-that.mp3"
+    },
+    {
+      "id": "changed-because-of-you",
+      "text": "It changed because of you!",
+      "url": "/fog/cues/changed-because-of-you.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/changed-because-of-you.mp3"
+    },
+    {
+      "id": "my-fault",
+      "text": "Wait. That was my fault.",
+      "url": "/fog/cues/my-fault.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/my-fault.mp3"
+    },
+    {
+      "id": "got-that-wrong",
+      "text": "Oh no\u2014I got that wrong.",
+      "url": "/fog/cues/got-that-wrong.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/got-that-wrong.mp3"
+    },
+    {
+      "id": "apology",
+      "text": "I\u2019m sorry. I was so sure.",
+      "url": "/fog/cues/apology.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/apology.mp3"
+    },
+    {
+      "id": "you-came-back",
+      "text": "You came back.",
+      "url": "/fog/cues/you-came-back.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/you-came-back.mp3"
+    },
+    {
+      "id": "together-again",
+      "text": "We\u2019re together again.",
+      "url": "/fog/cues/together-again.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/together-again.mp3"
+    },
+    {
+      "id": "there-you-are",
+      "text": "There you are!",
+      "url": "/fog/cues/there-you-are.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/there-you-are.mp3"
+    },
+    {
+      "id": "choosing-this-one",
+      "text": "I\u2019m choosing this one!",
+      "url": "/fog/cues/choosing-this-one.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/choosing-this-one.mp3"
+    },
+    {
+      "id": "this-way",
+      "text": "This way. Come on!",
+      "url": "/fog/cues/this-way.mp3",
+      "status": "reused",
+      "source": "/audio/ariadne-cues/this-way.mp3"
+    },
+    {
+      "id": "over-here",
+      "text": "Over here!",
+      "url": "/fog/cues/over-here.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "look-at-that",
+      "text": "Look at that!",
+      "url": "/fog/cues/look-at-that.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "look-what-you-did",
+      "text": "Look what you did!",
+      "url": "/fog/cues/look-what-you-did.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "we-got-it",
+      "text": "We got it!",
+      "url": "/fog/cues/we-got-it.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "passage-ends-here",
+      "text": "The way ends here.",
+      "url": "/fog/cues/passage-ends-here.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "dead-end",
+      "text": "It stops.",
+      "url": "/fog/cues/dead-end.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "nowhere-forward",
+      "text": "I can\u2019t hear it from here.",
+      "url": "/fog/cues/nowhere-forward.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "found-one",
+      "text": "There it is.",
+      "url": "/fog/cues/found-one.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "woke-the-room",
+      "text": "It cleared.",
+      "url": "/fog/cues/woke-the-room.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "a-star",
+      "text": "Another one, listen.",
+      "url": "/fog/cues/a-star.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "opening-premise",
+      "text": "You can hear that? I can tell where it\u2019s coming from. This way.",
+      "url": "/fog/cues/opening-premise.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "getting-louder",
+      "text": "It\u2019s getting louder.",
+      "url": "/fog/cues/getting-louder.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "fading",
+      "text": "It\u2019s fading.",
+      "url": "/fog/cues/fading.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "been-here",
+      "text": "We\u2019ve been here.",
+      "url": "/fog/cues/been-here.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "come-with-you",
+      "text": "I\u2019ll come with you.",
+      "url": "/fog/cues/come-with-you.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "resume",
+      "text": "\u2014 so, as I was saying",
+      "url": "/fog/cues/resume.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "clearing-promise",
+      "text": "It cleared. There are more of them. Each one clears a little; enough of them and we\u2019ll see the whole of it. I can already hear the next one.",
+      "url": "/fog/cues/clearing-promise.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "teaching-approach",
+      "text": "Come a little closer to the low bell.",
+      "url": "/fog/cues/teaching-approach.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "teaching-look",
+      "text": "Look at the page. Stay with it for a moment.",
+      "url": "/fog/cues/teaching-look.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "teaching-listen",
+      "text": "Now be still and listen to the hanging bell.",
+      "url": "/fog/cues/teaching-listen.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free"
+    }
+  ]
+}

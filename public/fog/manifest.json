@@ -1,0 +1,891 @@
+{
+  "schemaVersion": 1,
+  "title": "Ariadne in fog",
+  "scope": "Production assets and local review scene; game integration is separate.",
+  "models": "/fog/models.json",
+  "audio": "/fog/audio.json",
+  "cues": "/fog/cues.json",
+  "titleImage": "/fog/images/ariadne-title-card.png",
+  "openGraphImage": "/fog/images/og.png",
+  "counts": {
+    "models": 28,
+    "structureStates": 14,
+    "soundFiles": 69,
+    "voiceCuesAvailable": 31,
+    "voiceCuesPlanned": 31
+  },
+  "pending": [],
+  "files": [
+    {
+      "url": "/fog/asset-kit.mjs",
+      "bytes": 2092,
+      "sha256": "6a61c9a211256c1afb6af60d941cc1125f727e926c6884f2b33c1f1f2d2e3290"
+    },
+    {
+      "url": "/fog/audio/bells-awake.wav",
+      "bytes": 2688044,
+      "sha256": "30a35c5dcf0cdf230ebcea09c1bb441525d563efe92137b1aecd536ca799547c"
+    },
+    {
+      "url": "/fog/audio/bells-call.wav",
+      "bytes": 1536044,
+      "sha256": "3312d794af7ead965f51c66f9cb6ca6055e0188fcafaa0d5d206d27e7d976b96"
+    },
+    {
+      "url": "/fog/audio/bells-completion.wav",
+      "bytes": 576044,
+      "sha256": "77ea97c0db4dadb41b57ac1e721c475394a6f8f4f09ff0a8f8a09f999c233f93"
+    },
+    {
+      "url": "/fog/audio/bells-element-01.wav",
+      "bytes": 268844,
+      "sha256": "919ac49e2519998432fc39890aabf9e334a82670ae1f7b78fb9472469d279774"
+    },
+    {
+      "url": "/fog/audio/bells-element-02.wav",
+      "bytes": 268844,
+      "sha256": "82fb2493c05919e4a06d9c1bbdd382a54c689cf93734fe029698846e79c78ec9"
+    },
+    {
+      "url": "/fog/audio/bells-element-03.wav",
+      "bytes": 268844,
+      "sha256": "d5f25f7548ae145f64f0c0ba78cacac1290e80f642fc3b8492e1d265a495ac95"
+    },
+    {
+      "url": "/fog/audio/bells-element-04.wav",
+      "bytes": 268844,
+      "sha256": "545301b0b5e0a7d540e13556cce0c7a1ffda10326c992e7df0c3e80d9018e6fc"
+    },
+    {
+      "url": "/fog/audio/cairn-awake.wav",
+      "bytes": 2688044,
+      "sha256": "b2776b3a7a145c9199ff910cc150e13bfdc0ee2f337e000145d4c6b5f6e4aae4"
+    },
+    {
+      "url": "/fog/audio/cairn-call.wav",
+      "bytes": 1536044,
+      "sha256": "1c363bac36440a7550329dd7222e5f2dfba406df61142e7c4a6944aee68d4a9e"
+    },
+    {
+      "url": "/fog/audio/cairn-completion.wav",
+      "bytes": 576044,
+      "sha256": "6cfd292defbd4ff5ff19c33ad125391c2c2435fc1dae585537a194a320228bb6"
+    },
+    {
+      "url": "/fog/audio/cairn-element-01.wav",
+      "bytes": 268844,
+      "sha256": "c5d72851cc4ed2cf24636934aaffac2fbe0f1aef2d844dde7efce3f5df46c4d1"
+    },
+    {
+      "url": "/fog/audio/cairn-element-02.wav",
+      "bytes": 268844,
+      "sha256": "2239038d55cd375fffd118196681215c3d36bf2ee2f6067253385c43cf3e76f0"
+    },
+    {
+      "url": "/fog/audio/cairn-element-03.wav",
+      "bytes": 268844,
+      "sha256": "28bad6f643e495c99206c57a0cb413ce337c44a36699abdc20f246f3664b5bb2"
+    },
+    {
+      "url": "/fog/audio/cairn-element-04.wav",
+      "bytes": 268844,
+      "sha256": "4fdecb176bab700854fe0ecde5abe71b4eef357562110532bd7b6efbb03df62e"
+    },
+    {
+      "url": "/fog/audio/fog-grain-air.wav",
+      "bytes": 5760044,
+      "sha256": "42192c27a7f804c60e67093367a8d2142fb831475665ccfcd4ff5950246aec04"
+    },
+    {
+      "url": "/fog/audio/fog-low-wind.wav",
+      "bytes": 5760044,
+      "sha256": "8e3acc9b1c0e3ed6e6495eb053b9a4879be4c2a9b60318ebe98166fab3b5b77b"
+    },
+    {
+      "url": "/fog/audio/footstep-ground-01.wav",
+      "bytes": 30764,
+      "sha256": "0eb2bbfa7c57a394cff7a49af104c10252e73d0b8e64616fcaa841148eecdc6b"
+    },
+    {
+      "url": "/fog/audio/footstep-ground-02.wav",
+      "bytes": 32492,
+      "sha256": "211a1269fe7879c1365c9cdd6080367afe88788d88f7534b1716212f0e12ea3c"
+    },
+    {
+      "url": "/fog/audio/footstep-ground-03.wav",
+      "bytes": 34220,
+      "sha256": "0df22b439055fce8b3fb168fc71c3aa3a362e1fff3467d433b70328d30769515"
+    },
+    {
+      "url": "/fog/audio/footstep-ground-04.wav",
+      "bytes": 35948,
+      "sha256": "db944e7f1cb074d16aeed3f5913ce5b1f457ebe92f1c4df3b8b78095d5607684"
+    },
+    {
+      "url": "/fog/audio/footstep-ground-05.wav",
+      "bytes": 37676,
+      "sha256": "adef02d684ab4584108dc033b728ced7d620ddfa957d27c98f2db0549dc570fe"
+    },
+    {
+      "url": "/fog/audio/footstep-ground-06.wav",
+      "bytes": 39404,
+      "sha256": "e87644273409f2f48fefcf0e7018b3c86626bd32bf7746c2084307a8b3ecc35a"
+    },
+    {
+      "url": "/fog/audio/footstep-stone-01.wav",
+      "bytes": 30764,
+      "sha256": "48c2688292408a792b0845bb5f29afb18352fe92e15224979e3c4530d73ac81d"
+    },
+    {
+      "url": "/fog/audio/footstep-stone-02.wav",
+      "bytes": 32492,
+      "sha256": "2babe6943bc2621ffb0cf7f2e18dec2857378b00debaa8be8b83cb93e1f69e44"
+    },
+    {
+      "url": "/fog/audio/footstep-stone-03.wav",
+      "bytes": 34220,
+      "sha256": "3bf423dc7409b3610a6fd9122b17e43287fb9fdcae3b783209608b9c945faf78"
+    },
+    {
+      "url": "/fog/audio/footstep-stone-04.wav",
+      "bytes": 35948,
+      "sha256": "3998a680f73da444097521042d6d58dfed08101d2e633d2bf4b137df760a601e"
+    },
+    {
+      "url": "/fog/audio/footstep-stone-05.wav",
+      "bytes": 37676,
+      "sha256": "8844d20de873e031b2369a90e96fdbd260732da15b3cea5815f9f6a24fe2d84a"
+    },
+    {
+      "url": "/fog/audio/footstep-stone-06.wav",
+      "bytes": 39404,
+      "sha256": "2347a91178dcbbcc2eb373fec99dbbb664e0b852ca5fc272a0befd787d4ccde5"
+    },
+    {
+      "url": "/fog/audio/glass-awake.wav",
+      "bytes": 2688044,
+      "sha256": "2aa634dcd1b87f42dcede5dc553eb37bdedfbe9ab41c9790884af78e3172689f"
+    },
+    {
+      "url": "/fog/audio/glass-call.wav",
+      "bytes": 1536044,
+      "sha256": "d18f672d2ceb830c4ced341941bd01ae6f345a9bf0e04d2a2af0351f7947d288"
+    },
+    {
+      "url": "/fog/audio/glass-completion.wav",
+      "bytes": 576044,
+      "sha256": "0d2e8310d99f5e396acac351eea366f6784951e507f21a55f597482ef70aea90"
+    },
+    {
+      "url": "/fog/audio/glass-element-01.wav",
+      "bytes": 268844,
+      "sha256": "c7b0903f65144cefa5964f56afe23eeb13bf613b3efe3f34c1609604677177f7"
+    },
+    {
+      "url": "/fog/audio/glass-element-02.wav",
+      "bytes": 268844,
+      "sha256": "38f13c972deea5ba9a815ed7bbbd47dbac6df92d135bb33ff798ea35315ab2b4"
+    },
+    {
+      "url": "/fog/audio/glass-element-03.wav",
+      "bytes": 268844,
+      "sha256": "1763b9fb3965b9e47693a4b6dbb9516a4d87d38bf387b641058341554916bf05"
+    },
+    {
+      "url": "/fog/audio/glass-element-04.wav",
+      "bytes": 268844,
+      "sha256": "f6cc86a34fd3fa650513b1271bdfdcfb8f03d0e1feb2136e8e112f31b9e07e4a"
+    },
+    {
+      "url": "/fog/audio/instrument-awake.wav",
+      "bytes": 2688044,
+      "sha256": "16303e386f2093c569addb0bcb46ddd13700b677b48bf817e34e4f304e9f4156"
+    },
+    {
+      "url": "/fog/audio/instrument-call.wav",
+      "bytes": 1536044,
+      "sha256": "1318d72be76eea9e62b7ac7fd6dc2f5678eaf6e790e5818f03a4d54e5ef3b0fa"
+    },
+    {
+      "url": "/fog/audio/instrument-completion.wav",
+      "bytes": 576044,
+      "sha256": "d1c549d0843fa667877b984f68e03a234acb1e959d5687c84a385ad00c85eeb4"
+    },
+    {
+      "url": "/fog/audio/instrument-element-01.wav",
+      "bytes": 268844,
+      "sha256": "84709af00b17be28c7ef049db9e040631bf1b0ce3b71b668a3e6bd5744da6a69"
+    },
+    {
+      "url": "/fog/audio/instrument-element-02.wav",
+      "bytes": 268844,
+      "sha256": "36aeae6eea8c3604980486c5c620c3b86f040aecb52c34c9c5f9b7df9f0faef7"
+    },
+    {
+      "url": "/fog/audio/instrument-element-03.wav",
+      "bytes": 268844,
+      "sha256": "e2296fbb21891a1c593c3f9bede977166d2017f114c02f3f006260f58d9f6a8a"
+    },
+    {
+      "url": "/fog/audio/instrument-element-04.wav",
+      "bytes": 268844,
+      "sha256": "e412ec3dad101b443af7278919da345f9a51f7d4ccfd0681896a08ed24f3261e"
+    },
+    {
+      "url": "/fog/audio/instrument-element-05.wav",
+      "bytes": 268844,
+      "sha256": "fe0f982e2fe4e90dfa02b7cfcbec61c9faa9252ea070879811da52743cb55d90"
+    },
+    {
+      "url": "/fog/audio/instrument-element-06.wav",
+      "bytes": 268844,
+      "sha256": "abcad30ff9ffbc8d6c3e08256d17b56de1fd65b68b3d281042917c6a387eccbb"
+    },
+    {
+      "url": "/fog/audio/off-graph-hush.wav",
+      "bytes": 2880044,
+      "sha256": "3449d3fab784257e13e2ea3c0451127ffa9e773c9a9ea93c89d27e7e01c43503"
+    },
+    {
+      "url": "/fog/audio/pages-awake.wav",
+      "bytes": 2688044,
+      "sha256": "dd478e0a90584594069613673c1af61a10e3ebca6aba4847c436ea06c90dcf58"
+    },
+    {
+      "url": "/fog/audio/pages-call.wav",
+      "bytes": 1536044,
+      "sha256": "895433091d39980ac624296531332b5a5f0d8595cfdd2c057aa96c8fc76b65c0"
+    },
+    {
+      "url": "/fog/audio/pages-completion.wav",
+      "bytes": 576044,
+      "sha256": "5bec4b5f4a6025243f48cf3e06fbd4866fc44998ef9cb139e58d8ea9776316f7"
+    },
+    {
+      "url": "/fog/audio/pages-element-01.wav",
+      "bytes": 268844,
+      "sha256": "239eea98ba8b11fa373751ea4b473fb633b1ee211cf3f7f9a25b8616567b2f8d"
+    },
+    {
+      "url": "/fog/audio/pages-element-02.wav",
+      "bytes": 268844,
+      "sha256": "6e3d1086ccd5a4bc402502509893372a6991582249492b46105310978e9354c9"
+    },
+    {
+      "url": "/fog/audio/pages-element-03.wav",
+      "bytes": 268844,
+      "sha256": "4a1d9d73ac9c61a99d439fce4dd1f27a98330fdd4aae88a617c9157302f084c7"
+    },
+    {
+      "url": "/fog/audio/pages-element-04.wav",
+      "bytes": 268844,
+      "sha256": "a971db2eca142cd4232cb66a79169a71a913fba1ef2aafe7d9d63792514bebe1"
+    },
+    {
+      "url": "/fog/audio/pages-element-05.wav",
+      "bytes": 268844,
+      "sha256": "d0aeb8ae2b063d1f881f0582c83231636e2d83cd7118366e57f4deb6e2cf5ee3"
+    },
+    {
+      "url": "/fog/audio/pulse.wav",
+      "bytes": 28844,
+      "sha256": "9d53cf28e817d4fadf5a11690d81f46fd3d9e1db65e42e2bbe64583b0f24a737"
+    },
+    {
+      "url": "/fog/audio/reeds-awake.wav",
+      "bytes": 2688044,
+      "sha256": "1ab62c9e36f2c7fc0f7f1b5f3ecd4380d78a211ebc7cc564d341261d827621bb"
+    },
+    {
+      "url": "/fog/audio/reeds-call.wav",
+      "bytes": 1536044,
+      "sha256": "a2112e2a1e07d92d84fc667e2ed422f1bc3c67468d79e49899415b1706c95d59"
+    },
+    {
+      "url": "/fog/audio/reeds-completion.wav",
+      "bytes": 576044,
+      "sha256": "387e9a78b02e9baa429db9190f211016d3fca0ba9abdefa0a1c34ca42feb8abf"
+    },
+    {
+      "url": "/fog/audio/reeds-element-01.wav",
+      "bytes": 268844,
+      "sha256": "bb0da4360b0db2c65ed0de41cf4e7da9aa88824883994d445c70bf374da47c42"
+    },
+    {
+      "url": "/fog/audio/reeds-element-02.wav",
+      "bytes": 268844,
+      "sha256": "6eb1d478bc213a34a5e2f4e9bc5a4de84b76cb14dc8f6c9e799f3ff7c6cffbc8"
+    },
+    {
+      "url": "/fog/audio/reeds-element-03.wav",
+      "bytes": 268844,
+      "sha256": "584ddadab35e4612634cb0259c0f0cad080c5ade81e0ee66bbe5e8e238e0ad46"
+    },
+    {
+      "url": "/fog/audio/reeds-element-04.wav",
+      "bytes": 268844,
+      "sha256": "7af3a5a40a68e7cf3935057ba83da15dda12aae0d48e82195d33e87a47f9ae66"
+    },
+    {
+      "url": "/fog/audio/reeds-element-05.wav",
+      "bytes": 268844,
+      "sha256": "5fb69a765256407498d0f16c098596f805d22da16e9db40875a0e44afc65bbc6"
+    },
+    {
+      "url": "/fog/audio/teaching-awake.wav",
+      "bytes": 2688044,
+      "sha256": "0c8c83ca581722aa04edbd08c9abfa3a05be9105428fdf2e3692931f0f484b94"
+    },
+    {
+      "url": "/fog/audio/teaching-call.wav",
+      "bytes": 1536044,
+      "sha256": "5c0eba13b3e08e36176abb44eb247e1f92972f9d0e9ee5da2393c8165e6425b9"
+    },
+    {
+      "url": "/fog/audio/teaching-completion.wav",
+      "bytes": 576044,
+      "sha256": "91090e7cb750e8cdaeed9176cc578758b3d878ce04212e1dabb1354fdcc308cc"
+    },
+    {
+      "url": "/fog/audio/teaching-element-01.wav",
+      "bytes": 268844,
+      "sha256": "41e2ebd64f6e1e7d65f0fb19d0869c043c1aef26a7b6f1aaa58ea4f7e77e661a"
+    },
+    {
+      "url": "/fog/audio/teaching-element-02.wav",
+      "bytes": 268844,
+      "sha256": "53fe71e3714a37d1a3202db7dbfbd503867b48ac225f57395283fa19a84a944c"
+    },
+    {
+      "url": "/fog/audio/teaching-element-03.wav",
+      "bytes": 268844,
+      "sha256": "c01d77772404a635027f0108b0afd01f083a5abcee9a731a38241c9df9b9bb4d"
+    },
+    {
+      "url": "/fog/audio/terminus-water.wav",
+      "bytes": 2880044,
+      "sha256": "e739ca1ef53986b87b91cfc92adfccc68c6fdc162e742a47f8c6070b0b003b9d"
+    },
+    {
+      "url": "/fog/audio.json",
+      "bytes": 34979,
+      "sha256": "de2df17264d58d17d80d85c4fff937a7fe1948e03c6e571963ef04cab65c4ff3"
+    },
+    {
+      "url": "/fog/cues/a-star.mp3",
+      "bytes": 27584,
+      "sha256": "bea6e252d720f519ef411e3636036d1c2a341f284c03474a8e12218c8bb9e78a"
+    },
+    {
+      "url": "/fog/cues/apology.mp3",
+      "bytes": 35107,
+      "sha256": "51820ee07af675492271474b03a7e9df2d0257e94c08e65f2a7d60f6b5550e72"
+    },
+    {
+      "url": "/fog/cues/been-here.mp3",
+      "bytes": 21732,
+      "sha256": "1654d6a126f067afef4d404368bfb22d46dcb3fcc76aa0ea9a9c15581b656ea1"
+    },
+    {
+      "url": "/fog/cues/changed-because-of-you.mp3",
+      "bytes": 27166,
+      "sha256": "c35fb5c575f39ae0165ac3a0a4d1fd898dc7dc07378ee6d1974bca241ee20143"
+    },
+    {
+      "url": "/fog/cues/choosing-this-one.mp3",
+      "bytes": 20479,
+      "sha256": "9f9d892bb1f52aa1dbaa3bb4d09dfd8de638da548bef2c9d4fd499f0d5baf8d0"
+    },
+    {
+      "url": "/fog/cues/clearing-promise.mp3",
+      "bytes": 124550,
+      "sha256": "e83b3d808cd7e876bb7995c73bfedd294dfa288290a3a2d2818bfaaa65f2f667"
+    },
+    {
+      "url": "/fog/cues/come-with-you.mp3",
+      "bytes": 19643,
+      "sha256": "7b701fed56da93a8bfc2f78908901aecda8a87444dc282e2b6d1f1ecb9d3a6e4"
+    },
+    {
+      "url": "/fog/cues/dead-end.mp3",
+      "bytes": 17553,
+      "sha256": "545efb9b90b0806c9edffc31998cadc96545984fe21ea1ad209710674771ddce"
+    },
+    {
+      "url": "/fog/cues/did-you-see-that.mp3",
+      "bytes": 27166,
+      "sha256": "d29778c63bd07f19bc2de2e3989578aca4fd7278a6746dd1a3db8f25939b91df"
+    },
+    {
+      "url": "/fog/cues/fading.mp3",
+      "bytes": 16717,
+      "sha256": "d96cf30528860bcaef6c5011d87e7ec7cbafd89bd4f17dd61e97e5ef9981424a"
+    },
+    {
+      "url": "/fog/cues/found-one.mp3",
+      "bytes": 13791,
+      "sha256": "9523e48d4775eb78ebaa20a6e59d52eadb6a233dbf4b2ca86b4767261bac1740"
+    },
+    {
+      "url": "/fog/cues/getting-louder.mp3",
+      "bytes": 19643,
+      "sha256": "b168d73966da9c2db207c97ff4148057738b1e2ed68b04885295bc18dc4f168f"
+    },
+    {
+      "url": "/fog/cues/got-that-wrong.mp3",
+      "bytes": 22568,
+      "sha256": "f5c98ec68614366790e8d5d40e996c003207cbed8ba388e1ecaf5e8d2c72ce39"
+    },
+    {
+      "url": "/fog/cues/look-at-that.mp3",
+      "bytes": 13791,
+      "sha256": "92e01dff118d3928bee9deccc7f34ca118302575143c76d8c2e11d3f7f2d62e9"
+    },
+    {
+      "url": "/fog/cues/look-over-there.mp3",
+      "bytes": 27584,
+      "sha256": "9336c3064ccc6523e33ee67196bf16a447a79e65b1f61d9cb1e05db38a009fdf"
+    },
+    {
+      "url": "/fog/cues/look-what-you-did.mp3",
+      "bytes": 19643,
+      "sha256": "d0dfc27185c1824e712b77827b95d7d64baad1f0919545651ac88828f0e45ebc"
+    },
+    {
+      "url": "/fog/cues/my-fault.mp3",
+      "bytes": 32181,
+      "sha256": "c2f97a43996a2dd1fdb7b529ccdf77dab4ff3a59107f3aebaddd38a7b021734e"
+    },
+    {
+      "url": "/fog/cues/nowhere-forward.mp3",
+      "bytes": 22568,
+      "sha256": "4196144b9c435cb42c84843088bf4ade5a77426d263d35d895f0d64d64a88198"
+    },
+    {
+      "url": "/fog/cues/opening-premise.mp3",
+      "bytes": 55169,
+      "sha256": "54d790d12a5844ee6cc921694bceb524290ddbeabc720184344ea684686fe5e5"
+    },
+    {
+      "url": "/fog/cues/over-here.mp3",
+      "bytes": 13791,
+      "sha256": "2fd85d691eba6393714b84a72440ffccdc52e46e863911c3ebd45345d38748e1"
+    },
+    {
+      "url": "/fog/cues/passage-ends-here.mp3",
+      "bytes": 24658,
+      "sha256": "2784fd4bbe1693967efc57cfb8ab8873920235606a87b9405a79bfdfe6cde573"
+    },
+    {
+      "url": "/fog/cues/resume.mp3",
+      "bytes": 27166,
+      "sha256": "a136736f425c31c0e5e3b5eb8624cdbb9af884c66a6a075940067b7efb09e712"
+    },
+    {
+      "url": "/fog/cues/teaching-approach.mp3",
+      "bytes": 33017,
+      "sha256": "c3eefeb75562ae408568cbf11584f72eb69396ebb98bf360c0d686580fc27da8"
+    },
+    {
+      "url": "/fog/cues/teaching-listen.mp3",
+      "bytes": 44720,
+      "sha256": "59533277aa566e2a3c313fee410c585689ffa4d2480ec0b8893c40e795deab90"
+    },
+    {
+      "url": "/fog/cues/teaching-look.mp3",
+      "bytes": 42630,
+      "sha256": "0b5f4188002153e2bda8d2a60014843e5803856fbbb5e8a1dba8edde79f0567f"
+    },
+    {
+      "url": "/fog/cues/there-you-are.mp3",
+      "bytes": 14209,
+      "sha256": "d80762c749c7494554e78bfa53e32340177dc45b83111cf036241ccf916f7244"
+    },
+    {
+      "url": "/fog/cues/this-way.mp3",
+      "bytes": 30092,
+      "sha256": "6e5753daeaaa75217f31f0aa4a69e9354f5adf61d47022456184757310588a55"
+    },
+    {
+      "url": "/fog/cues/together-again.mp3",
+      "bytes": 20479,
+      "sha256": "bfb519e9e31916e00aba3d1279063108065aded7df0142cf792e97c0ba0c0893"
+    },
+    {
+      "url": "/fog/cues/we-got-it.mp3",
+      "bytes": 18807,
+      "sha256": "5643458e5ed1126ec54d9562f80afaac8fa4fd80a5f4d4261036ecf801553c7a"
+    },
+    {
+      "url": "/fog/cues/woke-the-room.mp3",
+      "bytes": 14209,
+      "sha256": "09b8d3932f9b3ca4f2a42225d01f94b0dfbe2d004df51577c981568618b01646"
+    },
+    {
+      "url": "/fog/cues/you-came-back.mp3",
+      "bytes": 19643,
+      "sha256": "a679a76879eaf87e98f98f365d9c209c5c7516a1e751033c255bdaeab618b1ea"
+    },
+    {
+      "url": "/fog/cues.json",
+      "bytes": 6594,
+      "sha256": "be8a997097e849e7d8e75c2aff5bea577eda01a8c4459d8e83cff5e42e920afe"
+    },
+    {
+      "url": "/fog/images/ariadne-title-card.png",
+      "bytes": 711350,
+      "sha256": "2bad2a30a2b725045d30307d839efe69e2ace3f8998f4f706c4e2a4aea670e40"
+    },
+    {
+      "url": "/fog/images/field-assets-contact-sheet.png",
+      "bytes": 1024531,
+      "sha256": "9378309c300bac1a9d21484f4cb7b0fa7da15e12102a5db70f18f3198a58a7cf"
+    },
+    {
+      "url": "/fog/images/fragment-bells-default.png",
+      "bytes": 1015647,
+      "sha256": "c4ab0104ff4c6e8b9082c701fb8e27ec94f3a7c6766a85f1285a33786e0e0f4d"
+    },
+    {
+      "url": "/fog/images/fragment-cairn-default.png",
+      "bytes": 1024769,
+      "sha256": "25a5f220de208c5cae86c745d5b2fcf3ace0611d8414210b580e44385bd13d2d"
+    },
+    {
+      "url": "/fog/images/fragment-glass-default.png",
+      "bytes": 1002641,
+      "sha256": "95b51d6d4d11023b25357503ff063d23ae452273838ff2002055e39cebd2936d"
+    },
+    {
+      "url": "/fog/images/fragment-instrument-default.png",
+      "bytes": 1024248,
+      "sha256": "99842d1847b20b35b582602f8d3dc98069b020f0c42667c2702d9a65b2ef6fb6"
+    },
+    {
+      "url": "/fog/images/fragment-pages-default.png",
+      "bytes": 1023529,
+      "sha256": "ca1030965ddade9c5db1330133a17d50d6096d0576ca1ada772fe917e758e588"
+    },
+    {
+      "url": "/fog/images/fragment-reeds-default.png",
+      "bytes": 1040627,
+      "sha256": "285e77f1ed400b64331bcfb9d4b93d6a228a172f1a0edf9c01a7ac0db6efb0bc"
+    },
+    {
+      "url": "/fog/images/marker-post-01-default.png",
+      "bytes": 649411,
+      "sha256": "73a54d1382dcc53c746c86b2b6b81124f5cfa1b2be9d48ebbfb37d289e87f103"
+    },
+    {
+      "url": "/fog/images/marker-post-02-default.png",
+      "bytes": 656448,
+      "sha256": "841966c5781c55c2de6728280f5f2deaf1c1367a58b90f55bffd3949fd5b827d"
+    },
+    {
+      "url": "/fog/images/marker-post-03-default.png",
+      "bytes": 659904,
+      "sha256": "b7b778d9181adbfe276ce4aacbe08a7aab36c3772577c64fa74a3efb188f2cc2"
+    },
+    {
+      "url": "/fog/images/marker-stitch-01-default.png",
+      "bytes": 888177,
+      "sha256": "cb1cab6228ab7538688705e33faff2cc83bd40bf8188bdfee33205dfe5a1fc8e"
+    },
+    {
+      "url": "/fog/images/marker-stitch-02-default.png",
+      "bytes": 885304,
+      "sha256": "3103d78ddaf0b1ab4fef6d8103a28164c9e7a237eb2751cea2c0693a9766171b"
+    },
+    {
+      "url": "/fog/images/marker-stone-01-default.png",
+      "bytes": 927350,
+      "sha256": "391dc38f37cc0a731f32c0117dc1ac344a10db43d21b66c7df92d780881187a6"
+    },
+    {
+      "url": "/fog/images/marker-stone-02-default.png",
+      "bytes": 762538,
+      "sha256": "caf2337df51c7ac646b9de4072d828939919c20943a52295cdebb795eaed7b19"
+    },
+    {
+      "url": "/fog/images/marker-stone-03-default.png",
+      "bytes": 671911,
+      "sha256": "159719820a65e608c8c668b96748cdd66bbe7b23bb8974085b10c82ec3c4e69d"
+    },
+    {
+      "url": "/fog/images/node-dish-01-default.png",
+      "bytes": 846931,
+      "sha256": "26ded5a352d6712896a4523a1d67c0a9b3eb08ac658202192c072f96e52fba80"
+    },
+    {
+      "url": "/fog/images/node-dish-02-default.png",
+      "bytes": 846478,
+      "sha256": "68ed90f41eb4d18794a7914ef35b43d95fba1bb0f4a9a7eda9b508cef98e048f"
+    },
+    {
+      "url": "/fog/images/node-pool-01-default.png",
+      "bytes": 870252,
+      "sha256": "89c9492a5376d204f1acbb0293c1e03ec03029cb1059ec4c4c32c61c73fc5a8a"
+    },
+    {
+      "url": "/fog/images/node-post-ring-01-default.png",
+      "bytes": 862731,
+      "sha256": "da24c32055f8073324b9473c317e53ed881007f2941c71507db0a72289b655b6"
+    },
+    {
+      "url": "/fog/images/og.png",
+      "bytes": 301127,
+      "sha256": "0d5de317b83c37f4ce2777d95b34000f1fc2ab721514f122988b7ecd17dc8ec9"
+    },
+    {
+      "url": "/fog/images/previews.json",
+      "bytes": 4038,
+      "sha256": "a8f349731c43444fa63d3650e276866d446e5cd432639631f5da0482ed29afc4"
+    },
+    {
+      "url": "/fog/images/structure-bells-awake.png",
+      "bytes": 644182,
+      "sha256": "4b4774785d918c875ea2a032ad69ab046618c238335561d616c1b733d3a0489e"
+    },
+    {
+      "url": "/fog/images/structure-bells-dormant.png",
+      "bytes": 645960,
+      "sha256": "231deae2defa77e07a0c482b572f6a57f2b3abac48d82b2717693ab6a3ee8aad"
+    },
+    {
+      "url": "/fog/images/structure-cairn-awake.png",
+      "bytes": 636113,
+      "sha256": "ddb2b027f96d54d1a31aa1f690279adeb037bb23c7215d2e8d9756d64d8598b2"
+    },
+    {
+      "url": "/fog/images/structure-cairn-dormant.png",
+      "bytes": 644465,
+      "sha256": "892d6a6823119c91d487c106a989090a86d98de828c7f67ad97d88c020b1e6a5"
+    },
+    {
+      "url": "/fog/images/structure-glass-awake.png",
+      "bytes": 593151,
+      "sha256": "6661ce4670381c1e1e69f535e44f7e6117432cbf778fd51a81d11a9a57cbeb04"
+    },
+    {
+      "url": "/fog/images/structure-glass-dormant.png",
+      "bytes": 589635,
+      "sha256": "7902e9525e2247516a44fee6a901223b4dc454072898367d07d3399c2158b490"
+    },
+    {
+      "url": "/fog/images/structure-instrument-awake.png",
+      "bytes": 605000,
+      "sha256": "5143f04c90387745df0d3ab97936f6a7f8607663bcc99a8532bc6febddb29017"
+    },
+    {
+      "url": "/fog/images/structure-instrument-dormant.png",
+      "bytes": 606622,
+      "sha256": "150397b7180963a7c5a7cf476c97ba64a0c136d67d0138a31f879985b804e667"
+    },
+    {
+      "url": "/fog/images/structure-pages-awake.png",
+      "bytes": 657901,
+      "sha256": "44238c16d51cab369ae5820d5fee5447a800771f14c9520ecfbed0a828debdb6"
+    },
+    {
+      "url": "/fog/images/structure-pages-dormant.png",
+      "bytes": 662436,
+      "sha256": "13dc8cff48dcada3730273ff50f8775647611a93a524b0dfc8cdab9ce895e439"
+    },
+    {
+      "url": "/fog/images/structure-reeds-awake.png",
+      "bytes": 680312,
+      "sha256": "ccbe752414e2bf7bed37549357679053cf8e3b14a5f7d050d64717cb9dd3df57"
+    },
+    {
+      "url": "/fog/images/structure-reeds-dormant.png",
+      "bytes": 671164,
+      "sha256": "1d3a1df5b2e3a77f2d49783f0a4cb73fbfa168264361287f7b5ea0d167547227"
+    },
+    {
+      "url": "/fog/images/structure-teaching-awake.png",
+      "bytes": 617152,
+      "sha256": "fbbf17400648ef6f6b449d36cd9a70cadc81a14bc007cdc61766a52f86f3abd9"
+    },
+    {
+      "url": "/fog/images/structure-teaching-dormant.png",
+      "bytes": 619487,
+      "sha256": "b8abd5fe0a89a1324ca99ce72f5d6f0fcbd474dfc86ed07bd0291c57feec5235"
+    },
+    {
+      "url": "/fog/images/structures-contact-sheet.png",
+      "bytes": 494811,
+      "sha256": "fa7b1907f75034f53d8e77d989d17721a854c81f1cb9d8ff7afc0e3e0392778a"
+    },
+    {
+      "url": "/fog/images/terminus-collapse-01-default.png",
+      "bytes": 909263,
+      "sha256": "b1b983e9236d87cffbd1f5493885e583e56b892c788c2a17267eb35f97b1d36a"
+    },
+    {
+      "url": "/fog/images/terminus-collapse-02-default.png",
+      "bytes": 908466,
+      "sha256": "a1053eedb371f8e4188d155110ca93e76de4c7a91d0a4710ad4cc3d6f9f7a8e7"
+    },
+    {
+      "url": "/fog/images/terminus-water-01-default.png",
+      "bytes": 818404,
+      "sha256": "6c9185219df5d51e1cb8abc53c780500e3b6a9528a51ba0e93ca98ddce000ad0"
+    },
+    {
+      "url": "/fog/models/fragment-bells.glb",
+      "bytes": 13228,
+      "sha256": "bd2135ef6cbbba5fd9d9179e668e677ccb5795b3692c34c17ce3512102db23bc"
+    },
+    {
+      "url": "/fog/models/fragment-cairn.glb",
+      "bytes": 7440,
+      "sha256": "e6593634cf71a5040ce7557c4d89615d918a34a9b7f5ab4b6617d965a38ecfa4"
+    },
+    {
+      "url": "/fog/models/fragment-glass.glb",
+      "bytes": 10104,
+      "sha256": "1592a62933c3125d53f8d53f30fd999fa99f756b8f8e04d49ef9ca3f70e7b454"
+    },
+    {
+      "url": "/fog/models/fragment-instrument.glb",
+      "bytes": 8588,
+      "sha256": "73210d5b8db3fbbb67765ef52c3e74d03920790486981c8c538682cb112760c3"
+    },
+    {
+      "url": "/fog/models/fragment-pages.glb",
+      "bytes": 14068,
+      "sha256": "5c6876f10b0d6a159b22db9b5973afb1318f55f1483a70f910b57e80abe4ee71"
+    },
+    {
+      "url": "/fog/models/fragment-reeds.glb",
+      "bytes": 7332,
+      "sha256": "aa31e2c522422d1fd7279d9d33cde41286eebac7d8e138733d84b76ed20d69b6"
+    },
+    {
+      "url": "/fog/models/marker-post-01.glb",
+      "bytes": 13888,
+      "sha256": "2a4ad268eec19dde15876da072f2ff9b45605ec6b958a49b53b5081afbd3ff20"
+    },
+    {
+      "url": "/fog/models/marker-post-02.glb",
+      "bytes": 13908,
+      "sha256": "98cd949327c25aa36009b2c3e3d0eab30094139c5c7e37bfe0f1f980593af982"
+    },
+    {
+      "url": "/fog/models/marker-post-03.glb",
+      "bytes": 13912,
+      "sha256": "8e3ea00e404bd5b114206ae27807dd2ea846598706d4c8eff72ba57f66b9887c"
+    },
+    {
+      "url": "/fog/models/marker-stitch-01.glb",
+      "bytes": 25144,
+      "sha256": "f05b557c615daca293979d289189eae0f255597e551b4ed5bf3c8bdba89a4bc0"
+    },
+    {
+      "url": "/fog/models/marker-stitch-02.glb",
+      "bytes": 25148,
+      "sha256": "6ac568c670b94ecb499277d22da30b49d32e01548742702b6beeb6fdf1efc50b"
+    },
+    {
+      "url": "/fog/models/marker-stone-01.glb",
+      "bytes": 15808,
+      "sha256": "19cfc40079373a1333709e56abd3fd665c143c664b6c408a20a80a2dea34a00b"
+    },
+    {
+      "url": "/fog/models/marker-stone-02.glb",
+      "bytes": 15748,
+      "sha256": "466c570e0a498087e16ae7aeaa905c23e4cb64cebbb5dfcc4a738132197c981b"
+    },
+    {
+      "url": "/fog/models/marker-stone-03.glb",
+      "bytes": 15992,
+      "sha256": "aab182d2ee4947d45cd281056da4cfc469430968fb957934d63d7d7bf4fd6e54"
+    },
+    {
+      "url": "/fog/models/node-dish-01.glb",
+      "bytes": 29236,
+      "sha256": "fb831f3295325c983efb26f75c7dfd696765fd26bf38da58a47589f0da6b9b59"
+    },
+    {
+      "url": "/fog/models/node-dish-02.glb",
+      "bytes": 29244,
+      "sha256": "f2c0574b7f51b08430f3e497bedfd01647096330ad75717eaf006217882d00c3"
+    },
+    {
+      "url": "/fog/models/node-pool-01.glb",
+      "bytes": 22860,
+      "sha256": "ebf1dd8792a07f3cf446e77e86e31c5ab41a197beffc46686eac607bcfa669b2"
+    },
+    {
+      "url": "/fog/models/node-post-ring-01.glb",
+      "bytes": 44720,
+      "sha256": "be6477cb1e5fc31852dc7f4188b4a40107a8ffa41d2cc7ceb6cb47580c64713d"
+    },
+    {
+      "url": "/fog/models/structure-bells.glb",
+      "bytes": 408360,
+      "sha256": "30b24680627c6d2f35f6fcbc4912a2a936a7709f633711683894a972edc2a399"
+    },
+    {
+      "url": "/fog/models/structure-cairn.glb",
+      "bytes": 204780,
+      "sha256": "4273b5b706d1aaa6f24ccb239573b267e882b517985869c0946676824c16cb3b"
+    },
+    {
+      "url": "/fog/models/structure-glass.glb",
+      "bytes": 308660,
+      "sha256": "3f3d8d2784178f401ac2d74b692b76bfa5ffbfd405d1572e1eca8b2b5433f3ac"
+    },
+    {
+      "url": "/fog/models/structure-instrument.glb",
+      "bytes": 407976,
+      "sha256": "606acfa7ec9adabeea1fdf92aea9c3a2f41ccf16e1de611b908b7e24e3fbec17"
+    },
+    {
+      "url": "/fog/models/structure-pages.glb",
+      "bytes": 248504,
+      "sha256": "16a876c6ce44ac964fd9ee0b066d42845803f1f9c05b46252f1da1169f9a72ef"
+    },
+    {
+      "url": "/fog/models/structure-reeds.glb",
+      "bytes": 433004,
+      "sha256": "c95a7789920e63ff73f7bbf119b4c6f1436190a2c8b077d8cad70ee34533e242"
+    },
+    {
+      "url": "/fog/models/structure-teaching.glb",
+      "bytes": 441316,
+      "sha256": "61958235c853ffd1b86c9d85053dc6cb07707fb720f903bcc4e01a51226f570e"
+    },
+    {
+      "url": "/fog/models/terminus-collapse-01.glb",
+      "bytes": 38176,
+      "sha256": "ff8132eb9af28093c3942b3a98fdb37a72cc9fe194022f4ab60965b41231ac38"
+    },
+    {
+      "url": "/fog/models/terminus-collapse-02.glb",
+      "bytes": 38180,
+      "sha256": "cb1bdc2b8df41ca1563c309293eb3cab9a61d3127869a1617dd1712a8686dcde"
+    },
+    {
+      "url": "/fog/models/terminus-water-01.glb",
+      "bytes": 29260,
+      "sha256": "072ed371ef4dde7fcc4a2a525ecd3aa49c31676efde79682799fd2dc79ce7d78"
+    },
+    {
+      "url": "/fog/models.json",
+      "bytes": 15544,
+      "sha256": "c66d92a6f858c599d4fed100eed382b625f0b457277987d9b52b50975103f149"
+    },
+    {
+      "url": "/fog/review.html",
+      "bytes": 3121,
+      "sha256": "e05747c48b79d7025a89e49e3d9eaed116ae40dd075a48eb9b48d30e385f29ec"
+    },
+    {
+      "url": "/fog/review.mjs",
+      "bytes": 9799,
+      "sha256": "638c72b22c10d0a2ffc951ab72b5e9a675ecc4c25421c25028eafc0a5e657167"
+    }
+  ],
+  "totalBytes": 93194351
+}
