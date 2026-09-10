@@ -6,6 +6,10 @@
 
 ![Ariadne title screen](public/ariadne-title-card.png)
 
+## The field (September 2026)
+
+The maze has been replaced by a field of white fog: low markers in lines, places where ways meet, sleeping structures that call, and Ariadne as a thread of warm light who chooses a way at every place and goes to its first marker. Her accuracy declines with the commitments she makes; nothing in the world changes except her. Closing the tab changes nothing; reopening it restores the field as you left it. The project statement below still describes the maze and is due for rewriting.
+
 ## Project statement
 
 *Ariadne* is a browser-based interactive maze game. Every player enters it as MT, the artist, and looks for a way out with a guide. Ariadne appears as a moving thread of light that travels beside MT. At each junction the game chooses one of the open passages for her. A live language model receives what Ariadne can see, what has happened during the journey, and how MT has responded to her, and generates her words.

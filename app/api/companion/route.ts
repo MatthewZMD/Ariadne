@@ -2,6 +2,8 @@ import process from "node:process";
 import { deterministicReply, type CompanionArc, type CompanionEvent, type CompanionMessage, type CompanionReply, type EgocentricView, type GuidanceIntent, type GuidanceEvidence, type PlayerActivity, type RouteOption, type TrajectorySample, type VisibleEnvironment } from "../../companion.ts";
 import type { NavigationBelief, PublicObjectiveContext } from "../../objectives.ts";
 import { ARIADNE_SYSTEM_PROMPT } from "./prompt.ts";
+import { FAST_FREE_MODELS, PAID_FALLBACK_MODELS, SERVER_OWNED_PAID_MODELS, STYLE_CERTIFIED_FREE_MODELS } from "./models.ts";
+import { handleFieldRequest, isFieldEnvelope } from "./field.ts";
 import { starDiscoveryInstruction } from "../../star-discovery.ts";
 import { mentionedDirections, messageConflictsWithRoute, messageIdentifiesRoute } from "../../navigation-contracts.ts";
 import { dialogueContinuity } from "../../dialogue-continuity.ts";
@@ -38,14 +40,6 @@ const embodiedStates=["noticing","committing","route_marked","mt_following","mt_
 const speechActs=["invite_to_visible_choice","confirm_following","respond_to_divergence","repair_mistake","celebrate_rejoining","react_to_star","celebrate_accomplishment","renew_hope","share_visible_discovery","passing_companionship","reply_to_mt"] as const satisfies readonly CompanionSpeechAct[];
 const speechPlacements=["route_or_companion","with_mt","repairing","any"] as const;
 const ariadnePresences=["leading_ahead","with_mt","rejoining","repairing"] as const;
-const FAST_FREE_MODELS=["dots-studio/dots-3-note-preview:free","google/gemma-4-26b-a4b-it:free","google/gemma-4-31b-it:free"];
-// A model being free and technically compatible is not enough for Ariadne.
-// These models have also been exercised against the project's tone matrix.
-// The catalog may confirm that one is currently available, but must never
-// promote an arbitrary new model into the character's voice.
-const STYLE_CERTIFIED_FREE_MODELS=new Set<string>(FAST_FREE_MODELS);
-const PAID_FALLBACK_MODELS=["xiaomi/mimo-v2.5","openai/gpt-5.6-luna"] as const;
-const SERVER_OWNED_PAID_MODELS=new Set<string>(PAID_FALLBACK_MODELS);
 const beatKinds=["guidance","accomplishment","repair","objective","relational","ambient"] as const;
 const socialStrategies=["curious_wonder","playful_confidence","concrete_praise","grateful_closeness","tender_apology","relieved_reconnection","admiring_correction","hopeful_reinterpretation","reassurance_seeking","possessive_shared_meaning"] as const;
 const momentKinds=["followed_commitment","diverged_from_commitment","corrected_ariadne","rejoined_ariadne","shared_accomplishment","proxy_accomplishment","ariadne_mistake","star_collected","player_statement"] as const;
@@ -449,6 +443,8 @@ async function boundedJson(request:Request):Promise<{value:unknown}|{error:"inva
 export async function POST(request:Request){
   const requestStartedAt=Date.now();
   const parsed=await boundedJson(request);if("error" in parsed)return Response.json({error:parsed.error==="too_large"?"companion request too large":"invalid JSON"},{status:parsed.error==="too_large"?413:400});
+  // The field practice has its own contract (app/field-practice.ts); the maze protocol below is unchanged.
+  if(isFieldEnvelope(parsed.value))return handleFieldRequest(parsed.value,request.signal);
   const diagnostics={reason:"unknown"},body=parseCompanionRequest(parsed.value,diagnostics);if(!body){console.warn("ARIADNE rejected companion request",{reason:diagnostics.reason,trigger:isRecord(parsed.value)&&isRecord(parsed.value.trigger)?parsed.value.trigger.type:"unknown"});return Response.json({error:"invalid companion request",reason:diagnostics.reason},{status:400})}
   const fallback=()=>body.trigger.type==="initial_guidance"?acceptReply(deterministicReply(body.trigger,body.legalRoutes,body.environment,body.recommendationEvidence,body.companionArc.phase,body.objective,body.navigationBelief,body.sceneChanges[0])):{message:""};
   try{

@@ -45,3 +45,12 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# working notes and headless playtest tooling stay out of the repository
+/notes/
+/scripts/playtest/
+/scripts/playtest.mjs
+/scripts/playtest-pulse.mjs
+/scripts/play-session.mjs
+/scripts/spike/
+tsconfig.tsbuildinfo

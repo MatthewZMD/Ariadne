@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body><script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script><script type="module">
+import * as THREE from "three"; import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+const models = await fetch("/fog/models.json").then(r=>r.json()).then(m=>m.assets.filter(a=>a.category==="structure"||a.category==="marker").map(a=>a.id));
+const loader = new GLTFLoader(); const out = {};
+for (const id of models) {
+  const gltf = await loader.loadAsync("/fog/models/" + id + ".glb");
+  gltf.scene.updateMatrixWorld(true);
+  const anchors = [];
+  gltf.scene.traverse(node => {
+    if (!/^(element_\d\d|call_anchor|fragment_anchor|residue_anchor)$/.test(node.name)) return;
+    const p = new THREE.Vector3(); node.getWorldPosition(p);
+    anchors.push({ name: node.name, position: [Number(p.x.toFixed(3)), Number(p.y.toFixed(3)), Number(p.z.toFixed(3))], extras: node.userData ?? {} });
+  });
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const materials = new Set(); gltf.scene.traverse(n => { if (n.isMesh) for (const m of Array.isArray(n.material) ? n.material : [n.material]) materials.add(m.name); });
+  out[id] = { anchors: anchors.sort((a, b) => a.name.localeCompare(b.name)), bounds: [box.min.toArray().map(v => Number(v.toFixed(3))), box.max.toArray().map(v => Number(v.toFixed(3)))], materials: [...materials], nodes: (() => { const names = []; gltf.scene.traverse(n => { if (n.isMesh) names.push(n.name + ":" + (n.parent?.name ?? "")); }); return names; })() };
+}
+window.__anchors = out;
+</script></body></html>

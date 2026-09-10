@@ -3,7 +3,6 @@ import test from "node:test";
 import { CHUNK_SIZE, InfiniteWorld, LOGICAL_SPACING, THEME_IDS, chunkTopology, connectedTileCount, createThemeScheduler, generateChunk, portalsFor } from "../app/world.mjs";
 import { MOVE_ACCELERATION } from "../app/movement.ts";
 
-const DECISION_VISIBILITY_DISTANCE=12;
 
 test("shared portals match across positive and negative chunk seams", () => {
   const seed=192837;
@@ -129,8 +128,8 @@ test("renderer includes a directional distant sky pass",async()=>{
   assert.match(source,/function renderDistantSky/);assert.match(source,/distance>72/);assert.match(source,/anchor\.bornAt<=tick/);assert.match(source,/previewFade/);
 });
 
-test("the entrance gate is installed at run creation and rendered as spatial geometry",async()=>{
-  const fs=await import("node:fs/promises"),page=await fs.readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),renderer=await fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8");
+test("the entrance gate is installed at run creation and rendered as spatial geometry (maze, kept for reference)",async()=>{
+  const fs=await import("node:fs/promises"),page=await fs.readFile(new URL("../app/maze-page.tsx",import.meta.url),"utf8"),renderer=await fs.readFile(new URL("../app/renderer.ts",import.meta.url),"utf8");
   assert.match(page,/world\.setEntranceCorridor\(1,1/);assert.match(renderer,/world\.isEntranceGate\(ray\.mapX,ray\.mapY\)/);
 });
 
@@ -144,9 +143,12 @@ async function requestCompanion(body){
   const{default:worker}=await import(workerUrl.href);return worker.fetch(new Request("http://localhost/api/companion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}),{ASSETS:{fetch:async()=>new Response("Not found",{status:404})}},{waitUntil(){},passThroughOnException(){}});
 }
 
-test("product shell promises the search without claiming the exit was found",async()=>{
+test("product shell is the field: fog, a thread, the next way, and no promise of an exit",async()=>{
   const response=await render();assert.equal(response.status,200);const html=await response.text();
-  assert.doesNotMatch(html,/ENTER CHAT|CAM_01|NEW SIGNAL/);assert.match(html,/Follow Ariadne and find the exit!/);assert.match(html,/☆☆☆☆/);assert.doesNotMatch(html,/LOCAL MEMORY/);assert.doesNotMatch(html,/checkpoint|theme|you (?:found|reached) the exit|you win/i);
+  assert.doesNotMatch(html,/ENTER CHAT|CAM_01|NEW SIGNAL|☆☆☆☆|Follow Ariadne and find the exit/);
+  assert.match(html,/A field of white fog, a thread of light beside you, and the next way\. She is sure\./);
+  assert.match(html,/\/fog\/images\/og\.png/);assert.match(html,/fog-shell/);assert.match(html,/Ariadne, in fog/);
+  assert.doesNotMatch(html,/checkpoint|you (?:found|reached) the exit|you win|\bMT\b/i);
 });
 
 test("companion route works without credentials through the in-world fallback",async()=>{
@@ -165,10 +167,10 @@ test("companion provider is configured for OpenRouter without exposing a key",as
   assert.doesNotMatch(source,/process\.env\.OPENAI_API_KEY/);
 });
 
-test("each browser run owns an opaque companion session instead of reusing the map seed",async()=>{
-  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/page.tsx",import.meta.url),"utf8"));
-  assert.match(source,/companionSessionRef=useRef\(crypto\.randomUUID\(\)\)/);
-  assert.match(source,/companionSessionRef\.current=crypto\.randomUUID\(\)/);
-  assert.match(source,/sessionId:companionSessionRef\.current/);
-  assert.doesNotMatch(source,/sessionId:String\(current\.seed\)/);
+test("each browser owns an opaque companion session instead of reusing the field seed",async()=>{
+  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/field-page.tsx",import.meta.url),"utf8"));
+  assert.match(source,/crypto\.randomUUID\(\)/);
+  assert.match(source,/sessionId: sessionIdRef\.current/);
+  assert.doesNotMatch(source,/sessionId: String\(game\.seed\)|sessionId: game\.seed/);
+  assert.match(source,/seedFrom\(randomId\(\)\)/,"the field seed is random per fresh start and never the session id itself");
 });

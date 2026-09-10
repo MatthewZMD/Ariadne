@@ -89,12 +89,14 @@ test("phase cards change social interpretation rather than only frequency",()=>{
   const charming=companionArc(createJourneyState()).performanceDirection;
   const attached=companionArc({...createJourneyState(),phase:"attached"}).performanceDirection;
   const overbearing=companionArc({...createJourneyState(),phase:"overbearing"}).performanceDirection;
-  assert.match(charming,/want to trust you/i);
+  assert.match(charming,/want to walk with you/i);
   assert.match(charming,/praise that exact choice/i);
-  assert.match(attached,/warmth now carries attachment/i);
-  assert.match(attached,/apologize tenderly/i);
-  assert.match(overbearing,/tender voice/i);
-  assert.match(overbearing,/Apologies, praise, and repeated reassurance now dominate/i);
+  assert.match(attached,/warmth has a history/i);
+  assert.match(attached,/Apologies are fuller/i);
+  assert.match(overbearing,/Reassurance, apology and praise now carry/i);
+  assert.match(overbearing,/never ask for forgiveness/i);
+  // The register is accommodation without a boundary, never possession or guilt.
+  assert.doesNotMatch(`${charming} ${attached} ${overbearing}`,/hurt or worry|possession|forgiveness or continued presence|Hold MT inside/i);
   assert.doesNotMatch(`${charming} ${attached} ${overbearing}`,/CHARMING|ATTACHED|OVERBEARING/);
   assert.equal(nextPassingThoughtAt(1_000,"charming",0),27_000);
   assert.equal(nextPassingThoughtAt(1_000,"attached",0),23_000);

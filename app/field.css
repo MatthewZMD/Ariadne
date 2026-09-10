@@ -1,0 +1,64 @@
+/* The fog era: pale ground, quiet type, nothing that competes with the field. */
+:root { --fog: #f4f5f4; --fog-deep: #e6e7e4; --ink-soft: #4f5a4f; --ink-faint: #8a918a; --thread: #c9b57a; --thread-bright: #e6d39a; }
+html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(--ink-soft); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.fog-shell { position: fixed; inset: 0; width: 100vw; height: 100dvh; overflow: hidden; background: var(--fog); color: var(--ink-soft); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.fog-shell button { font: inherit; }
+.fog-canvas-wrap { position: absolute; inset: 0; touch-action: none; overscroll-behavior: none; cursor: crosshair; }
+.fog-canvas-wrap canvas { display: block; width: 100%; height: 100%; aspect-ratio: auto; image-rendering: auto; outline: none; }
+.fog-grain { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: .05; mix-blend-mode: multiply; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>"); }
+.fog-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 55%, rgba(60,62,60,.14) 100%); }
+
+/* Screens */
+.fog-screen { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--fog); color: var(--ink-soft); }
+.fog-screen.translucent { background: rgba(244,245,244,.82); backdrop-filter: blur(6px); }
+.fog-title { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
+.fog-title img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.fog-title-actions { position: absolute; left: clamp(20px, 8.2vw, 158px); bottom: clamp(28px, 12vh, 140px); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.fog-button { min-width: 200px; border: 1px solid rgba(79,90,79,.45); padding: 13px 26px; color: var(--ink-soft); background: rgba(255,255,255,.55); cursor: pointer; letter-spacing: .22em; font-size: 12px; text-transform: uppercase; transition: background 160ms ease, border-color 160ms ease, color 160ms ease; }
+.fog-button:hover, .fog-button:focus-visible { outline: none; background: rgba(255,255,255,.92); border-color: var(--ink-soft); color: #313a31; }
+.fog-button:disabled { opacity: .5; cursor: wait; }
+.fog-button.quiet { min-width: 0; border-color: transparent; background: transparent; color: var(--ink-faint); font-size: 10px; padding: 6px 2px; }
+.fog-button.quiet:hover, .fog-button.quiet:focus-visible { color: var(--ink-soft); background: transparent; border-color: transparent; text-decoration: underline; text-underline-offset: 4px; }
+.fog-panel { width: min(560px, 88vw); display: flex; flex-direction: column; align-items: center; gap: 22px; text-align: center; }
+.fog-panel h1 { margin: 0; font-size: clamp(16px, 2.2vw, 22px); font-weight: 400; letter-spacing: .32em; text-transform: uppercase; color: var(--ink-soft); }
+.fog-panel p { max-width: 460px; margin: 0; color: #5f695f; font-family: Georgia, "Times New Roman", serif; font-size: clamp(16px, 1.9vw, 19px); line-height: 1.5; }
+.fog-panel .fog-controls { color: var(--ink-faint); font-family: inherit; font-size: 11px; letter-spacing: .14em; line-height: 1.7; text-transform: uppercase; }
+.fog-headphones { width: 74px; height: 66px; position: relative; border: 5px solid var(--ink-soft); border-bottom: 0; border-radius: 40px 40px 0 0; opacity: .8; }
+.fog-headphones i { position: absolute; top: 34px; width: 16px; height: 28px; border-radius: 4px; background: var(--ink-soft); }
+.fog-headphones i:first-child { left: -10px; } .fog-headphones i:last-child { right: -10px; }
+.fog-pause-panel { width: min(360px, 86vw); display: flex; flex-direction: column; gap: 14px; padding: 34px 30px; background: rgba(255,255,255,.7); border: 1px solid rgba(79,90,79,.25); }
+.fog-pause-panel h1 { margin: 0 0 6px; text-align: center; font-size: 14px; font-weight: 400; letter-spacing: .32em; text-transform: uppercase; }
+.fog-pause-panel .fog-button { width: 100%; }
+.fog-volume { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; padding: 10px 12px; border: 1px solid rgba(79,90,79,.25); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); }
+.fog-volume strong { font-weight: 400; color: var(--ink-soft); }
+.fog-volume input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--ink-soft); cursor: pointer; }
+.fog-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(79,90,79,.25); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); cursor: pointer; }
+.fog-toggle input { accent-color: var(--ink-soft); }
+.fog-note { margin: 4px 0 0; text-align: center; color: var(--ink-faint); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+
+/* Captions and the walker's words */
+.fog-captions { position: absolute; z-index: 5; left: 22px; right: 22px; bottom: 26px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.fog-captions.log-open { top: 18%; bottom: 62px; overflow-y: auto; align-items: stretch; pointer-events: auto; padding-right: 8px; scrollbar-width: thin; scrollbar-color: rgba(79,90,79,.4) transparent; }
+.fog-line { max-width: min(760px, 80%); padding: 6px 10px; background: rgba(244,245,244,.72); color: #3d463d; font-family: Georgia, "Times New Roman", serif; font-size: clamp(15px, 1.5vw, 19px); line-height: 1.4; text-wrap: balance; transition: opacity 600ms ease; }
+.fog-line.walker { align-self: flex-end; color: #5f695f; background: rgba(255,255,255,.5); font-style: italic; }
+.fog-line.faded { opacity: 0; }
+.fog-captions.log-open .fog-line { opacity: 1; }
+.fog-captions.log-open .fog-line.walker { align-self: flex-end; }
+.fog-input { position: absolute; z-index: 6; left: 22px; right: 22px; bottom: 16px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(255,255,255,.78); border: 1px solid rgba(79,90,79,.3); }
+.fog-input span { color: var(--ink-faint); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
+.fog-input input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #313a31; font: clamp(14px, 1.4vw, 17px) Georgia, "Times New Roman", serif; }
+.fog-input input::placeholder { color: var(--ink-faint); }
+.fog-hint { position: absolute; z-index: 5; top: 20px; left: 50%; transform: translateX(-50%); padding: 6px 12px; color: var(--ink-faint); font-size: 10px; letter-spacing: .22em; text-transform: uppercase; background: rgba(244,245,244,.6); pointer-events: none; transition: opacity 1.2s ease; }
+.fog-hint.hidden { opacity: 0; }
+.fog-thinking { position: absolute; z-index: 5; right: 22px; bottom: 30px; width: 6px; height: 6px; border-radius: 50%; background: var(--thread); box-shadow: 0 0 10px var(--thread-bright); animation: fog-breathe 1.4s ease-in-out infinite; }
+@keyframes fog-breathe { 50% { opacity: .25; transform: scale(.7); } }
+.fog-corner { position: absolute; z-index: 5; top: 16px; right: 18px; display: flex; gap: 14px; }
+.fog-landscape-guard { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .fog-landscape-guard { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 28px; text-align: center; background: var(--fog); color: var(--ink-soft); }
+  .fog-landscape-guard strong { font-weight: 400; letter-spacing: .24em; text-transform: uppercase; font-size: 12px; }
+  .fog-landscape-guard small { color: var(--ink-faint); font-family: Georgia, "Times New Roman", serif; font-size: 15px; }
+}
+@media (pointer: coarse) { .fog-controls .desktop { display: none; } }
+@media (pointer: fine) { .fog-controls .touch { display: none; } }
+@media (prefers-reduced-motion: reduce) { .fog-thinking { animation: none; } }

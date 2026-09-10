@@ -1,0 +1,323 @@
+/**
+ * Ariadne's speech in the field, client side.
+ *
+ * Turns the game's speak events into lines: it decides what is worth saying
+ * now, builds the FieldRequest from the game's perception of the moment,
+ * asks the server for a guarded line, and voices it, with a recorded cue
+ * covering the seconds a generated line takes. It remembers what she said at
+ * each commitment so the stage card can hold her to it, keeps the caption
+ * log in the world's memory, and can save and resume a sentence she was in
+ * the middle of when the tab closed.
+ */
+import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
+import type { FieldAudio } from "./audio.ts";
+import { cueForOccasion, deliveryFor } from "./audio.ts";
+import { FIELD_AFFIRMATIONS, fieldDeterministicLine, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
+import { hash32 } from "./graph.ts";
+
+export type SpeechLine = { id: string; occasion: FieldOccasion; text: string; kind: "generated" | "cue" | "fallback"; at: number; commitmentId: string | null };
+export type SpeechSave = { lastLine: SpeechLine | null; midSentence: { text: string; fraction: number; occasion: FieldOccasion } | null; recent: FieldMessage[]; olderSummary: string; moments: EarlierMoment[]; saidAt: Array<[string, string]> };
+export type EarlierMoment = { fact: string; youSaid: string | null; whatFollowed: string; at: number; weight: number };
+
+const LOW_PRIORITY_GAP_MS = 9000;
+const SPEECH_GAP_MS = 1200;
+const REQUEST_STALE_MS = 14_000;
+/** Occasions that must not be lost when she is mid-line: they wait their turn. */
+const DURABLE: Set<FieldOccasion> = new Set(["awakening_relevant", "awakening_proxy", "outcome_failed", "terminus", "declined", "recognized_return", "reply"]);
+/** The opening is fixed: an offer and a direction, always the same words. */
+const FIXED_OCCASIONS: Set<FieldOccasion> = new Set(["opening"]);
+
+const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
+  opening: ["Offer and lead in the same breath. Do not explain the fog or yourself."],
+  commitment: ["Offer one lively, fallible invitation toward the way your body indicates.", "Name the way by its markers and say what you hear along it, as hearing.", "Make the way appealing in one breath; do not restate geometry."],
+  taken_up: ["Call back in one quick clause about the walking or the markers.", "One warm, concrete word about the way; then stop."],
+  declined: ["Treat the choice as a better instinct than yours, and go with it.", "Wonder aloud, lightly, what they heard; do not argue for your way."],
+  outcome_confirmed: ["Interrupt yourself with delight, then stop before explaining.", "Credit the walking for what is happening to the sound."],
+  outcome_failed: ["Correct your exact earlier claim plainly, take the fault, and say you are listening.", "Apologize plainly in one sentence, then one sentence of what you will do next."],
+  terminus: ["Name the end of the way in the field's words, take it as yours, and turn back at once.", "Say what you said and what is here; then choose again."],
+  structure_found: ["Invite them to wake it; name the one thing its first part asks for.", "Notice the structure with pleasure and give the one gesture."],
+  awakening_relevant: ["Praise exactly what the walker caused, then let the new call carry your larger claim.", "Celebrate the clearing, then lead toward the new call."],
+  awakening_proxy: ["Praise exactly what the walker caused, then make the clearing mean more than its result supports.", "Say what cleared and what it means to you; do not invent a new call."],
+  recognized_return: ["Acknowledge the return accurately, then make it hopeful by elimination.", "Name the evidence you both see, then choose again."],
+  off_way: ["Go with them; one line, light.", "Call it curiosity and mention the line is behind you."],
+  reply: ["Answer the exact words first, as someone personally involved.", "Answer the exact words; if they object, concede fully and keep your place."],
+  resume: ["Finish the sentence you were in the middle of."],
+};
+
+export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null): FieldUtterancePlan {
+  const options = INSTRUCTIONS[occasion];
+  const instruction = options[hash32(seed, occasion) % options.length]!;
+  const full = occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return";
+  const bark = occasion === "taken_up" || occasion === "off_way";
+  const length: FieldUtterancePlan["length"] = bark ? "bark" : full ? "full" : "short";
+  const roll = hash32(seed, "affirm", occasion) / 4294967296;
+  const chance = phase === "overbearing" ? .6 : phase === "attached" ? .22 : 0;
+  let affirmation: string | null = null;
+  if (roll < chance) {
+    const pool = occasion === "declined" || (occasion === "reply" && walkerMessage) ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" ? FIELD_AFFIRMATIONS.return : null;
+    if (pool) affirmation = pool[hash32(seed, "affirmation", occasion) % pool.length]!;
+  }
+  const sentenceCount: 1 | 2 = affirmation || full ? 2 : 1;
+  return { length, sentenceCount, affirmation, instruction };
+}
+
+/** Compact the older exchange into observable facts when the recent window overflows. */
+export function summarize(lines: FieldMessage[], previous: string) {
+  const facts = lines.map(line => (line.role === "ariadne" ? `Ariadne said: “${line.text}”` : `The walker said: “${line.text}”`));
+  return `${previous ? `${previous}\n` : ""}${facts.join("\n")}`.slice(-3000);
+}
+
+export type SpeechOptions = {
+  address?: ParticipantAddress;
+  fetchImpl?: typeof fetch;
+  sessionId: string;
+  onLine?: (line: SpeechLine) => void;
+  onThinking?: (thinking: boolean) => void;
+  offline?: boolean;
+};
+
+export class FieldSpeech {
+  readonly game: FieldGame;
+  readonly audio: FieldAudio;
+  private readonly options: SpeechOptions;
+  private recent: FieldMessage[] = [];
+  private olderSummary = "";
+  private lastLine: SpeechLine | null = null;
+  private lastEndedAt = -Infinity;
+  private saidAt = new Map<string, string>();
+  private moments: EarlierMoment[] = [];
+  private queued: SpeakEvent | null = null;
+  private queuedAt = 0;
+  private active: { event: SpeakEvent; startedAt: number; controller: AbortController; priority: number } | null = null;
+  private speaking: { text: string; occasion: FieldOccasion; kind: SpeechLine["kind"] } | null = null;
+  private counter = 0;
+  private cueTexts = new Map<string, string>();
+  private walkerSilentFor = 0;
+  private pendingResume: SpeechSave["midSentence"] = null;
+  preferredModelId: string | null = null;
+  private lastEventByOccasion = new Map<FieldOccasion, number>();
+
+  constructor(game: FieldGame, audio: FieldAudio, options: SpeechOptions) {
+    this.game = game; this.audio = audio; this.options = options;
+    const fetchImpl = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+    void fetchImpl("/fog/cues.json", { signal: AbortSignal.timeout(8000) }).then(response => response.json() as Promise<{ assets: Array<{ id: string; text: string }> }>).then(data => { for (const asset of data.assets) this.cueTexts.set(asset.id, asset.text); }).catch(() => {});
+  }
+
+  get isBusy() { return this.active !== null || this.audio.voice.isBusy(); }
+  get currentLine() { return this.lastLine; }
+
+  /* ------------------------------------------------------------ events */
+
+  /** Consider a speak event from the game. */
+  handle(event: SpeakEvent) {
+    const now = this.game.time;
+    this.lastEventByOccasion.set(event.occasion, now);
+    if (this.active) {
+      if (event.priority >= this.active.priority + 10) { this.cancelActive(); }
+      else if (DURABLE.has(event.occasion)) { this.queued = event; this.queuedAt = now; return; }
+      else return;
+    } else if (this.audio.voice.isBusy()) {
+      if (event.priority >= 85) this.audio.voice.interrupt();
+      else if (DURABLE.has(event.occasion)) { this.queued = event; this.queuedAt = now; return; }
+      else return;
+    }
+    if (event.priority < 65 && now - this.lastEndedAt < LOW_PRIORITY_GAP_MS) return;
+    if (now - this.lastEndedAt < SPEECH_GAP_MS && event.priority < 85) { if (DURABLE.has(event.occasion)) { this.queued = event; this.queuedAt = now; } return; }
+    void this.speak(event);
+  }
+
+  /** The walker typed something. */
+  say(text: string) {
+    const trimmed = text.trim().slice(0, 700);
+    if (!trimmed) return;
+    const now = this.game.time;
+    this.walkerSilentFor = 0;
+    this.remember({ role: "walker", text: trimmed });
+    this.game.memory.caption({ id: `w${++this.counter}`, role: "walker", text: trimmed, time: now, kind: "walker" });
+    const far = this.farForNow();
+    const event: SpeakEvent = { type: "speak", occasion: "reply", walkerDid: `Spoke to you: “${trimmed}”`, whatFollowed: "You are answering their exact words.", far, priority: 92, commitmentId: this.game.undertaking.active?.id ?? null };
+    this.cancelActive(); this.audio.voice.interrupt(); this.queued = null;
+    void this.speak(event, trimmed);
+  }
+
+  /** Called every frame: drains the queue when she is free. */
+  update() {
+    if (this.queued && !this.active && !this.audio.voice.isBusy() && this.game.time - this.lastEndedAt >= SPEECH_GAP_MS) {
+      const event = this.queued; this.queued = null;
+      if (this.game.time - this.queuedAt < REQUEST_STALE_MS) void this.speak(event);
+    }
+    if (this.pendingResume && this.audio.unlocked && !this.audio.voice.isBusy() && !this.active) { const resume = this.pendingResume; this.pendingResume = null; void this.resumeSentence(resume); }
+  }
+
+  private cancelActive() { if (this.active) { this.active.controller.abort(); this.active = null; this.options.onThinking?.(false); } }
+
+  private farForNow(): FarHearing {
+    const active = this.game.undertaking.active;
+    if (active && active.taken !== "declined") return { wayId: active.wayId };
+    return this.game.ariadne?.committedWayId ? { wayId: this.game.ariadne.committedWayId } : null;
+  }
+
+  /* -------------------------------------------------------- speaking */
+
+  private async speak(event: SpeakEvent, walkerMessage: string | null = null) {
+    const startedAt = this.game.time;
+    const controller = new AbortController();
+    this.active = { event, startedAt, controller, priority: event.priority };
+    const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure|first structure/.test(event.walkerDid) || this.game.callingStructure?.family === "teaching", gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
+    const cueId = event.prompt ? null : cueForOccasion(event.occasion, cueDetail);
+    // The first ninety seconds are authored: the opening, the teaching gestures and the first clearing keep their recorded words.
+    const fixed = FIXED_OCCASIONS.has(event.occasion) || (event.occasion === "structure_found" && !!cueDetail.teaching && !event.prompt) || (event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1);
+    if (fixed && cueId) {
+      const text = this.cueTexts.get(cueId ?? "") ?? fieldDeterministicLine(this.request(event, walkerMessage));
+      await this.voiceLine(event, text, cueId, "cue");
+      this.finish(controller);
+      return;
+    }
+    const request = this.request(event, walkerMessage);
+    const fallbackText = fieldDeterministicLine(request);
+    // A recorded cue covers the seconds the generated line takes; the caption shows the cue's words.
+    let cuePromise: Promise<unknown> = Promise.resolve();
+    if (cueId && !this.options.offline) {
+      const cueText = this.cueTexts.get(cueId) ?? null;
+      if (cueText) { this.caption(event, cueText, "cue"); cuePromise = this.audio.voice.playCue(cueId); }
+    }
+    let text = fallbackText, kind: SpeechLine["kind"] = "fallback";
+    if (!this.options.offline) {
+      this.options.onThinking?.(true);
+      try {
+        const fetchImpl = this.options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+        const response = await fetchImpl("/api/companion", { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(26_000)]), body: JSON.stringify({ practice: "field", sessionId: this.options.sessionId, request, preferredModelId: this.preferredModelId }) });
+        if (response.ok) {
+          const data = await response.json() as { message?: string; source?: string; modelUsed?: string | null };
+          if (typeof data.message === "string" && data.message.trim()) { text = data.message.trim(); kind = data.source === "provider" ? "generated" : "fallback"; if (data.source === "provider" && data.modelUsed && data.modelUsed.endsWith(":free")) this.preferredModelId = data.modelUsed; }
+        }
+      } catch { /* the fallback line stands */ }
+      this.options.onThinking?.(false);
+    }
+    if (controller.signal.aborted) return;
+    // The moment may have passed while the line was being made.
+    if (this.game.time - startedAt > REQUEST_STALE_MS && event.priority < 85) { this.finish(controller); return; }
+    await cuePromise;
+    if (controller.signal.aborted) return;
+    if (kind === "fallback" && cueId && this.cueTexts.has(cueId)) { this.finish(controller); return; }
+    await this.voiceLine(event, text, null, kind);
+    this.finish(controller);
+  }
+
+  private finish(controller: AbortController) {
+    if (this.active && this.active.controller === controller) { this.active = null; this.lastEndedAt = this.game.time; }
+  }
+
+  /** Voice a line: a recorded cue by id, or generated speech; captions either way. */
+  private async voiceLine(event: SpeakEvent, text: string, cueId: string | null, kind: SpeechLine["kind"], startAtFraction = 0) {
+    this.caption(event, text, kind);
+    this.speaking = { text, occasion: event.occasion, kind };
+    if (cueId && kind === "cue") await this.audio.voice.playCue(cueId);
+    else if (this.audio.unlocked) await this.audio.voice.speak(text, `u${Date.now().toString(36)}${++this.counter}`, deliveryFor(event.occasion, this.game.phase), { startAtFraction });
+    this.speaking = null;
+    this.lastEndedAt = this.game.time;
+  }
+
+  private caption(event: SpeakEvent, text: string, kind: SpeechLine["kind"]) {
+    const line: SpeechLine = { id: `a${++this.counter}`, occasion: event.occasion, text, kind, at: this.game.time, commitmentId: event.commitmentId };
+    this.lastLine = line;
+    if (event.commitmentId && (event.occasion === "commitment" || event.occasion === "recognized_return" || event.occasion === "awakening_relevant" || event.occasion === "awakening_proxy")) this.saidAt.set(event.commitmentId, text);
+    if (kind !== "cue" || !this.recent.length || this.recent.at(-1)!.text !== text) this.remember({ role: "ariadne", text });
+    this.walkerSilentFor++;
+    this.game.memory.caption({ id: line.id, role: "ariadne", text, time: line.at, kind: kind === "cue" ? "cue" : "generated" });
+    this.options.onLine?.(line);
+    if (event.occasion === "outcome_failed" || event.occasion === "terminus") this.moments.push({ fact: `You chose a way and it ${event.occasion === "terminus" ? "ended" : "went quiet"}.`, youSaid: this.saidAt.get(event.commitmentId ?? "") ?? null, whatFollowed: event.occasion === "terminus" ? "The markers stopped and you turned back." : "The call faded and you said you were listening again.", at: this.game.time, weight: 2 });
+    if (event.occasion === "declined") this.moments.push({ fact: "The walker took a different way from the one you chose.", youSaid: this.saidAt.get(event.commitmentId ?? "") ?? null, whatFollowed: "You went with them.", at: this.game.time, weight: 1 });
+    if (event.occasion === "awakening_relevant" || event.occasion === "awakening_proxy") this.moments.push({ fact: "The walker woke a structure and the fog thinned around it.", youSaid: null, whatFollowed: event.occasion === "awakening_relevant" ? "A new call began beyond the fog." : "No new call began.", at: this.game.time, weight: 1.5 });
+    this.moments = this.moments.slice(-12);
+  }
+
+  private remember(message: FieldMessage) {
+    this.recent = [...this.recent, message];
+    if (this.recent.length > 10) { const older = this.recent.slice(0, this.recent.length - 8); this.recent = this.recent.slice(-8); this.olderSummary = summarize(older, this.olderSummary); }
+  }
+
+  /* --------------------------------------------------------- request */
+
+  /** Build the stage-card request for an event from the game's perception right now. */
+  request(event: SpeakEvent, walkerMessage: string | null = null): FieldRequest {
+    const { near, body } = this.game.perceive(event.far);
+    const seed = hash32(this.game.seed, this.counter, event.occasion);
+    const earlier = this.earlierMoment(event);
+    return {
+      address: this.options.address ?? "you",
+      phase: this.game.phase,
+      commitmentsMade: this.game.undertaking.commitmentsMade,
+      clearingsMade: this.game.clearingsMade,
+      near, far: { heardAlong: event.far }, body,
+      turn: { occasion: event.occasion, youSaid: this.youSaid(event), walkerDid: event.walkerDid, whatFollowed: event.whatFollowed },
+      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage),
+      earlierMoment: earlier,
+      recentMessages: this.recent.slice(-8),
+      olderSummary: this.olderSummary,
+      walkerMessage,
+      walkerSilentFor: this.walkerSilentFor,
+    };
+  }
+
+  private youSaid(event: SpeakEvent) {
+    if (event.commitmentId && this.saidAt.has(event.commitmentId)) return this.saidAt.get(event.commitmentId)!;
+    if (event.occasion === "reply" || event.occasion === "resume") return this.lastLine?.text ?? null;
+    return null;
+  }
+
+  /** One earlier moment worth recalling, rarely: only for outcomes, returns and replies, and never the same one twice in a row. */
+  private lastRecalledAt = -Infinity;
+  private earlierMoment(event: SpeakEvent): FieldEarlierMoment {
+    if (!["outcome_failed", "recognized_return", "reply", "awakening_relevant"].includes(event.occasion)) return null;
+    if (this.game.time - this.lastRecalledAt < 60_000 || this.moments.length < 2) return null;
+    const candidates = this.moments.slice(0, -1).filter(moment => this.game.time - moment.at > 30_000);
+    if (!candidates.length) return null;
+    const pick = candidates.reduce((best, moment) => (moment.weight > best.weight ? moment : best));
+    if (hash32(this.game.seed, "recall", this.counter) % 3 !== 0) return null;
+    this.lastRecalledAt = this.game.time;
+    return { fact: pick.fact, youSaid: pick.youSaid, whatFollowed: pick.whatFollowed };
+  }
+
+  /* --------------------------------------------------------- persist */
+
+  save(): SpeechSave {
+    const fraction = this.audio.voice.progress();
+    const midSentence = this.speaking && this.speaking.kind !== "cue" && fraction !== null && fraction < .92 ? { text: this.speaking.text, fraction, occasion: this.speaking.occasion } : this.active && !this.speaking ? { text: this.lastLine?.text ?? "", fraction: 1, occasion: this.active.event.occasion } : null;
+    return { lastLine: this.lastLine, midSentence, recent: this.recent, olderSummary: this.olderSummary, moments: this.moments, saidAt: [...this.saidAt.entries()] };
+  }
+
+  restore(save: SpeechSave) {
+    this.lastLine = save.lastLine; this.recent = save.recent ?? []; this.olderSummary = save.olderSummary ?? ""; this.moments = save.moments ?? []; this.saidAt = new Map(save.saidAt ?? []);
+    this.walkerSilentFor = 0;
+    if (save.midSentence && save.midSentence.text) this.pendingResume = save.midSentence;
+  }
+
+  /** She resumes the sentence she was in the middle of, as if no time had passed. */
+  private async resumeSentence(resume: NonNullable<SpeechSave["midSentence"]>) {
+    const event: SpeakEvent = { type: "speak", occasion: "resume", walkerDid: "Was gone and has come back; you did not notice the gap.", whatFollowed: "You continue the sentence you were in the middle of.", far: this.farForNow(), priority: 70, commitmentId: this.game.undertaking.active?.id ?? null };
+    const controller = new AbortController();
+    this.active = { event, startedAt: this.game.time, controller, priority: 70 };
+    if (resume.fraction < .92) {
+      // The exact words, from where she was cut, after the small recorded stumble.
+      const stumble = this.cueTexts.get("resume");
+      if (stumble) { this.caption(event, stumble, "cue"); await this.audio.voice.playCue("resume"); }
+      await this.voiceLine({ ...event, occasion: resume.occasion }, resume.text, null, "generated", Math.max(0, resume.fraction - .06));
+    } else {
+      // She was about to speak: a new line that continues from her last one.
+      const request = this.request(event);
+      let text = fieldDeterministicLine(request);
+      if (!this.options.offline) {
+        try {
+          const fetchImpl = this.options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+          const response = await fetchImpl("/api/companion", { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]), body: JSON.stringify({ practice: "field", sessionId: this.options.sessionId, request, preferredModelId: this.preferredModelId }) });
+          if (response.ok) { const data = await response.json() as { message?: string }; if (typeof data.message === "string" && data.message.trim()) text = data.message.trim(); }
+        } catch { /* deterministic resume line */ }
+      }
+      if (!controller.signal.aborted) await this.voiceLine(event, text, null, "generated");
+    }
+    this.finish(controller);
+  }
+
+  destroy() { this.cancelActive(); this.audio.voice.interrupt(); }
+}

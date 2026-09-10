@@ -1,0 +1,130 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { CHUNK, FieldGraph } from "../app/field/graph.ts";
+import { STRUCTURE_ANCHORS } from "../app/field/structure-anchors.ts";
+import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure } from "../app/field/structures.ts";
+
+const setup = seed => {
+  const graph = new FieldGraph(seed); graph.ensureAround([CHUNK / 2, CHUNK / 2], 1);
+  const structures = new StructureField(seed, graph.spawnNodeId);
+  structures.ensureAround(graph, graph.node(graph.spawnNodeId).position, 1000);
+  return { graph, structures };
+};
+
+const standingAt = (element, yawTo = null, speed = 0) => {
+  // Stand in front of the element and face it: put the walker a little away along -Z of the element, facing +Z.
+  const offset = yawTo ?? 0;
+  const position = [element.position[0] - Math.sin(offset) * 1.2, element.position[2] - Math.cos(offset) * 1.2];
+  return { position, yaw: Math.atan2(element.position[0] - position[0], element.position[2] - position[1]), speed };
+};
+
+test("every family has baked anchors with elements, a call anchor and a fragment anchor", () => {
+  for (const family of [...FAMILIES, "teaching"]) {
+    const baked = STRUCTURE_ANCHORS[`structure-${family}`];
+    assert.ok(baked, `${family} baked`);
+    const elements = baked.anchors.filter(anchor => /^element_\d\d$/.test(anchor.name));
+    assert.ok(elements.length >= 3, `${family} has at least three elements`);
+    assert.ok(baked.anchors.some(anchor => anchor.name === "call_anchor"), `${family} has a call anchor`);
+    assert.ok(baked.anchors.some(anchor => anchor.name === "fragment_anchor"), `${family} has a fragment anchor`);
+    for (const element of elements) assert.ok(["approach", "look", "listen"].includes(element.gesture), `${family} ${element.name} has a gesture`);
+  }
+  const teaching = STRUCTURE_ANCHORS["structure-teaching"].anchors.filter(anchor => /^element_/.test(anchor.name)).map(anchor => anchor.gesture);
+  assert.deepEqual(teaching, ["approach", "look", "listen"], "the teaching structure teaches the three gestures in order");
+});
+
+test("structures are placed deterministically from the seed and the teaching place always has one", () => {
+  const a = setup(6), b = setup(6);
+  assert.deepEqual(a.structures.all().map(item => item.id).sort(), b.structures.all().map(item => item.id).sort());
+  const teaching = a.structures.atNode(a.graph.spawnNodeId);
+  assert.equal(teaching.family, "teaching");
+  const count = a.structures.all().length;
+  assert.ok(count > 15 && count < 50, `roughly forty percent of eighty-one places hold a structure (${count})`);
+  for (const structure of a.structures.all()) {
+    const node = a.graph.node(structure.nodeId);
+    assert.deepEqual(structure.position, node.position);
+    for (const element of structure.elements) assert.ok(Math.hypot(element.position[0] - node.position[0], element.position[2] - node.position[1]) < 6, "elements stand at the place");
+  }
+});
+
+test("world anchors rotate with the structure's yaw", () => {
+  const { graph } = setup(3);
+  const node = graph.node(graph.spawnNodeId);
+  const structure = createStructure(3, node, "teaching");
+  const baked = STRUCTURE_ANCHORS["structure-teaching"].anchors.find(anchor => anchor.name === "element_01");
+  const radiusBaked = Math.hypot(baked.position[0], baked.position[2]);
+  const element = structure.elements[0];
+  const radiusWorld = Math.hypot(element.position[0] - node.position[0], element.position[2] - node.position[1]);
+  assert.ok(Math.abs(radiusBaked - radiusWorld) < 1e-6, "rotation preserves the distance from the centre");
+  assert.equal(element.position[1], baked.position[1], "height is unchanged");
+});
+
+test("approach wakes on contact; look and listen need sustained attention; completion clears the fog", () => {
+  const { structures, graph } = setup(3);
+  const structure = structures.atNode(graph.spawnNodeId);
+  const [approach, look, listen] = structure.elements;
+  const changes = [];
+  const run = (walker, seconds, now0) => { let now = now0; for (let i = 0; i < seconds * 30; i++) { now += 1000 / 30; changes.push(...structures.advance(walker, 1 / 30, now)); } return now; };
+
+  // Far away: nothing happens.
+  let now = run({ position: [structure.position[0] + ATTENTION_RANGE + 5, structure.position[1]], yaw: 0, speed: 1 }, 1, 0);
+  assert.equal(changes.length, 0);
+
+  // Approach: standing within reach wakes the element quickly.
+  now = run({ position: [approach.position[0], approach.position[2] - .8], yaw: 0, speed: 1.2 }, .5, now);
+  assert.ok(changes.some(change => change.type === "element_woke" && change.elementId === approach.id), "approach woke");
+  assert.equal(changes.find(change => change.type === "element_woke").remaining, 2);
+
+  // Look: facing the element while moving does not wake it instantly, but under a second of looking does.
+  const looker = standingAt(look, 0, 0);
+  now = run({ ...looker, yaw: looker.yaw + 1.2, speed: 0 }, 1.2, now);
+  assert.ok(!look.active, "looking elsewhere does not wake the look element");
+  now = run(looker, 1.2, now);
+  assert.ok(look.active, "looking at the element wakes it");
+
+  // Listen: needs stillness.
+  const listener = standingAt(listen, 0, 0);
+  now = run({ ...listener, speed: .6 }, 2, now);
+  assert.ok(!listen.active, "moving while facing the listen element does not wake it");
+  now = run(listener, 2, now);
+  assert.ok(listen.active, "being still and attending wakes the listen element");
+  const completed = changes.find(change => change.type === "completed");
+  assert.ok(completed, "waking every element completes the structure");
+  assert.equal(completed.structureId, structure.id);
+  assert.equal(structure.completedAt !== null, true);
+  assert.equal(structures.clearingAt(structure.position), 1);
+  assert.ok(structures.clearingAt([structure.position[0] + CLEARING_RADIUS / 2, structure.position[1]]) > .4);
+  assert.equal(structures.clearingAt([structure.position[0] + CLEARING_RADIUS + 1, structure.position[1]]), 0);
+  assert.equal(structures.clearings().length, 1);
+
+  // Replay: touching an awake approach element sounds it again after its delay.
+  const before = changes.length;
+  now = run({ position: [approach.position[0] + 3, approach.position[2]], yaw: 0, speed: 1 }, .5, now);
+  run({ position: [approach.position[0], approach.position[2] - .8], yaw: 0, speed: 1 }, .3, now);
+  assert.ok(changes.slice(before).some(change => change.type === "element_sounded" && change.elementId === approach.id), "an awake element sounds again when touched");
+});
+
+test("attention makes a phrase, not a chord: only one look or listen element is engaged at a time", () => {
+  const { structures, graph } = setup(3);
+  const structure = structures.atNode(graph.spawnNodeId);
+  const [, look, listen] = structure.elements;
+  // Stand between look and listen, facing look.
+  const mid = [(look.position[0] + listen.position[0]) / 2, (look.position[2] + listen.position[2]) / 2];
+  const walker = { position: [mid[0], mid[1] - 2], yaw: Math.atan2(look.position[0] - mid[0], look.position[2] - (mid[1] - 2)), speed: 0 };
+  for (let i = 0; i < 10; i++) structures.advance(walker, 1 / 30, i * 33);
+  assert.equal(structure.elements.filter(element => element.engaged && element.gesture !== "approach").length <= 1, true);
+});
+
+test("serialize and restore keep completion and element states", () => {
+  const { graph, structures } = setup(15);
+  const structure = structures.all().find(item => item.family !== "teaching");
+  structure.elements[0].active = true; structure.completedAt = 1234; structure.relevance = "objective_relevant";
+  const saved = JSON.parse(JSON.stringify(structures.serialize()));
+  const fresh = new StructureField(15, graph.spawnNodeId);
+  fresh.restore(graph, saved);
+  const restored = fresh.get(structure.id);
+  assert.equal(restored.completedAt, 1234);
+  assert.equal(restored.relevance, "objective_relevant");
+  assert.equal(restored.elements[0].active, true);
+  assert.equal(restored.elements[1].active, false);
+  assert.equal(fresh.all().length, structures.all().length, "every decided structure is back");
+});

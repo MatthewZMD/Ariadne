@@ -39,10 +39,10 @@ test("the mix is explicitly calibrated beneath Ariadne's measured voice referenc
   assert.ok(INTERACTION_BUS_RELATIVE_TO_ARIADNE_DB>AMBIENT_BUS_RELATIVE_TO_ARIADNE_DB);
 });
 
-test("MT's physical interactions trigger distinct spatial effects",async()=>{
-  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/page.tsx",import.meta.url),"utf8"));
-  for(const kind of ["wake","complete","star_response","star_collect","collision"])assert.ok(source.includes(`"${kind}"`),`missing ${kind} interaction`);
-  assert.match(source,/playInteraction/);assert.match(source,/element\?\.position/);assert.match(source,/active\.cell/);assert.match(source,/elements\.filter\(item=>item\.active\)\.length/);
+test("the walker's physical interactions trigger distinct spatial effects in the field",async()=>{
+  const source=await import("node:fs/promises").then(fs=>fs.readFile(new URL("../app/field/audio.ts",import.meta.url),"utf8"));
+  for(const kind of ["footstep","element_woke","element_sounded","structure_completed"])assert.ok(source.includes(`case "${kind}"`),`missing ${kind} handling`);
+  assert.match(source,/panningModel = "HRTF"/);assert.match(source,/event\.position\)/);assert.match(source,/-element-0\$\{index\}/);assert.match(source,/-completion`/);
 });
 
 test("interaction feedback uses short authored retro-game synth patterns",()=>{
@@ -53,16 +53,15 @@ test("interaction feedback uses short authored retro-game synth patterns",()=>{
   assert.ok(RETRO_INTERACTION_PATTERNS.material.volume<RETRO_INTERACTION_PATTERNS.wake.volume,"playing awakened material should not sound like another reward fanfare");
 });
 
-test("pause suspends voice and soundscape transports instead of discarding playback",async()=>{
-  const [page,soundscape,voice]=await Promise.all(["../app/page.tsx","../app/ambient-sound.ts","../app/ariadne-voice.ts"].map(path=>import("node:fs/promises").then(fs=>fs.readFile(new URL(path,import.meta.url),"utf8"))));
-  assert.match(page,/ariadneVoiceRef\.current\?\.pause\(\)/);assert.match(page,/ambientSoundscapeRef\.current\?\.pause\(\)/);
-  assert.match(soundscape,/context\?\.suspend\(\)/);assert.match(soundscape,/if\(!context\|\|!master\|\|!interactionBus\|\|!unlocked\|\|paused\)return/);
-  assert.match(voice,/audioContext\?\.suspend\(\)/);assert.match(voice,/resumeWaiters/);
+test("pause suspends the field's one audio transport instead of discarding playback",async()=>{
+  const [page,audio]=await Promise.all(["../app/field-page.tsx","../app/field/audio.ts"].map(path=>import("node:fs/promises").then(fs=>fs.readFile(new URL(path,import.meta.url),"utf8"))));
+  assert.match(page,/audioRef\.current\?\.pause\(\)/);assert.match(page,/audioRef\.current\?\.resume\(\)/);
+  assert.match(audio,/pause\(\) \{ paused = true; void context\?\.suspend\(\); \}/);assert.match(audio,/resume\(\) \{ paused = false; void context\?\.resume\(\); \}/);
 });
 
-test("the pause menu owns one master switch for voice and world audio",async()=>{
-  const [opening,page,soundscape,voice]=await Promise.all(["../app/opening.tsx","../app/page.tsx","../app/ambient-sound.ts","../app/ariadne-voice.ts"].map(path=>import("node:fs/promises").then(fs=>fs.readFile(new URL(path,import.meta.url),"utf8"))));
-  assert.match(opening,/>VOLUME</);assert.match(opening,/type="range"/);assert.match(opening,/>GIVE UP</);assert.doesNotMatch(opening,/>LEAVE</);
-  assert.match(page,/setMasterVolume/);assert.match(page,/setMasterVolume\(masterVolume\)/);
-  assert.match(soundscape,/masterVolume=1/);assert.match(voice,/masterVolume=1/);
+test("the pause menu owns one master switch for voice and world audio, and never offers giving up",async()=>{
+  const [page,audio]=await Promise.all(["../app/field-page.tsx","../app/field/audio.ts"].map(path=>import("node:fs/promises").then(fs=>fs.readFile(new URL(path,import.meta.url),"utf8"))));
+  assert.match(page,/type="range"/);assert.match(page,/setMasterVolume\(Number\(event\.target\.value\)\)/);assert.match(page,/audioRef\.current\?\.setMasterVolume\(masterVolume\)/);
+  assert.doesNotMatch(page,/GIVE UP|give up/i,"stopping is unmarked: there is no ending to trigger");
+  assert.match(audio,/let masterVolume = 1/);assert.match(audio,/voiceBus\.connect\(master\)/);
 });
