@@ -13,7 +13,7 @@ import type { FieldBody, FieldNear, FieldOccasion, FieldPhase, RelativeDirection
 import { FieldGraph, NODE_RADIUS, OFF_WAY_DISTANCE, WAY_HALF_WIDTH, bearingTo, distance, forwardOf, relativeDirection, rightOf, unit, wrapAngle, type FieldNode, type FieldWay, type Vec2, type WayMarkerKind } from "./graph.ts";
 import { STRUCTURE_ANCHORS } from "./structure-anchors.ts";
 import { CLEARING_RADIUS, StructureField, modelIdFor, rotateY, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily } from "./structures.ts";
-import { CALL_FAINT_RANGE, CALL_RANGE, beginCall, callAudibility, commitAt, createUndertaking, resolveCommitment, takeUp, type Commitment, type Undertaking } from "./undertaking.ts";
+import { CALL_FAINT_RANGE, CALL_RANGE, beginCall, callAudibility, commitAt, createUndertaking, resolveCommitment, stageRun, takeUp, type Commitment, type StageRun, type Undertaking } from "./undertaking.ts";
 import { WorldMemory, ownFootprintsVisible, type MemorySnapshot } from "./memory.ts";
 import { beginCelebration, beginExamining, beginRepair, createAriadneBody, describeBody, hoverBeside, leadAlong, presenceOf, stopExamining, takeFragment, updateAriadne, walkerMarkerIndex, type AriadneBody } from "./ariadne.ts";
 
@@ -114,6 +114,8 @@ export type FieldSave = {
   teachingTakenUp: boolean;
   structuresAnnounced: string[];
   terminusSpokenFor: string | null;
+  /** Arrivals at places already stood at since the current call began; older saves have none. */
+  returnsThisStage?: number;
 };
 
 const GESTURE_PHRASE: Record<Gesture, string> = { approach: "come close enough to touch it", look: "look at it steadily for a moment", listen: "stand still beside it and listen" };
@@ -169,6 +171,7 @@ export class FieldGame {
   private lastPromptAt = -Infinity;
   private lastReturnSpokenAt = -Infinity;
   private lastWakeAt = -Infinity;
+  private returnsThisStage = 0;
   private examining: string | null = null;
   private attention = { lookingToward: null as string | null, approaching: null as string | null, movingAwayFrom: null as string | null, pausedNear: null as string | null, still: false, lookingAtHer: false };
   private previousStructureDistance: number | null = null;
@@ -204,6 +207,20 @@ export class FieldGame {
     const teaching = this.teachingStructure; return teaching && teaching.completedAt === null ? teaching : null;
   }
   get walkerPose() { return { position: this.walker.position, yaw: this.walker.yaw, speed: this.walker.speed }; }
+  /** The run toward the current call, as both of them could count it. */
+  run(): StageRun { return stageRun(this.undertaking, this.returnsThisStage); }
+  /**
+   * When the walker stands at (or is arriving at) `nodeId` by a way they chose over hers, the way they took and the way she had
+   * chosen; otherwise null. Her card needs this so that she can praise their finding as theirs, and as the two of them working well.
+   */
+  arrivedByOwnChoice(nodeId: string): { took: FieldWay; hers: FieldWay } | null {
+    const last = this.undertaking.history.at(-1);
+    if (!last || last.taken !== "declined" || !last.declinedFor) return null;
+    const took = this.graph.way(last.declinedFor), hers = this.graph.way(last.wayId);
+    if (!took || !hers || this.graph.otherEnd(took, last.nodeId) !== nodeId) return null;
+    const here = this.currentNodeId === nodeId || (this.currentNodeId === null && this.arrivedByWayId === took.id);
+    return here ? { took, hers } : null;
+  }
 
   /** Take the events emitted since the last drain. */
   drain() { const events = this.events; this.events = []; return events; }
@@ -313,6 +330,7 @@ export class FieldGame {
   private enterNode(node: FieldNode, now: number) {
     const { returning } = this.memory.visit(node.id, now);
     const arrivedBy = node.ways.includes(this.arrivedByWayId ?? "") ? this.arrivedByWayId : node.ways.length === 1 ? node.ways[0]! : null;
+    if (returning && node.id !== this.lastNodeId) this.returnsThisStage++;
     this.events.push({ type: "node_entered", nodeId: node.id, returning: returning && node.id !== this.lastNodeId });
     const cameBack = node.id === this.lastNodeId;
     this.lastNodeId = node.id;
@@ -330,9 +348,9 @@ export class FieldGame {
       const farEnd = way ? this.graph.otherEnd(way, active.nodeId) : null;
       if (node.id === farEnd) {
         if (active.taken === "pending") this.undertaking = takeUp(this.undertaking, true, null);
-        this.undertaking = resolveCommitment(this.undertaking, "quiet");
         // Her way, walked to its end, with nothing here and nothing to hear: the plainest kind of failure the field offers.
         if (way && !this.structures.atNode(node.id) && this.call.audibility === "none") quietArrival = way.marker;
+        this.undertaking = resolveCommitment(this.undertaking, quietArrival ? "nothing" : "quiet");
       }
       else { if (active.taken === "pending") this.undertaking = takeUp(this.undertaking, false, arrivedBy); this.undertaking = resolveCommitment(this.undertaking, "quiet"); }
     }
@@ -585,7 +603,9 @@ export class FieldGame {
         this.structuresAnnounced.add(structure.id);
         const bearing = bearingTo(this.walker.position, this.walker.yaw, structure.position);
         const who = structure.family === "teaching" ? "the first sleeping structure" : `a sleeping ${structure.family} structure`;
-        this.speak("structure_found", `Came within sight of ${who}, ${describeWhere(dirWord(bearing))}.`, `Its first sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 70, null);
+        const own = this.arrivedByOwnChoice(structure.nodeId);
+        const byTheirWay = own ? ` They came this way along the ${own.took.marker}, a way they chose instead of the ${own.hers.marker} you had chosen; yours did not lead here.` : "";
+        this.speak("structure_found", `Came within sight of ${who}, ${describeWhere(dirWord(bearing))}.${byTheirWay}`, `Its first sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 70, null);
         this.lastPromptAt = now;
       } else if (next && asleep.length < structure.elements.length && now - this.lastWakeAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && distance(structure.position, this.walker.position) < 8) {
         this.lastPromptAt = now;
@@ -603,8 +623,12 @@ export class FieldGame {
     this.events.push({ type: "fragment", family: structure.family, from: structure.fragmentPosition });
     const node = this.graph.node(structure.nodeId)!;
     const relevant = structure.id === this.undertaking.objectiveStructureId || (this.undertaking.stage === 0 && structure.nodeId === this.teachingNodeId);
+    // Whether they reached this structure by a way they chose over hers: decided before the call moves on and the history closes.
+    const own = this.arrivedByOwnChoice(structure.nodeId);
+    const found = own ? ` They reached it along the ${own.took.marker}, the way they chose instead of the ${own.hers.marker} you had chosen; ${relevant ? "this was the structure that was calling, and they found it without you" : "your way did not lead here"}.` : "";
     if (relevant) {
       this.undertaking = beginCall(this.undertaking, this.graph, this.structures, structure.nodeId, this.seed, now);
+      this.returnsThisStage = 0;
       this.events.push({ type: "stage_advanced", stage: this.undertaking.stage });
       this.updateCall(now);
     }
@@ -629,8 +653,8 @@ export class FieldGame {
       this.pendingLead = { wayId: way.id, fromNodeId: node.id, at: now + 3400 };
       next = ` Your body is about to go back along the ${way.marker}.`;
     }
-    if (relevant) this.speak("awakening_relevant", "Woke the last sleeping part of the structure.", `Every part is awake. A clearing opened here and will stay. A fragment came to you. Beyond the fog, a new call.${next}`, far, 95, commitmentId);
-    else this.speak("awakening_proxy", "Woke the last sleeping part of the structure.", `Every part is awake. A clearing opened here and will stay. A fragment came to you. No new call; the one you were following is unchanged.${next}`, far ?? this.farForNow(), 95, commitmentId);
+    if (relevant) this.speak("awakening_relevant", `Woke the last sleeping part of the structure.${found}`, `Every part is awake. A clearing opened here and will stay. A fragment came to you. Beyond the fog, a new call.${next}`, far, 95, commitmentId);
+    else this.speak("awakening_proxy", `Woke the last sleeping part of the structure.${found}`, `Every part is awake. A clearing opened here and will stay. A fragment came to you. No new call; the one you were following is unchanged.${next}`, far ?? this.farForNow(), 95, commitmentId);
   }
 
   /** The far hearing she currently holds: the way of her open commitment, if any. */
@@ -731,6 +755,7 @@ export class FieldGame {
       ariadne: this.ariadne ? { fragments: this.ariadne.fragments, committedWayId: this.ariadne.committedWayId, committedFromNodeId: this.ariadne.committedFromNodeId } : null,
       lastNodeId: this.lastNodeId, arrivedByWayId: this.arrivedByWayId, openingSpoken: this.openingSpoken, teachingTakenUp: this.teachingTakenUp,
       structuresAnnounced: [...this.structuresAnnounced], terminusSpokenFor: this.terminusSpokenFor,
+      returnsThisStage: this.returnsThisStage,
     };
   }
 
@@ -747,6 +772,7 @@ export class FieldGame {
     game.lastNodeId = save.lastNodeId; game.arrivedByWayId = save.arrivedByWayId;
     game.openingSpoken = save.openingSpoken; game.teachingTakenUp = save.teachingTakenUp;
     game.structuresAnnounced = new Set(save.structuresAnnounced); game.terminusSpokenFor = save.terminusSpokenFor;
+    game.returnsThisStage = save.returnsThisStage ?? 0;
     game.currentNodeId = game.graph.nodeAt(game.walker.position)?.id ?? null;
     if (save.ariadne) {
       game.ariadne = createAriadneBody(game.walkerPose, game.time, false);

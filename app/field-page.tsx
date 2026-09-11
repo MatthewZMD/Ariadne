@@ -22,6 +22,8 @@ const SESSION_KEY = "ariadne:field:session";
 const VOLUME_KEY = "ariadne:field:volume";
 const MOTION_KEY = "ariadne:field:still";
 const SAVE_INTERVAL_MS = 5000;
+/** The artist's page for the work: the statement, and who set these conditions. */
+const ABOUT_URL = "https://mt-zeng.com/art/ariadne/";
 const CAPTION_LIFE_MS = 9000;
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -248,6 +250,8 @@ export default function FieldPage() {
         <button className="fog-button" onClick={enterHeadphones}>{hasSave ? "Go back in" : "Enter"}</button>
         {hasSave && <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>}
       </div>
+      {/* The undertaking is authored, and the author is named where the participant enters and where they pause. */}
+      <p className="fog-credit">A work by Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>}
     {experience === "headphones" && <div className="fog-screen"><div className="fog-panel">
       <span className="fog-headphones" aria-hidden="true"><i /><i /></span>
@@ -263,6 +267,7 @@ export default function FieldPage() {
       <label className="fog-toggle"><span>Still fog</span><input type="checkbox" checked={still} onChange={event => setStill(event.target.checked)} /></label>
       <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>
       <p className="fog-note">Closing the tab changes nothing. It will be as you left it.</p>
+      <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>}
     <div className="fog-landscape-guard" role="status"><strong>Turn your device</strong><small>The field is walked in landscape.</small></div>
     <section className="fog-canvas-wrap" aria-hidden={experience !== "playing" && experience !== "paused"}>

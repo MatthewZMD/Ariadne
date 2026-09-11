@@ -152,6 +152,10 @@ test("plans vary by occasion and phase without ever forcing an affirmation early
   const late = Array.from({ length: 40 }, (_, seed) => planFor("declined", "overbearing", seed, null));
   assert.ok(late.some(plan => plan.affirmation), "late in the arc, stock affirmations appear");
   assert.ok(late.every(plan => !plan.affirmation || plan.sentenceCount === 2), "an affirmation makes room for a second sentence");
+  const reunions = Array.from({ length: 60 }, (_, seed) => planFor("recognized_return", "overbearing", seed, null, undefined, true).affirmation).filter(Boolean);
+  assert.ok(reunions.length > 0 && reunions.every(text => ["There you are.", "Good, we're together again.", "I'm so glad you're here."].includes(text)), "a return the walker made may get a reunion");
+  assert.ok(Array.from({ length: 60 }, (_, seed) => planFor("recognized_return", "overbearing", seed, null, undefined, false).affirmation).every(text => text === null), "a circle she led them in gets no reunion");
+  assert.equal(planFor("commitment", "overbearing", 1, null, { waysChosen: 4, walked: 4, arrivedAtNothing: 3, faded: 0, ended: 0, declined: 0, returns: 0 }).length, "full", "a line that must carry the count has room");
   assert.equal(planFor("taken_up", "attached", 1, null).length, "bark");
   assert.equal(planFor("outcome_failed", "attached", 1, null).length, "full");
   assert.equal(summarize([{ role: "ariadne", text: "Come on." }, { role: "walker", text: "Where?" }], ""), "Ariadne said: “Come on.”\nThe walker said: “Where?”");
@@ -215,4 +219,22 @@ test("when a line is slow, a recorded cue covers the wait; when a way fades, the
   await new Promise(resolve => setTimeout(resolve, 2900));
   for (let i = 0; i < 40; i++) { await tick(); speech.update(); if (!speech.isBusy) break; }
   assert.match(audio.calls.spoken.at(-1).text, /went quiet/);
+});
+
+test("a deterministic line that says something the cue did not is voiced after the cue; one that repeats the cue is not", async () => {
+  const game = new FieldGame(11);
+  const audio = fakeAudio();
+  const failing = async url => {
+    if (String(url).endsWith("cues.json")) return { ok: true, json: async () => ({ assets: [{ id: "been-here", text: "We’ve been here." }, { id: "come-with-you", text: "I’ll come with you." }] }) };
+    throw new Error("offline");
+  };
+  const speech = new FieldSpeech(game, audio, { sessionId: "s11", fetchImpl: failing });
+  await tick(); run(game, 8);
+  const node = game.graph.node(game.teachingNodeId);
+  game.undertaking = { ...game.undertaking, active: { id: "commitment:4", nodeId: node.id, wayId: node.ways[0], stage: 1, correct: true, madeAt: game.time, taken: "pending", declinedFor: null, outcome: "pending" } };
+  speech.handle({ type: "speak", occasion: "recognized_return", walkerDid: "Arrived again at a place the two of you have stood before; their own footprints are on the ground.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:4" });
+  await settle(speech);
+  assert.deepEqual(audio.calls.cues, ["been-here"], "the recorded reaction comes first");
+  assert.equal(audio.calls.spoken.at(-1)?.text, "Those are your footprints. So it isn't that way. Fewer left.", "her body chose a way; her words follow the cue and do not repeat it");
+  assert.equal(game.memory.captions.at(-1).kind, "generated");
 });

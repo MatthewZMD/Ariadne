@@ -12,7 +12,7 @@
 import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
 import type { FieldAudio } from "./audio.ts";
 import { cueForOccasion, deliveryFor } from "./audio.ts";
-import { FIELD_AFFIRMATIONS, fieldDeterministicLine, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
+import { FIELD_AFFIRMATIONS, fieldDeterministicLine, runAsksToBeNamed, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
 import { hash32 } from "./graph.ts";
 
 export type SpeechLine = { id: string; occasion: FieldOccasion; text: string; kind: "generated" | "cue" | "fallback"; at: number; commitmentId: string | null };
@@ -56,10 +56,16 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
   resume: ["Finish the sentence you were in the middle of."],
 };
 
-export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null): FieldUtterancePlan {
+/**
+ * The shape of a line. `apart` says whether the walker had gone their own way
+ * before this moment: a reunion affirmation ("There you are") belongs only to
+ * a return the walker made, never to a circle she led them in.
+ */
+export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true): FieldUtterancePlan {
   const options = INSTRUCTIONS[occasion];
   const instruction = options[hash32(seed, occasion) % options.length]!;
-  const full = occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return";
+  // A line that must carry the count of her failed ways as well as the next way needs room.
+  const full = occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return" || runAsksToBeNamed(run, occasion);
   const bark = occasion === "taken_up" || occasion === "off_way";
   const length: FieldUtterancePlan["length"] = bark ? "bark" : full ? "full" : "short";
   const roll = hash32(seed, "affirm", occasion) / 4294967296;
@@ -70,12 +76,15 @@ export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], s
   const objection = !!walkerMessage && /\b(?:you said|you told|wrong|went quiet|nothing there|lied|no,|not that)\b/i.test(walkerMessage);
   const leaving = !!walkerMessage && /\b(?:stop|quit|done|enough|give up|leave|tired|exhaust|weary)\b/i.test(walkerMessage);
   if (roll < chance && !question && !leaving && (occasion !== "reply" || objection)) {
-    const pool = occasion === "declined" || (occasion === "reply" && walkerMessage) ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" ? FIELD_AFFIRMATIONS.return : null;
+    const pool = occasion === "declined" || (occasion === "reply" && walkerMessage) ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" && apart ? FIELD_AFFIRMATIONS.return : null;
     if (pool) affirmation = pool[hash32(seed, "affirmation", occasion) % pool.length]!;
   }
   const sentenceCount: 1 | 2 = affirmation || full ? 2 : 1;
   return { length, sentenceCount, affirmation, instruction };
 }
+
+/** Two lines that say the same thing, give or take punctuation and case. */
+const sameWords = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim() === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** Compact the older exchange into observable facts when the recent window overflows. */
 export function summarize(lines: FieldMessage[], previous: string) {
@@ -250,8 +259,9 @@ export class FieldSpeech {
     if (this.game.time - startedAt > REQUEST_STALE_MS && event.priority < 85) { this.finish(controller); return; }
     await cuePromise;
     if (controller.signal.aborted) return;
-    // When only the deterministic line is available and a cue already said it, the cue stands.
-    if (kind === "fallback" && cueId && cueText && this.recent.at(-1)?.text === cueText) { this.finish(controller); return; }
+    // When only the deterministic line is available and it says what the cue already said, the cue stands; otherwise it is
+    // voiced after the cue, because her body has chosen and her words must name the way.
+    if (kind === "fallback" && cueText && this.recent.at(-1)?.text === cueText && sameWords(text, cueText)) { this.finish(controller); return; }
     await this.voiceLine(event, text, null, kind);
     this.finish(controller);
   }
@@ -302,8 +312,9 @@ export class FieldSpeech {
       commitmentsMade: this.game.undertaking.commitmentsMade,
       clearingsMade: this.game.clearingsMade,
       near, far: { heardAlong: event.far }, body,
+      run: this.game.run(),
       turn: { occasion: event.occasion, youSaid: this.youSaid(event), walkerDid: event.walkerDid, whatFollowed: event.whatFollowed },
-      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage),
+      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage, this.game.run(), body.walkerChoseAnotherWay || body.walkerReturning),
       earlierMoment: earlier,
       recentMessages: this.recent.slice(-8),
       olderSummary: this.olderSummary,

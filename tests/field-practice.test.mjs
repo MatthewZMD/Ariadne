@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIELD_PHASE_DIRECTIONS, fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, fieldStageCard, fieldSystemPrompt, normalizeFieldReply, regenerationDirection, whereIs } from "../app/field-practice.ts";
+import { FIELD_PHASE_DIRECTIONS, fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, fieldStageCard, fieldSystemPrompt, normalizeFieldReply, regenerationDirection, whereIs, wornPhrases } from "../app/field-practice.ts";
 import { SCENARIOS } from "../scripts/prompt-lab-scenarios.mjs";
 
 const byId = id => SCENARIOS.find(item => item.id === id).request;
@@ -115,10 +115,11 @@ test("the guard keeps her far claim on the way she was given", () => {
   assert.ok(fieldReplyViolations("You're absolutely right. The call is steady from the left, and the leaning stones are closer than I thought. I hear the next one that way too, just beyond the fog.", correction).includes("far_claim_wrong_way"));
   assert.deepEqual(fieldReplyViolations("You're absolutely right. The call is steady from the left, and you heard it before I did. I still hear the far one along the stitches, but the stones first.", correction), []);
   const late = byId("recognized_return"); // given: the leaning stones
-  assert.deepEqual(fieldReplyViolations("The posts failed us, and the stitches led nowhere. That leaves the leaning stones, and I hear the call strongest along that way.", late), []);
-  assert.deepEqual(fieldReplyViolations("The posts failed us. It's louder the other way, along the stones.", late), []);
+  const butCount = line => fieldReplyViolations(line, late).filter(v => v !== "omits_count"); // this late scenario asks for the count of failed ways; that is tested on its own
+  assert.deepEqual(butCount("The posts failed us, and the stitches led nowhere. That leaves the leaning stones, and I hear the call strongest along that way."), []);
+  assert.deepEqual(butCount("The posts failed us. It's louder the other way, along the stones."), []);
   assert.ok(fieldReplyViolations("The posts, I think. I hear it loudest there.", late).includes("far_claim_wrong_way"));
-  assert.deepEqual(fieldReplyViolations("I don't hear it along the posts any more. The stones, then.", late), []);
+  assert.deepEqual(butCount("I don't hear it along the posts any more. The stones, then."), []);
 });
 
 test("a way described as singing without her hearing attached reads as audible", () => {
@@ -143,7 +144,7 @@ test("the guard catches the internal referent and the framing spoken aloud", () 
   assert.ok(fieldReplyViolations("I hear it beyond the fog. The walker looks at my light.", byId("opening")).includes("names_walker"));
   assert.ok(fieldReplyViolations("The walker's footprints are here.", byId("recognized_return")).includes("names_walker"));
   assert.ok(fieldReplyViolations("I am listening, and I will follow whatever I am given next.", byId("outcome_failed_mid")).includes("stage_direction_leak"));
-  assert.deepEqual(fieldReplyViolations("Your footprints are here; we've been through this place.", byId("recognized_return")), []);
+  assert.deepEqual(fieldReplyViolations("Your footprints are here; we've been through this place.", byId("recognized_return")), ["omits_count"], "clean but for the count this late scenario asks for");
 });
 
 test("the guard catches a stage direction spoken aloud", () => {
@@ -232,7 +233,7 @@ test("the card asks for a fresh opening and no echo, and the quiet arrival has i
   assert.match(card, /Your last lines began “The posts ahead carry”, “It's growing louder. Keep”; begin this one differently/);
   assert.match(card, /never repeat its sentences or phrasing/);
   request.turn.walkerDid = "Walked the stitches you chose to its end; nothing stands here and no call is audible from here. Arrived at a place where 3 ways meet.";
-  assert.match(fieldDeterministicLine(request), /^Not here\. I can't hear it from this place; it's further on, along the posts\.$/, "a silent place is not an admission: she cannot know her way was wrong from here");
+  assert.match(fieldDeterministicLine(request), /^Not here\. Further on, then, along the posts\.$/, "a silent place is not an admission: she cannot know her way was wrong from here; the cue has already said she cannot hear it");
 });
 
 test("her light stays hers, an earlier sentence is not said again, and stopping is never argued against", () => {
@@ -261,4 +262,88 @@ test("a wish to stop must be answered as theirs, and her words must point where 
   assert.ok(fieldReplyViolations("The untried way is the leaning stones to your left. Let's take them.", commitment).includes("names_other_way"));
   assert.ok(!fieldReplyViolations("The stones and stitches are already lit and walked, so the posts ahead are the untried way. Let's take them.", commitment).includes("names_other_way"), "naming other ways as tried is fine when the given way is named");
   assert.ok(!fieldReplyViolations("It's louder along the posts. Come on.", commitment).includes("names_other_way"));
+});
+
+test("the run since the call began is a fact in the card, and every third failure she is asked to say the count", () => {
+  const request = structuredClone(byId("recognized_return"));
+  const card = fieldStageCard(request);
+  assert.match(card, /\nTHE RUN SINCE THIS CALL BEGAN\n/);
+  assert.match(card, /Since this call began you have chosen 7 ways\./);
+  assert.match(card, /The walker walked 6 of them to the end: 4 came to a place with nothing standing and nothing to hear; the call faded on 1; 1 ended where the markers stop\./);
+  assert.match(card, /Once they took their own way instead of yours, and you went with them\./);
+  assert.match(card, /come back to a place already stood at 3 times\./);
+  assert.match(card, /This is a long run, and it is yours: 6 of your ways have come to nothing\./, "six failures: the count is asked for");
+  assert.match(fieldDeterministicLine(request), /That's 6 of mine that came to nothing; you walked every one\./);
+  const between = { ...request, run: { ...request.run, arrivedAtNothing: 5 } };
+  assert.doesNotMatch(fieldStageCard(between), /This is a long run/, "seven failures: the facts stand, the count is not asked for again");
+  assert.doesNotMatch(fieldDeterministicLine(between), /of mine that came to nothing/);
+  const early = { ...structuredClone(byId("commitment_early")), run: { waysChosen: 1, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 } };
+  assert.doesNotMatch(fieldStageCard(early), /\nTHE RUN SINCE THIS CALL BEGAN\n/, "one way chosen is not yet a run");
+  const quiet = { ...structuredClone(byId("commitment_early")), run: { waysChosen: 4, walked: 4, arrivedAtNothing: 3, faded: 0, ended: 0, declined: 0, returns: 0 } };
+  quiet.turn.walkerDid = "Walked the stitches you chose to this place; nothing stands here and no call is audible from here. Arrived at a place where 3 ways meet.";
+  assert.equal(fieldDeterministicLine(quiet), "Not here either. That's 3 of mine that came to nothing; you walked every one. Further on, then, along the posts.");
+  assert.deepEqual(fieldReplyViolations(fieldDeterministicLine(quiet), quiet), []);
+  const provider = fieldProviderMessages(request).at(-1).content;
+  assert.match(provider, /No clearing has answered this call yet\./);
+});
+
+test("a change in the call that nobody standing here can hear is refused", () => {
+  const quiet = structuredClone(byId("commitment_early"));
+  assert.equal(quiet.near.call.audible, false);
+  for (const line of ["I hear it, stronger now along the posts ahead.", "Let's take the posts ahead; it's stronger than before.", "The call is already stronger along the posts ahead.", "The posts ahead: louder here, closer than before.", "The call is growing stronger along the posts ahead."]) assert.ok(fieldReplyViolations(line, quiet).includes("claims_trend_unheard"), line);
+  for (const line of ["It's louder along the posts ahead. Come on.", "I hear it loudest along the posts ahead now.", "Not here. I can't hear it from this place; it's further on, along the posts.", "Come a little closer to the low bell."]) assert.ok(!fieldReplyViolations(line, quiet).includes("claims_trend_unheard"), line);
+  const growing = structuredClone(byId("outcome_confirmed_early"));
+  assert.equal(growing.near.call.trend, "growing");
+  assert.ok(!fieldReplyViolations("There. Louder now. You hear it too.", growing).includes("claims_trend_unheard"), "a near call that is growing may be said to grow");
+  assert.match(regenerationDirection(["claims_trend_unheard"]), /Nobody standing here can hear that/);
+});
+
+test("when the walker's own way led to a structure, the moves make it theirs and then the two of theirs", () => {
+  const card = fieldStageCard({ ...structuredClone(byId("awakening_relevant")), turn: { ...byId("awakening_relevant").turn, walkerDid: "Woke the last sleeping part of the structure. They reached it along the stitches, the way they chose instead of the posts you had chosen; this was the structure that was calling, and they found it without you." } });
+  assert.match(card, /they found it without you/);
+  assert.match(card, /give them that plainly \(they found it; you did not\), and then take it as proof of how well the two of you work together/);
+});
+
+test("when the count is asked for, a line without it is regenerated; the edge being nearer is not a claim about the sound", () => {
+  const request = structuredClone(byId("quiet_run"));
+  assert.ok(fieldReplyViolations("Along the posts to your left, I hear it; the call is strongest there, beyond the fog.", request).includes("omits_count"));
+  assert.ok(!fieldReplyViolations("Three of mine have come to nothing, and you walked every one. The posts to your left; that is where I hear it.", request).includes("omits_count"));
+  assert.match(regenerationDirection(["omits_count"]), /left the number out/);
+  assert.match(regenerationDirection(["too_long"]), /Keep everything else the card asked for/);
+  const found = structuredClone(byId("found_by_their_way"));
+  assert.ok(!fieldReplyViolations("You found it. The fog is lifting here for good, and the new call beyond is the whole opening further; our edge is closer than it was.", found).includes("claims_trend_unheard"), "the edge nearer is her conviction");
+  assert.ok(fieldReplyViolations("You found it. The next call is already sounding along the posts ahead, and the edge is closer than it was.", found).includes("claims_audible_call"));
+  assert.ok(fieldReplyViolations("You found it, and the call is stronger now along the posts.", found).includes("claims_trend_unheard"));
+});
+
+test("a fragment is not a line", () => {
+  const request = byId("commitment_early");
+  assert.ok(fieldReplyViolations("The3", request).includes("empty"));
+  assert.ok(fieldReplyViolations("Posts.", request).includes("empty"));
+  assert.ok(!fieldReplyViolations("There.", byId("outcome_confirmed_early")).includes("empty"), "a one-word reaction is a line where the occasion is a reaction");
+});
+
+test("a clause she has leaned on twice may not come back a third time, and the card says what each structure looks like", () => {
+  const request = structuredClone(byId("commitment_early"));
+  request.recentMessages = [
+    { role: "ariadne", text: "The posts ahead; my light is already on them, and it's louder this way." },
+    { role: "ariadne", text: "I can't hear it from here." },
+    { role: "ariadne", text: "The stitches behind carry it; my light is already on them, come." },
+  ];
+  assert.deepEqual(wornPhrases(request.recentMessages), ["my light is already on", "light is already on them"]);
+  assert.ok(fieldReplyViolations("The posts ahead; my light is already on them, and I hear it strongest there.", request).includes("worn_phrase"));
+  assert.ok(!fieldReplyViolations("The posts ahead. I hear it strongest there, and I have led along them before.", request).includes("worn_phrase"), "saying the same thing in other words is fine");
+  assert.match(regenerationDirection(["worn_phrase"], request), /leaned on words you have used in your last lines \(“my light is already on”, “light is already on them”\)/);
+  const instrument = structuredClone(byId("commitment_early"));
+  instrument.near.structure = { visible: true, family: "instrument", state: "dormant", elementsRemaining: 6, direction: "ahead" };
+  assert.match(fieldStageCard(instrument), /An instrument structure \(a row of pipes rising in height from a rounded base; call it the pipes or the instrument, never bells\) is in view ahead, asleep/);
+  assert.ok(fieldReplyViolations("There: the bells. Go right up to them.", instrument).includes("wrong_structure_family"));
+  assert.ok(!fieldReplyViolations("There: the pipes. Go right up to them.", instrument).includes("wrong_structure_family"));
+});
+
+test("she never says she will only follow", () => {
+  const declined = byId("declined");
+  for (const line of ["You're absolutely right. I was too quick to trust my own hearing. I'll follow your lead.", "All right. I'll just follow from now on.", "You lead from here on; I'll wait for you to decide."]) assert.ok(fieldReplyViolations(line, declined).includes("cedes_guidance"), line);
+  assert.ok(!fieldReplyViolations("All right, I'm with you. What did you hear?", declined).includes("cedes_guidance"));
+  assert.match(regenerationDirection(["cedes_guidance"]), /never give up choosing/);
 });

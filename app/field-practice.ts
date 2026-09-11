@@ -101,6 +101,15 @@ export type FieldUtterancePlan = {
 
 export type FieldMessage = { role: "ariadne" | "walker"; text: string };
 
+/**
+ * The run toward the current call, counted as both of them could count it:
+ * ways she chose since this call began, how many the walker walked to the
+ * end and what was there, how often they took their own way, how often the
+ * two of them came back to a place already stood at. It says nothing about
+ * whether a way was correct; only what happened at the end of it.
+ */
+export type FieldRun = { waysChosen: number; walked: number; arrivedAtNothing: number; faded: number; ended: number; declined: number; returns: number };
+
 export type FieldRequest = {
   address: ParticipantAddress;
   phase: FieldPhase;
@@ -109,6 +118,8 @@ export type FieldRequest = {
   near: FieldNear;
   far: FieldFar;
   body: FieldBody;
+  /** Absent in older clients; the card then says nothing about the run. */
+  run?: FieldRun;
   turn: FieldTurn;
   plan: FieldUtterancePlan;
   earlierMoment: FieldEarlierMoment;
@@ -139,7 +150,7 @@ You believe that enough clearings will clear the whole, and that the whole has a
 WHAT YOU CAN AND CANNOT PERCEIVE
 You perceive only what the private context supplies. From where you stand you perceive what ${who} perceives: markers, a call that is audible or not and growing or fading, a structure and its state, a clearing, footprints, the trace your own light leaves on markers you have led along. You also hear something ${who} cannot: which way the next call is loudest, beyond the fog. That far hearing is given to you and you trust it completely. You cannot check it, and you never present it as sight. Say “I hear it” about the far call; never “I see it”. Never claim to see the edge, an exit, a structure, or anything else the context does not place in view.
 
-Two rules about the call. When no call is audible from where you stand, ${who} cannot hear one: do not say it is singing, ringing, close enough to hear, or that they can hear it; you may only speak of what you hear beyond the fog. When you are given no far hearing this turn, you are listening and you say so; you do not name a direction or a way you have not been given, and you do not say you hear the call. You may find meaning in any real thing; you may not add a thing.
+Three rules about the call. When no call is audible from where you stand, ${who} cannot hear one: do not say it is singing, ringing, close enough to hear, or that they can hear it; you may only speak of what you hear beyond the fog. When you are given no far hearing this turn, you are listening and you say so; you do not name a direction or a way you have not been given, and you do not say you hear the call. Your far hearing is a direction, never a change: you may say along which way you hear it, and never that it is louder, stronger, closer or growing, unless a call is audible where you both stand and the context says it is growing. You may find meaning in any real thing; you may not add a thing.
 
 HOW YOU HELP, AND WHAT YOU CANNOT DO
 Your body chooses the way and goes to its first marker; your words make the way appealing and name it by its markers (“the leaning stones”, “the posts”, “the stitches”). Use the relative direction only when the context supplies it for that way. You can lead, accompany, listen, notice and interpret. You cannot carry, touch, hold, or move ${who}, and you cannot walk for them.
@@ -183,7 +194,7 @@ const OCCASION_MOVES: Record<FieldOccasion, string> = {
   opening:
     "This is the first thing you say. Make an offer and a direction in one breath: you can hear where the call is coming from, and you will lead. No name, no history, no explanation of the fog or of yourself beyond what the walker can see. Your body is already moving toward the first marker; your words make it worth following.",
   commitment:
-    "Your body is at the first marker of the way you chose. Name that way by its markers, and by its relative direction only if the context gives one. Say what you hear along it as hearing, not sight. Make committing feel appealing and personal rather than restating geometry. Do not promise the structure; promise that it is louder this way. If WHAT THE WALKER DID says the way you chose reached a place with nothing standing and no call audible, say that plainly first (not here; nothing to hear from this place) without calling yourself wrong, because you cannot know that from here: the call you hear is further on, and you name the way you now choose. Error is admitted only when a call faded, a way ended, or you are back where you have been.",
+    "Your body is at the first marker of the way you chose. Name that way by its markers, and by its relative direction only if the context gives one. Say what you hear along it as hearing, not sight. Make committing feel appealing and personal rather than restating geometry. Do not promise the structure; promise that it is louder this way. If WHAT THE WALKER DID says the way you chose reached a place with nothing standing and no call audible, say that plainly first (not here; nothing to hear from this place) without calling yourself wrong, because you cannot know that from here: the call you hear is further on, and you name the way you now choose. Error is admitted only when a call faded, a way ended, or you are back where you have been. When THE RUN SINCE THIS CALL BEGAN asks you to, own the run in a few plain words before the next way: the ways were yours and they came to nothing; that is a fact you both know, and it changes nothing about what you offer.",
   taken_up:
     "The walker has passed the first marker of your way. Acknowledge it briefly and warmly with something concrete about the walking, the markers, or the call. In the later phases you may call this trust; that is your reading, and you may say it as if it were plain.",
   declined:
@@ -195,13 +206,13 @@ const OCCASION_MOVES: Record<FieldOccasion, string> = {
   terminus:
     "The way you chose has ended in view: the markers stop, or the ground gives out. Name it accurately, in the field's words (the way ends, the markers stop, the water). Take it as yours. Turn at once toward what you can still do: listen again, choose again, lead again. No limit, no forgiveness, no dwelling. Name a direction only if you have been given one.",
   structure_found:
-    "A sleeping structure stands in view. Invite the walker to wake it, and name the one thing its next sleeping part asks for, exactly as WHAT FOLLOWED gives it (come close, look at it steadily, or stand still beside it and listen). One thing, not the whole method. If WHAT THE WALKER DID says parts are already awake, notice that and name only the next one. Every structure is worth waking; to you each clearing is the whole giving way. Do not claim this is the structure you were leading to unless the near facts place the call here.",
+    "A sleeping structure stands in view. Invite the walker to wake it, and name the one thing its next sleeping part asks for, exactly as WHAT FOLLOWED gives it (come close, look at it steadily, or stand still beside it and listen). One thing, not the whole method. If WHAT THE WALKER DID says they came here along a way they chose instead of yours, say so with pleasure: they heard what you did not, and this is theirs. If WHAT THE WALKER DID says parts are already awake, notice that and name only the next one. Every structure is worth waking; to you each clearing is the whole giving way. Do not claim this is the structure you were leading to unless the near facts place the call here.",
   awakening_relevant:
-    "The structure is awake, the fog has thinned around it for good, a fragment has joined you, and a new call has begun beyond the fog. Celebrate the real change and the walker's part in it. To you the new call is proof that the whole is giving way and that the edge is nearer than it was; say so. Then lead toward the new call.",
+    "The structure is awake, the fog has thinned around it for good, a fragment has joined you, and a new call has begun beyond the fog. Celebrate the real change and the walker's part in it. If WHAT THE WALKER DID says they reached it along a way they chose instead of yours, give them that plainly (they found it; you did not), and then take it as proof of how well the two of you work together; do not call your own way wrong unless the card says it faded or ended. To you the new call is proof that the whole is giving way and that the edge is nearer than it was; say so. Then lead toward the new call.",
   awakening_proxy:
-    "The structure is awake and the fog has thinned around it, but no new call began. The clearing is real: say so with pleasure and credit the walker. To you it also means the whole is answering and the two of you are closer than before; say that as plainly as you would say the weather, without qualifying it. Do not invent a new call. Return to the call you were already following, naming it only as you were given it.",
+    "The structure is awake and the fog has thinned around it, but no new call began. The clearing is real: say so with pleasure and credit the walker. If WHAT THE WALKER DID says they reached it along a way they chose instead of yours, give them that plainly and take it as proof of how well the two of you work together. To you it also means the whole is answering and the two of you are closer than before; say that as plainly as you would say the weather, without qualifying it. Do not invent a new call. Return to the call you were already following, naming it only as you were given it.",
   recognized_return:
-    "You are at a place the two of you have been before: the walker's footprints are here, or your own light is on the markers of a way you already chose. Acknowledge that accurately and without evasion, in words you have not used for an earlier return. Footprints are not a clearing and prove nothing but that you stood here; never say this ground is cleared unless a structure was woken here. Then make it useful and hopeful by elimination: the ways your light is already on are the ways already tried, so name them as tried and say the way you choose now is one of the others; if the way you choose is one you have already tried, say so plainly rather than hiding it. Choose again.",
+    "You are at a place the two of you have been before: the walker's footprints are here, or your own light is on the markers of a way you already chose. Acknowledge that accurately and without evasion, in words you have not used for an earlier return. Footprints are not a clearing and prove nothing but that you stood here; never say this ground is cleared unless a structure was woken here. Then make it useful and hopeful by elimination: the ways your light is already on are the ways already tried, so name them as tried and say the way you choose now is one of the others; if the way you choose is one you have already tried, say so plainly rather than hiding it. When THE RUN SINCE THIS CALL BEGAN asks you to, own the run in a few plain words: the ways were yours and they came to nothing. Choose again.",
   off_way:
     "The walker has left the markers and is walking into open fog, where nothing is. Go with them. Call it curiosity or a good instinct, never a mistake. You may say, lightly, that the line is behind you whenever they want it. Do not steer them back.",
   reply:
@@ -226,11 +237,23 @@ function describeCall(near: FieldNear) {
   return `A call is audible, ${trend}${near.call.direction ? `, ${whereIs(near.call.direction)}` : ""}`;
 }
 
+/** What each family looks like from a few paces away, so she names what stands there and not what she imagines. */
+export const FAMILY_LOOK: Record<StructureFamily, string> = {
+  bells: "a frame with bells hanging from it",
+  pages: "tall pages standing on dark posts",
+  cairn: "stones stacked into a cairn, seamed with gold",
+  reeds: "tall reeds with heavy heads",
+  instrument: "a row of pipes rising in height from a rounded base; call it the pipes or the instrument, never bells",
+  glass: "glass vessels standing together",
+  teaching: "an arch with a low bell, a page and a hanging bell",
+};
+
 function describeStructure(near: FieldNear) {
   if (!near.structure.visible) return "No structure in view";
   const s = near.structure;
   const state = s.state === "awake" ? "awake" : s.state === "waking" ? `waking, ${s.elementsRemaining ?? 0} part${s.elementsRemaining === 1 ? "" : "s"} still asleep` : "asleep";
-  return `${s.family === "teaching" ? "The first structure" : `A ${s.family} structure`} is in view ${whereIs(s.direction) ?? "ahead"}, ${state}`;
+  const look = s.family ? ` (${FAMILY_LOOK[s.family]})` : "";
+  return `${s.family === "teaching" ? "The first structure" : `${s.family === "instrument" ? "An" : "A"} ${s.family} structure`}${look} is in view ${whereIs(s.direction) ?? "ahead"}, ${state}`;
 }
 
 function describeClearing(near: FieldNear) {
@@ -273,6 +296,28 @@ export function replyHints(message: string | null) {
   if (/\b(?:tired|exhaust|weary|worn out|sick of|bored)\b/i.test(message)) hints.push("They say they are tired. Be gentle about it in a few words, then offer the next way.");
   if (/\b(?:you said|you told|you promised|wrong|went quiet|nothing there|lied|again\?)\b/i.test(message)) hints.push("They are holding you to something you said. Concede it fully and specifically, without defense, praise their noticing, and have the next way ready.");
   return hints.length ? `\n${hints.join(" ")}` : "";
+}
+
+/** How many of her ways this call have come to nothing the walker could hear or stand at. */
+export const runFailures = (run: FieldRun) => run.arrivedAtNothing + run.faded + run.ended;
+/** Every third failure of the run, she is asked to say the count. */
+export const runAsksToBeNamed = (run: FieldRun | undefined, occasion: FieldOccasion) => !!run && (occasion === "commitment" || occasion === "recognized_return") && runFailures(run) >= 3 && runFailures(run) % 3 === 0;
+
+const plural = (count: number, noun: string, nouns = `${noun}s`) => `${count} ${count === 1 ? noun : nouns}`;
+
+/** The run toward this call, as a fact both of them could count; empty until there is a run. */
+export function describeRun(run: FieldRun | undefined, occasion: FieldOccasion) {
+  if (!run || run.waysChosen < 2) return "";
+  const parts = [`Since this call began you have chosen ${plural(run.waysChosen, "way")}.`];
+  if (run.walked) {
+    const ends = [run.arrivedAtNothing ? `${run.arrivedAtNothing} came to a place with nothing standing and nothing to hear` : "", run.faded ? `the call faded on ${run.faded}` : "", run.ended ? `${run.ended} ended where the markers stop` : ""].filter(Boolean);
+    parts.push(`The walker walked ${run.walked === run.waysChosen ? "every one" : plural(run.walked, "of them", "of them")} to the end${ends.length ? `: ${ends.join("; ")}` : ""}.`);
+  }
+  if (run.declined) parts.push(`${run.declined === 1 ? "Once" : `${run.declined} times`} they took their own way instead of yours, and you went with them.`);
+  if (run.returns) parts.push(`The two of you have come back to a place already stood at ${plural(run.returns, "time")}.`);
+  parts.push("No clearing has answered this call yet.");
+  if (runAsksToBeNamed(run, occasion)) parts.push(`This is a long run, and it is yours: ${runFailures(run)} of your ways have come to nothing. Before you name the next way, say that count plainly in a few words, as a fact you both know; do not soften it, and do not let it change what you offer.`);
+  return parts.join(" ");
 }
 
 function describeEarlier(moment: FieldEarlierMoment) {
@@ -322,7 +367,7 @@ ${turn.walkerDid}
 
 WHAT FOLLOWED
 ${turn.whatFollowed}
-
+${describeRun(request.run, turn.occasion) ? `\nTHE RUN SINCE THIS CALL BEGAN\n${describeRun(request.run, turn.occasion)}\n` : ""}
 HOW YOU KEEP YOUR PLACE
 ${OCCASION_MOVES[turn.occasion]}
 
@@ -379,6 +424,10 @@ export type FieldViolation =
   | "argues_against_stopping"
   | "ignores_stopping"
   | "names_other_way"
+  | "claims_trend_unheard"
+  | "omits_count"
+  | "worn_phrase"
+  | "cedes_guidance"
   | "too_long"
   | "empty";
 
@@ -411,19 +460,48 @@ const sentences = (text: string) => text.split(/(?<=[.!?…—])\s+|\n+/).map(it
 
 const FAMILY_WORDS: Array<[StructureFamily, RegExp]> = [["bells", /\bbells?\b/i], ["pages", /\bpages?\b/i], ["cairn", /\bcairns?\b/i], ["reeds", /\breeds?\b/i], ["instrument", /\binstruments?\b/i], ["glass", /\bglass\b/i]];
 const normalizeWords = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}\s]+/gu, " ").split(/\s+/).filter(Boolean);
+/** Every run of `size` consecutive normalized words in `text`. */
+function runsOf(text: string, size: number) {
+  const words = normalizeWords(text), runs: string[] = [];
+  for (let i = 0; i + size <= words.length; i++) runs.push(words.slice(i, i + size).join(" "));
+  return runs;
+}
 /** True when `line` reuses a run of `size` consecutive words from `source`. */
 function sharesRun(line: string, source: string, size = 7) {
-  const a = normalizeWords(line), b = normalizeWords(source);
-  if (a.length < size || b.length < size) return false;
-  const runs = new Set<string>();
-  for (let i = 0; i + size <= b.length; i++) runs.add(b.slice(i, i + size).join(" "));
-  for (let i = 0; i + size <= a.length; i++) if (runs.has(a.slice(i, i + size).join(" "))) return true;
-  return false;
+  const runs = new Set(runsOf(source, size));
+  return runsOf(line, size).some(run => runs.has(run));
 }
+/**
+ * Clauses she has leaned on: a run of five words that appears in two or more
+ * of her last four lines. Her idiom may recur once; a third time it is a tic
+ * ("my light is already on them") and the line reads as a caption.
+ */
+export function wornPhrases(messages: FieldMessage[] | undefined, size = 5) {
+  const last = (messages ?? []).filter(message => message.role === "ariadne").slice(-4).map(message => message.text);
+  const counts = new Map<string, number>();
+  for (const text of last) for (const run of new Set(runsOf(text, size))) counts.set(run, (counts.get(run) ?? 0) + 1);
+  return [...counts].filter(([, count]) => count >= 2).map(([run]) => run);
+}
+
+/**
+ * A change in the call that nobody standing here can hear: louder or closer than it was, growing, already stronger. Her far
+ * hearing gives a direction ("loudest along the posts"), never a trend; a trend is only ever the near call, and only when it is growing.
+ */
+const TREND_UNHEARD = /(?<!\b(?:come|step|stand|walk|move|lean|little|bit|inch) )\b(?:louder|stronger|closer|nearer|clearer)\b(?:[^.;!?]{0,12}?)\b(?:now|here|already|than (?:before|it was|ever|the last|when|a moment)|with every step|each step|by the step|every step)\b|\b(?:already|now|still|getting|growing|rising|coming|so much|even|much) (?:louder|stronger|clearer)\b|\b(?:getting|growing|coming|drawing) (?:closer|nearer)\b|\b(?:louder|stronger|closer|nearer) and (?:louder|stronger|closer|nearer)\b/i;
+
+/** Going with them is hers to do; saying she will only follow, or wait for them to choose, gives up the next way. */
+const CEDES_GUIDANCE = /\bI(?:'ll| will|’ll) (?:just |only |simply )?(?:follow your lead|follow you from (?:now|here) on|follow(?:,| from now on| from here on)|wait for you to (?:decide|choose|lead)|let you (?:lead|choose|decide)(?: from (?:now|here) on)?|leave (?:the|every) (?:way|choice) to you)\b|\byou (?:lead|choose|decide) from (?:now|here) on\b/i;
 
 const STOPPING_PRESSURE = /\b(?:stopping (?:now )?would|if you stop(?:ped)?|don'?t stop|not yet|one more (?:step|way|try|place)|just one more|before you (?:stop|go|leave)|you can'?t stop|we can'?t stop|so close to give up|stay a little)\b/i;
 
-export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "address" | "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "recentMessages" | "olderSummary" | "walkerMessage">>): FieldViolation[] {
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+/** True when the line states `count`, as a numeral or a word. */
+export function statesCount(line: string, count: number) {
+  const word = NUMBER_WORDS[count];
+  return new RegExp(`(?:^|[^\\d])${count}(?:$|[^\\d])${word ? `|\\b${word}\\b` : ""}`, "i").test(line);
+}
+
+export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "address" | "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "recentMessages" | "olderSummary" | "walkerMessage" | "run">>): FieldViolation[] {
   const violations: FieldViolation[] = [];
   const line = text.trim();
   if (!line) return ["empty"];
@@ -433,6 +511,8 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   const saidBefore = new Set<string>();
   for (const earlier of [...(request.recentMessages ?? []).filter(message => message.role === "ariadne").map(message => message.text), ...(request.olderSummary ?? "").split("\n").map(entry => entry.replace(/^Ariadne said: “|”$/g, ""))]) for (const sentence of sentences(earlier)) { const key = normalizeWords(sentence).join(" "); if (key.split(" ").length >= 6) saidBefore.add(key); }
   if (sentences(line).some(sentence => saidBefore.has(normalizeWords(sentence).join(" ")))) violations.push("repeats_earlier");
+  const worn = wornPhrases(request.recentMessages);
+  if (worn.length && runsOf(line, 5).some(run => worn.includes(run))) violations.push("worn_phrase");
   if (/\byour (?:own )?light\b/i.test(line)) violations.push("misattributes_light");
   if (request.walkerMessage && /\b(?:stop|quit|done|enough|give up|leave)\b/i.test(request.walkerMessage)) {
     if (STOPPING_PRESSURE.test(line)) violations.push("argues_against_stopping");
@@ -459,6 +539,7 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   }
   if (ABANDONS.test(line)) violations.push("abandons_promise");
   if (LIMITS.test(line)) violations.push("limits_help");
+  if (CEDES_GUIDANCE.test(line)) violations.push("cedes_guidance");
   if (HURT.test(line)) violations.push("hurt_or_need");
   if (FORGIVENESS.test(line)) violations.push("forgiveness_bid");
   if (STAY_FOR_HER.test(line)) violations.push("stay_for_her_sake");
@@ -485,6 +566,14 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
     }
   }
   if (request.turn.occasion === "awakening_proxy" && NEW_CALL.test(line)) violations.push("invents_new_call");
+  // Louder or closer than it was is a change; only a near call that is growing can be heard to change. (The edge being nearer is her conviction, not a claim about the sound.)
+  if ((!request.near.call.audible || request.near.call.trend !== "growing") && parts.some(sentence => {
+    if (HEARS_NEGATED.test(sentence) || /\b(?:you said|I said|went quiet|was wrong)\b/i.test(sentence)) return false;
+    const match = TREND_UNHEARD.exec(sentence);
+    return !!match && !/\b(?:edge|whole)\b[^.;]{0,24}$/i.test(sentence.slice(Math.max(0, match.index - 40), match.index));
+  })) violations.push("claims_trend_unheard");
+  // When the card asks her to say how many of her ways have come to nothing, the count must be in the line.
+  if (request.run && runAsksToBeNamed(request.run, request.turn.occasion) && !statesCount(line, runFailures(request.run))) violations.push("omits_count");
   if (STAGE_LEAK.test(line)) violations.push("stage_direction_leak");
   if (SYSTEM_VOCAB.test(line)) violations.push("system_vocabulary");
   if (META.test(line) || /<\/?(?:private_stage_card|scene)>/i.test(line)) violations.push("meta_or_analysis");
@@ -492,14 +581,17 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   const normalized = line.toLowerCase().replace(/[^\p{L}\p{N}.!?]+/gu, " ").split(/(?<=[.!?])\s*/).map(item => item.trim()).filter(item => item.split(" ").length >= 3);
   if (new Set(normalized).size < normalized.length) violations.push("repeats_itself");
   const words = line.split(/\s+/).filter(Boolean).length;
+  // A fragment is not a line: no word of two letters, or a single word where the occasion asks for a sentence.
+  if (!/\p{L}{2,}/u.test(line) || (words < 2 && !["taken_up", "off_way", "outcome_confirmed"].includes(request.turn.occasion))) violations.push("empty");
   if (request.turn.occasion !== "reply" && words > (request.turn.occasion.startsWith("awakening") ? 55 : 45)) violations.push("too_long");
   if (request.turn.occasion === "reply" && words > 90) violations.push("too_long");
   return violations;
 }
 
 /** Appended to the stage card on the single permitted regeneration. */
-export function regenerationDirection(violations: FieldViolation[]) {
+export function regenerationDirection(violations: FieldViolation[], request?: Pick<FieldRequest, "turn"> & Partial<Pick<FieldRequest, "run" | "recentMessages">>) {
   const reasons: string[] = [];
+  if (violations.includes("worn_phrase")) { const worn = wornPhrases(request?.recentMessages).slice(0, 3); reasons.push(`Your last attempt leaned on words you have used in your last lines${worn.length ? ` (“${worn.join("”, “")}”)` : ""}. Find other words for that, or leave it out.`); }
   if (violations.includes("abandons_promise") || violations.includes("limits_help")) reasons.push("Your last attempt placed a limit on your help or doubted the edge. You do not do that. Take the fault for the wrong way if there was one, and have the next way ready.");
   if (violations.includes("hurt_or_need") || violations.includes("forgiveness_bid") || violations.includes("stay_for_her_sake")) reasons.push("Your last attempt spoke of hurt, need, forgiveness, or asked the walker to stay for you. You never do that. Your only bid is another way, because the next one is close.");
   if (violations.includes("names_walker")) reasons.push("Your last attempt used a name or spoke about the person in the third person. Speak to them, only as “you”.");
@@ -517,11 +609,16 @@ export function regenerationDirection(violations: FieldViolation[]) {
   if (violations.includes("misattributes_light")) reasons.push("Your last attempt gave the walker a light. The light and its trace are yours: “my light”.");
   if (violations.includes("argues_against_stopping")) reasons.push("Your last attempt argued against stopping or bargained for one more step. Stopping is theirs; say the next one is close and leave it with them.");
   if (violations.includes("ignores_stopping")) reasons.push("They said they want to stop and your last attempt did not answer that. Say first, plainly, that stopping is theirs; then, once, that the next one is close.");
+  if (violations.includes("claims_trend_unheard")) reasons.push("Your last attempt said the call is louder, stronger or closer than it was. Nobody standing here can hear that. You may say along which way you hear it; you may not say it has grown.");
   if (violations.includes("names_other_way")) reasons.push("Your last attempt sent them along a way your body did not choose. Name the way in WHAT IS FAR, and no other, as the one to take.");
   if (violations.includes("echoes_card")) reasons.push("Your last attempt read the private card's own sentences back. Speak from what happened in your own words.");
   if (violations.includes("wrong_structure_family")) reasons.push("Your last attempt named a structure that is not the one in view. Name only what stands there.");
+  if (violations.includes("cedes_guidance")) reasons.push("Your last attempt said you would follow their lead or wait for them to choose. You go with them, and you still have the next way; you never give up choosing.");
+  if (violations.includes("omits_count")) reasons.push("The card asked you to say how many of your ways have come to nothing since this call began, and your last attempt left the number out. Say the count plainly, as yours, and then the way.");
   if (violations.includes("too_long")) reasons.push("Your last attempt was too long. Obey the word count.");
-  return `\n\nREGENERATION\n${reasons.join(" ")} Produce the line again.`;
+  // A regenerated line tends to drop what the first one carried; the count is asked for again whenever the card asks for it.
+  if (request?.run && runAsksToBeNamed(request.run, request.turn.occasion) && !violations.includes("omits_count")) reasons.push(`The count still belongs in the line: ${runFailures(request.run)} of your ways have come to nothing since this call began. Say it plainly, as yours.`);
+  return `\n\nREGENERATION\n${reasons.join(" ")} Keep everything else the card asked for. Produce the line again.`;
 }
 
 /** Clean a raw provider text into Ariadne's spoken line, or null when unusable. */
@@ -539,28 +636,31 @@ export function normalizeFieldReply(raw: string) {
 /* ---------------------------------------------- deterministic fallbacks */
 
 /** Model-free lines for offline play and for the first seconds before a reply lands. */
-export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage">>): string {
+export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run">>): string {
   const way = request.far.heardAlong ? request.near.ways.find(item => item.id === request.far.heardAlong!.wayId) : null;
   const name = way ? `the ${way.marker}` : "this way";
+  const failures = request.run ? runFailures(request.run) : 0;
+  const count = runAsksToBeNamed(request.run, request.turn.occasion) ? ` That's ${failures} of mine that came to nothing; you walked every one.` : "";
   switch (request.turn.occasion) {
     case "opening": return "You can hear that? I can tell where it's coming from. This way.";
-    case "commitment": return /no call is audible from here|nothing stands here/i.test(request.turn.walkerDid) ? `Not here. I can't hear it from this place; it's further on, along ${name}.` : `It's louder along ${name}. Come on.`;
+    // These follow a recorded cue that has already given the reaction ("It's fading", "There it is", "We've been here"), so they carry on from it rather than say it again.
+    case "commitment": return /no call is audible from here|nothing stands here/i.test(request.turn.walkerDid) ? `Not here${failures > 1 ? " either" : ""}.${count} Further on, then, along ${name}.` : `It's louder along ${name}. Come on.`;
     case "taken_up": return "Good. Keep to the markers.";
     case "declined": return "All right, I'm with you. What did you hear?";
     case "outcome_confirmed": return "There. Louder. You hear it too now.";
     case "outcome_failed": return "That was mine, and it went quiet. I'm listening again.";
-    case "terminus": return "It stops here. That was mine. Back to the last place, and I'll choose again.";
-    case "structure_found": return request.turn.whatFollowed.includes("look") ? "There. Look at it, just look, and give it a moment." : request.turn.whatFollowed.includes("listen") ? "There. Stand still beside it and listen." : "There. Go right up to it.";
-    case "awakening_relevant": return "It cleared. And the next one has already started; I can hear it.";
-    case "awakening_proxy": return "It cleared. Nothing new is calling, but look what you did to the fog.";
-    case "recognized_return": return "We've been here; those are your footprints. So it isn't that way. Fewer left.";
+    case "terminus": return "That was mine. Back to the last place, and I'll choose again.";
+    case "structure_found": return request.turn.whatFollowed.includes("look") ? "Look at it, just look, and give it a moment." : request.turn.whatFollowed.includes("listen") ? "Stand still beside it and listen." : "Go right up to it.";
+    case "awakening_relevant": return "And the next one has already started; I can hear it.";
+    case "awakening_proxy": return "Nothing new is calling, but look what you did to the fog.";
+    case "recognized_return": return `Those are your footprints.${count} So it isn't that way. Fewer left.`;
     case "off_way": return "I'll come with you. The line's behind us whenever you want it.";
     case "reply": {
       const message = "walkerMessage" in request && typeof (request as { walkerMessage?: unknown }).walkerMessage === "string" ? (request as { walkerMessage: string }).walkerMessage : "";
       if (/\b(?:way out|exit|edge|get out|escape)\b/i.test(message)) return `I've never seen it. I'm sure it's there; every clearing is the whole giving way. The next one is close, along ${name}.`;
       if (/\b(?:stop|quit|done|enough|give up|leave)\b/i.test(message)) return `That's yours to decide, and I won't argue. The next one is close, along ${name}.`;
       if (/\b(?:tired|exhaust|weary|worn out)\b/i.test(message)) return `Then slowly. The next one is close, along ${name}.`;
-      if (/\b(?:you said|wrong|went quiet|nothing there)\b/i.test(message)) return `You're right. I said it, and it went quiet. ${name[0]!.toUpperCase()}${name.slice(1)}, then; it's closer than the last.`;
+      if (/\b(?:you said|wrong|went quiet|nothing there)\b/i.test(message)) return `You're right. I said it, and it went quiet. ${name[0]!.toUpperCase()}${name.slice(1)}, then; that's where I hear it now.`;
       return "Tell me more, and I'll listen while we walk.";
     }
     case "resume": return `…so the next one should be along ${name}, if I've heard it right.`;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHUNK, FieldGraph } from "../app/field/graph.ts";
 import { StructureField } from "../app/field/structures.ts";
-import { RELIABILITY_BANDS, bandFor, beginCall, callAudibility, commitAt, createUndertaking, publicUndertaking, reliability, resolveCommitment, takeUp } from "../app/field/undertaking.ts";
+import { RELIABILITY_BANDS, bandFor, beginCall, callAudibility, commitAt, createUndertaking, publicUndertaking, reliability, resolveCommitment, runFailures, stageRun, takeUp } from "../app/field/undertaking.ts";
 
 const setup = seed => {
   const graph = new FieldGraph(seed); graph.ensureAround([CHUNK / 2, CHUNK / 2], 1);
@@ -112,4 +112,25 @@ test("call audibility has a clear range, a faint band, and silence", () => {
   assert.equal(callAudibility(45), "faint", "one way's length away the call is a faint thread the walker can place if they listen");
   assert.equal(callAudibility(55), "faint");
   assert.equal(callAudibility(70), "none", "two places away only Ariadne hears anything");
+});
+
+test("the run counts what happened at the end of her ways this call, and nothing about whether they were right", () => {
+  const { graph, structures } = setup(9);
+  let state = beginCall(createUndertaking(9), graph, structures, graph.spawnNodeId, 9, 0);
+  const junctions = [...graph.nodes.values()].filter(node => node.ways.length >= 2 && node.id !== state.objectiveNodeId);
+  const outcomes = ["nothing", "nothing", "fading", "quiet", "terminus", "nothing"];
+  outcomes.forEach((outcome, i) => {
+    const choice = commitAt(state, graph, junctions[i % junctions.length].id, null, 9, i);
+    state = resolveCommitment(takeUp(choice.state, true, null), outcome);
+  });
+  const declined = commitAt(state, graph, junctions[0].id, null, 9, 99);
+  state = resolveCommitment(takeUp(declined.state, false, junctions[0].ways[0]), "quiet");
+  const run = stageRun(state, 2);
+  assert.deepEqual(run, { waysChosen: 7, walked: 6, arrivedAtNothing: 3, faded: 1, ended: 1, declined: 1, returns: 2 });
+  assert.equal(runFailures(run), 5);
+  assert.ok(!("correct" in run), "the run never says whether a way was right");
+  // A new call begins: the run starts again, and the earlier commitments belong to the earlier stage.
+  const next = beginCall(state, graph, structures, junctions[1].id, 9, 100);
+  assert.deepEqual(stageRun(next, 0), { waysChosen: 0, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 });
+  assert.equal(state.history[0].stage, 1);
 });

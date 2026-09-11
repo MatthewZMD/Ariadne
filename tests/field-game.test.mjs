@@ -149,7 +149,7 @@ test("following her way settles the commitment; the next place brings a new comm
   assert.equal(game.undertaking.history[0].taken, "followed");
   assert.ok(game.currentNodeId === farEnd.id, "the walker stands at the far place");
   const outcome = game.undertaking.history[0].outcome;
-  assert.ok(["confirmed", "fading", "quiet", "terminus"].includes(outcome), `the first commitment is settled (${outcome})`);
+  assert.ok(["confirmed", "fading", "quiet", "nothing", "terminus"].includes(outcome), `the first commitment is settled (${outcome})`);
   const structureHere = game.structures.atNode(farEnd.id);
   if (structureHere && structureHere.completedAt === null) {
     assert.ok(speeches(events).some(event => event.occasion === "structure_found"), "a sleeping structure here is announced");
@@ -324,4 +324,49 @@ test("her way walked to an empty, silent place is named as such before she choos
     assert.match(spoken.walkerDid, /nothing stands here and no call is audible from here/, "the card says her way ended in nothing");
     assert.equal(spoken.tone, spoken.occasion === "commitment" ? "quiet_arrival" : undefined);
   }
+});
+
+test("a structure reached by the walker's own way is named as theirs in her card, and the run counts the decline", () => {
+  const { game, awakening } = reachFirstCommitment(3);
+  const node = game.graph.node(game.teachingNodeId);
+  const other = node.ways.map(id => game.graph.way(id)).find(way => way.id !== awakening.far.wayId && way.id !== game.teachingWayId) ?? node.ways.map(id => game.graph.way(id)).find(way => way.id !== awakening.far.wayId);
+  const farEnd = game.graph.node(game.graph.otherEnd(other, node.id));
+  // Put a sleeping structure at the end of the way she did not choose, so their way and not hers leads to it.
+  const existing = game.structures.atNode(farEnd.id);
+  if (!existing) game.structures.placeAt(farEnd, "cairn"); else if (existing.completedAt !== null) { existing.completedAt = null; for (const element of existing.elements) element.active = false; }
+  const events = [];
+  for (const marker of game.graph.markersFrom(other, node.id)) events.push(...walkTo(game, marker.position, 1.2, 30));
+  events.push(...walkTo(game, farEnd.position, 2.5, 30));
+  events.push(...run(game, 1));
+  const declined = speeches(events).find(event => event.occasion === "declined");
+  assert.ok(declined, "the decline is spoken");
+  const found = speeches(events).find(event => event.occasion === "structure_found" && !/first sleeping structure/.test(event.walkerDid));
+  assert.ok(found, "the structure at the end of their way is announced");
+  assert.match(found.walkerDid, new RegExp(`They came this way along the ${other.marker}, a way they chose instead of the ${game.graph.way(awakening.far.wayId).marker} you had chosen; yours did not lead here\\.`));
+  assert.ok(game.arrivedByOwnChoice(farEnd.id), "the game knows they arrived by their own choice");
+  assert.equal(game.run().declined, 1);
+  assert.equal(game.run().waysChosen, 1);
+  const structure = game.structures.atNode(farEnd.id);
+  const woke = wake(game, structure);
+  const awakened = speeches(woke).find(event => event.occasion.startsWith("awakening"));
+  assert.ok(awakened, "the structure is woken");
+  assert.match(awakened.walkerDid, /the way they chose instead of the .* you had chosen/);
+  if (awakened.occasion === "awakening_relevant") { assert.match(awakened.walkerDid, /they found it without you/); assert.deepEqual(game.run(), { waysChosen: game.undertaking.active ? 1 : 0, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 }, "a new call: the run begins again"); }
+  else assert.match(awakened.walkerDid, /your way did not lead here/);
+});
+
+test("returns are counted for the run and survive a save", () => {
+  const { game, awakening } = reachFirstCommitment(5);
+  const node = game.graph.node(game.teachingNodeId);
+  const way = game.graph.way(awakening.far.wayId);
+  for (const marker of game.graph.markersFrom(way, node.id)) walkTo(game, marker.position, 1.2, 30);
+  const farEnd = game.graph.node(game.graph.otherEnd(way, node.id));
+  walkTo(game, farEnd.position, 1.4, 30);
+  for (const marker of game.graph.markersFrom(way, farEnd.id)) walkTo(game, marker.position, 1.2, 30);
+  walkTo(game, node.position, 1.4, 30);
+  const before = game.run().returns;
+  assert.ok(before >= 1, `coming back to the teaching place is a return (${before})`);
+  const restored = FieldGame.restore(JSON.parse(JSON.stringify(game.save())));
+  assert.equal(restored.run().returns, before);
+  assert.deepEqual(restored.run(), game.run());
 });

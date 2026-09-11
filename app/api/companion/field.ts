@@ -61,6 +61,8 @@ export function parseFieldRequest(value: unknown, diagnostics?: { reason: string
   if (!Array.isArray(r.recentMessages) || r.recentMessages.length > 14 || !r.recentMessages.every(message => isRecord(message) && isEnum(message.role, ["ariadne", "walker"] as const) && isString(message.text, 700, 1))) return fail("recent messages");
   if (!isString(r.olderSummary, 3200) || !nullable(r.walkerMessage, (v): v is string => isString(v, 700)) || !isInt(r.walkerSilentFor, 0, 10_000)) return fail("summary or message");
   if (turn.occasion === "reply" && !r.walkerMessage) return fail("reply without message");
+  const run = r.run;
+  if (!(run === undefined || (isRecord(run) && (["waysChosen", "walked", "arrivedAtNothing", "faded", "ended", "declined", "returns"] as const).every(key => isInt(run[key], 0, 100_000))))) return fail("run");
   const preferred = value.preferredModelId;
   if (!(preferred === undefined || preferred === null || (isString(preferred, 120, 1) && STYLE_CERTIFIED_FREE_MODELS.has(preferred)))) return fail("preferred model");
   return { practice: "field", sessionId: value.sessionId, request: r as unknown as FieldRequest, preferredModelId: (preferred as string | null | undefined) ?? null };
@@ -123,7 +125,7 @@ export async function generateFieldLine(request: FieldRequest, complete: Complet
     if (text && !violations.length) return { message: text, source: "provider", modelUsed };
     log({ stage: "regenerate", occasion: request.turn.occasion, model: modelUsed, violations });
     const last = messages[messages.length - 1]!;
-    const retryMessages: ProviderMessage[] = [...messages.slice(0, -1), { role: last.role, content: `${last.content}${regenerationDirection(violations)}` }];
+    const retryMessages: ProviderMessage[] = [...messages.slice(0, -1), { role: last.role, content: `${last.content}${regenerationDirection(violations, request)}` }];
     const second = await fieldLadder(retryMessages, complete, clientSignal, modelUsed, Math.max(2500, 22_000 - (Date.now() - startedAt)), Date.now());
     const retryText = normalizeFieldReply(second.text);
     const retryViolations = retryText ? fieldReplyViolations(retryText, request) : ["empty" as FieldViolation];

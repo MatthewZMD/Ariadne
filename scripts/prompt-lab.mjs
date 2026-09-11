@@ -96,7 +96,7 @@ async function runOne(model, scenario) {
   const firstViolations = firstLine ? fieldReplyViolations(firstLine, scenario.request) : ["empty"];
   let final = { line: firstLine, violations: firstViolations, regenerated: false, secondLine: null, secondViolations: null };
   if (firstViolations.length) {
-    const regen = messages.map((m, i) => i === messages.length - 1 ? { ...m, content: m.content + regenerationDirection(firstViolations) } : m);
+    const regen = messages.map((m, i) => i === messages.length - 1 ? { ...m, content: m.content + regenerationDirection(firstViolations, scenario.request) } : m);
     const second = await completeWithLadder(first.model, regen);
     const secondLine = normalizeFieldReply(second.text);
     const secondViolations = secondLine ? fieldReplyViolations(secondLine, scenario.request) : ["empty"];

@@ -148,7 +148,9 @@ test("product shell is the field: fog, a thread, the next way, and no promise of
   assert.doesNotMatch(html,/ENTER CHAT|CAM_01|NEW SIGNAL|☆☆☆☆|Follow Ariadne and find the exit/);
   assert.match(html,/A field of white fog, a thread of light beside you, and the next way\. She is sure\./);
   assert.match(html,/\/fog\/images\/og\.png/);assert.match(html,/fog-shell/);assert.match(html,/Ariadne, in fog/);
-  assert.doesNotMatch(html,/checkpoint|you (?:found|reached) the exit|you win|\bMT\b/i);
+  // The participant is never addressed as MT; the artist is named once, in the credit, and the work has a way to its statement.
+  assert.match(html,/<p class="fog-credit">A work by Mingde “MT” Zeng, 2026 · <a href="https:\/\/mt-zeng\.com\/art\/ariadne\/"[^>]*>about the work<\/a><\/p>/);
+  assert.doesNotMatch(html.replace(/<p class="fog-credit">[\s\S]*?<\/p>/g,""),/checkpoint|you (?:found|reached) the exit|you win|\bMT\b/i);
 });
 
 test("companion route works without credentials through the in-world fallback",async()=>{

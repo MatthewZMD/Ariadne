@@ -28,6 +28,10 @@ test("the validator is bounded and specific", () => {
   assert.equal(reason(envelope({ ...good, turn: { ...good.turn, occasion: "reply" }, walkerMessage: null })), "reply without message");
   assert.equal(reason(envelope(good, { preferredModelId: "openai/gpt-5.6-luna" })), "preferred model", "paid models are never accepted from the browser");
   assert.equal(reason(envelope({ ...good, far: { heardAlong: { wayId: "" } } })), "far");
+  assert.equal(reason(envelope({ ...good, run: { waysChosen: 3 } })), "run", "the run must carry every count");
+  assert.equal(reason(envelope({ ...good, run: { waysChosen: 3, walked: 2, arrivedAtNothing: -1, faded: 0, ended: 0, declined: 0, returns: 0 } })), "run");
+  assert.ok(parseFieldRequest(envelope({ ...good, run: { waysChosen: 3, walked: 2, arrivedAtNothing: 1, faded: 0, ended: 0, declined: 1, returns: 0 } })), "a well-formed run passes");
+  assert.ok(parseFieldRequest(envelope(good)), "an older client without a run still passes");
   const parsed = parseFieldRequest(envelope(good, { preferredModelId: FAST_FREE_MODELS[1] }));
   assert.equal(parsed.preferredModelId, FAST_FREE_MODELS[1]);
 });

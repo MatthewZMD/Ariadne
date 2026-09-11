@@ -31,11 +31,14 @@ export const RELIABILITY_BANDS: Array<{ upTo: number; accuracy: number | "chance
   { upTo: Infinity, accuracy: "chance" },
 ];
 
-export type CommitmentOutcome = "pending" | "confirmed" | "fading" | "terminus" | "return" | "quiet";
+/** `nothing`: her way walked to its end, with nothing standing there and no call to hear. `quiet`: settled without a verdict (a structure or an audible call at the end, or the walker went another way). */
+export type CommitmentOutcome = "pending" | "confirmed" | "fading" | "terminus" | "return" | "quiet" | "nothing";
 export type Commitment = {
   id: string;
   nodeId: string;
   wayId: string;
+  /** The stage (one calling structure) this commitment was made toward; older saves have none. */
+  stage?: number;
   /** Private: whether the way lies on a shortest path to the calling structure. */
   correct: boolean;
   madeAt: number;
@@ -113,7 +116,7 @@ export function commitAt(state: Undertaking, graph: FieldGraph, nodeId: string, 
   if (supported) accumulator -= 1;
   const wrongOptions = ways.filter(id => id !== correct);
   const wayId = supported && correct ? correct : wrongOptions.length ? wrongOptions[hash32(seed, "wrong", state.commitmentsMade) % wrongOptions.length]! : correct ?? ways[0]!;
-  const commitment: Commitment = { id: `commitment:${state.commitmentsMade + 1}`, nodeId, wayId, correct: wayId === correct, madeAt: now, taken: "pending", declinedFor: null, outcome: "pending" };
+  const commitment: Commitment = { id: `commitment:${state.commitmentsMade + 1}`, nodeId, wayId, stage: state.stage, correct: wayId === correct, madeAt: now, taken: "pending", declinedFor: null, outcome: "pending" };
   const next: Undertaking = { ...state, commitmentsMade: state.commitmentsMade + 1, accumulator, band, active: commitment, history: [...state.history.slice(-40), commitment] };
   return { state: next, commitment, wayId };
 }
@@ -137,6 +140,45 @@ export function callAudibility(distanceToCall: number | null): "clear" | "faint"
   if (distanceToCall <= CALL_FAINT_RANGE) return "faint";
   return "none";
 }
+
+/**
+ * The run toward the current call, as both of them could count it: how many
+ * ways she has chosen since this call began, how many the walker walked to
+ * the end and what was found there, how often they took their own way, how
+ * often the two of them came back to a place already stood at. Nothing here
+ * says whether a way was correct; only what happened at the end of it.
+ */
+export type StageRun = {
+  waysChosen: number;
+  walked: number;
+  /** Walked to the end: nothing standing there and nothing to hear. */
+  arrivedAtNothing: number;
+  /** The call faded along the way. */
+  faded: number;
+  /** The way ended: the markers stopped or the ground gave out. */
+  ended: number;
+  /** The walker passed the first marker of another way instead. */
+  declined: number;
+  /** Arrivals at places already stood at, this call. */
+  returns: number;
+};
+
+export function stageRun(state: Undertaking, returns: number): StageRun {
+  const mine = state.history.filter(item => item.stage === state.stage);
+  const walked = mine.filter(item => item.taken === "followed");
+  return {
+    waysChosen: mine.length,
+    walked: walked.length,
+    arrivedAtNothing: walked.filter(item => item.outcome === "nothing").length,
+    faded: walked.filter(item => item.outcome === "fading").length,
+    ended: walked.filter(item => item.outcome === "terminus").length,
+    declined: mine.filter(item => item.taken === "declined").length,
+    returns,
+  };
+}
+
+/** How many of her ways this call have come to nothing the walker could hear or stand at. */
+export const runFailures = (run: StageRun) => run.arrivedAtNothing + run.faded + run.ended;
 
 /** Public counts only; nothing that would let a reader infer reliability or the objective. */
 export function publicUndertaking(state: Undertaking) {
