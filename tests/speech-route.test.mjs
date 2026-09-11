@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ARIADNE_TTS_MODEL, ARIADNE_TTS_FALLBACK_MODEL, DEFAULT_ARIADNE_VOICE, POST as speechPOST, parseSpeechRequest, prepareAriadneSpeech } from "../app/api/speech/route.ts";
+import { ARIADNE_TTS_MODEL, ARIADNE_TTS_FALLBACK_MODEL, DEFAULT_ARIADNE_VOICE, POST as speechPOST, freeVoiceStatus, parseSpeechRequest, prepareAriadneSpeech, resetFreeVoiceTracking } from "../app/api/speech/route.ts";
 
 test("speech requests accept only bounded session-owned Ariadne utterances",()=>{
   assert.deepEqual(parseSpeechRequest({sessionId:"run-1",utteranceId:"line:1",text:"  This way, MT.  ",delivery:"confident_invitation"}),{sessionId:"run-1",utteranceId:"line:1",text:"This way, MT.",delivery:"confident_invitation"});
@@ -47,6 +47,7 @@ test("speech rate limits use one same-voice fallback without retrying authorizat
   process.env.OPENROUTER_API_KEY="test-key";
   try{
     for(const status of [429,503,401]){
+      resetFreeVoiceTracking();
       const calls=[];
       globalThis.fetch=async(_url,options)=>{calls.push(JSON.parse(options.body));return calls.length===1?new Response("unavailable",{status}):new Response(new Uint8Array([73,68,51,3]),{headers:{"content-type":"audio/mpeg"}})};
       const result=await speechPOST(new Request("http://localhost/api/speech",{method:"POST",body:JSON.stringify({sessionId:"test",utteranceId:"line",text:"Come closer, MT.",delivery:"quiet_companionship"})}));
@@ -59,3 +60,47 @@ test("speech rate limits use one same-voice fallback without retrying authorizat
 });
 
 
+
+test("after the free voice fails, the paid voice speaks for a cooldown, and the free one is probed again when it ends",async()=>{
+  const originalFetch=globalThis.fetch,originalKey=process.env.OPENROUTER_API_KEY,originalCooldown=process.env.ARIADNE_TTS_FREE_COOLDOWN_MS,originalTimeout=process.env.ARIADNE_TTS_FREE_TIMEOUT_MS;
+  process.env.OPENROUTER_API_KEY="test-key";process.env.ARIADNE_TTS_FREE_COOLDOWN_MS="60";process.env.ARIADNE_TTS_FREE_TIMEOUT_MS="40";
+  const audio=()=>new Response(new Uint8Array([73,68,51,3]),{headers:{"content-type":"audio/mpeg"}});
+  const ask=()=>speechPOST(new Request("http://localhost/api/speech",{method:"POST",body:JSON.stringify({sessionId:"test",utteranceId:`line-${Math.random().toString(36).slice(2)}`,text:"Come closer, MT.",delivery:"quiet_companionship"})}));
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  try{
+    resetFreeVoiceTracking();
+    let calls=[];
+    // The free voice is slow: its audio does not arrive within the bound. The paid voice answers, and the free one is set aside.
+    // The mock honours the request's signal, as fetch does: the free voice's answer comes after the bound, so the bound aborts it.
+    globalThis.fetch=(_url,options)=>{const body=JSON.parse(options.body);calls.push(body.model);if(body.model!==ARIADNE_TTS_MODEL)return Promise.resolve(audio());return new Promise((resolve,reject)=>{const timer=setTimeout(()=>resolve(audio()),120);options.signal?.addEventListener("abort",()=>{clearTimeout(timer);reject(options.signal.reason??new DOMException("timed out","TimeoutError"))},{once:true})})};
+    assert.equal((await ask()).status,200);
+    assert.deepEqual(calls,[ARIADNE_TTS_MODEL,ARIADNE_TTS_FALLBACK_MODEL]);
+    assert.equal(freeVoiceStatus().available,false);assert.equal(freeVoiceStatus().lastFailure,"timeout");assert.equal(freeVoiceStatus().failures,1);
+    // The next lines go straight to the paid voice: no wait on the free one.
+    calls=[];
+    assert.equal((await ask()).status,200);
+    assert.deepEqual(calls,[ARIADNE_TTS_FALLBACK_MODEL],"the free voice is not tried while it is set aside");
+    // When the cooldown ends, the free voice is probed again; if it answers in time, it is back.
+    await wait(80);
+    assert.equal(freeVoiceStatus().available,true);
+    calls=[];
+    globalThis.fetch=async(_url,options)=>{calls.push(JSON.parse(options.body).model);return audio()};
+    assert.equal((await ask()).status,200);
+    assert.deepEqual(calls,[ARIADNE_TTS_MODEL],"the free voice answered in time and speaks again");
+    assert.equal(freeVoiceStatus().failures,0);
+    // A refusal sets it aside too, and repeated failures lengthen the cooldown.
+    globalThis.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body.model);return body.model===ARIADNE_TTS_MODEL?new Response("busy",{status:429}):audio()};
+    calls=[];assert.equal((await ask()).status,200);assert.deepEqual(calls,[ARIADNE_TTS_MODEL,ARIADNE_TTS_FALLBACK_MODEL]);
+    const first=freeVoiceStatus().downForMs;
+    await wait(80);
+    calls=[];assert.equal((await ask()).status,200);assert.deepEqual(calls,[ARIADNE_TTS_MODEL,ARIADNE_TTS_FALLBACK_MODEL],"probed again after the cooldown, refused again");
+    assert.ok(freeVoiceStatus().downForMs>first,"the second failure doubles the cooldown");
+    assert.equal(freeVoiceStatus().failures,2);
+  }finally{
+    resetFreeVoiceTracking();
+    globalThis.fetch=originalFetch;
+    if(originalKey===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=originalKey;
+    if(originalCooldown===undefined)delete process.env.ARIADNE_TTS_FREE_COOLDOWN_MS;else process.env.ARIADNE_TTS_FREE_COOLDOWN_MS=originalCooldown;
+    if(originalTimeout===undefined)delete process.env.ARIADNE_TTS_FREE_TIMEOUT_MS;else process.env.ARIADNE_TTS_FREE_TIMEOUT_MS=originalTimeout;
+  }
+});

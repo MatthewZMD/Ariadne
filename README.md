@@ -38,7 +38,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Add an OpenRouter API key to `.env.local` to enable live generated language and voice (the Workers emulator reads `.dev.vars` instead; keep both when using both modes). Speech tries Fish Audio S2.1 Pro Free first; on rate limits or server errors, it makes one paid S2.1 Pro attempt with the same voice ID and a shared 20-second deadline. Without a key, the field and Ariadne’s embodied behaviour continue without generated speech.
+Add an OpenRouter API key to `.env.local` to enable live generated language and voice (the Workers emulator reads `.dev.vars` instead; keep both when using both modes). Speech tries Fish Audio S2.1 Pro Free first, with a bounded wait (`ARIADNE_TTS_FREE_TIMEOUT_MS`, default 4.5 s, covering the audio body as well as the headers); when the free voice times out or refuses, the paid S2.1 Pro voice (same model family, same voice ID) speaks for a cooldown (`ARIADNE_TTS_FREE_COOLDOWN_MS`, default 90 s, doubling on repeated failures up to ten minutes), and the free voice is probed again when the cooldown ends and taken back the moment it answers in time. Authorization and malformed-request errors are never retried. Without a key, the field and Ariadne’s embodied behaviour continue without generated speech.
 
 If the installed Workers emulator cannot support the production compatibility date, `ARIADNE_LOCAL_PREVIEW=1 npm run dev` previews the same application with vinext's Node runtime. Set the local provider environment as above. The default build and deployment still use Workers.
 
