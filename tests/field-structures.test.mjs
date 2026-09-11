@@ -3,7 +3,7 @@ import test from "node:test";
 import { CHUNK, FieldGraph } from "../app/field/graph.ts";
 import { STRUCTURE_ANCHORS } from "../app/field/structure-anchors.ts";
 import { Euler, Vector3 } from "three";
-import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure, rotateY } from "../app/field/structures.ts";
+import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure, rotateY, GESTURE_DURATION } from "../app/field/structures.ts";
 import { FieldGame } from "../app/field/game.ts";
 
 const setup = seed => {
@@ -103,18 +103,20 @@ test("approach wakes on contact; look and listen need sustained attention; compl
   assert.ok(changes.some(change => change.type === "element_woke" && change.elementId === approach.id), "approach woke");
   assert.equal(changes.find(change => change.type === "element_woke").remaining, 2);
 
-  // Look: facing the element while moving does not wake it instantly, but under a second of looking does.
+  // Look: facing the element while moving does not wake it instantly; a held look does, after GESTURE_DURATION.look seconds.
   const looker = standingAt(look, 0, 0);
   now = run({ ...looker, yaw: looker.yaw + 1.2, speed: 0 }, 1.2, now);
   assert.ok(!look.active, "looking elsewhere does not wake the look element");
-  now = run(looker, 1.2, now);
+  now = run(looker, GESTURE_DURATION.look * .6, now);
+  assert.ok(!look.active && look.attention > .4, "a look begun is answered but not yet complete");
+  now = run(looker, GESTURE_DURATION.look * .6, now);
   assert.ok(look.active, "looking at the element wakes it");
 
   // Listen: needs stillness.
   const listener = standingAt(listen, 0, 0);
   now = run({ ...listener, speed: .6 }, 2, now);
   assert.ok(!listen.active, "moving while facing the listen element does not wake it");
-  now = run(listener, 2, now);
+  now = run(listener, GESTURE_DURATION.listen + .3, now);
   assert.ok(listen.active, "being still and attending wakes the listen element");
   const completed = changes.find(change => change.type === "completed");
   assert.ok(completed, "waking every element completes the structure");
@@ -170,4 +172,23 @@ test("looking upward cannot wake a part below the camera", () => {
   pose.pitch = Math.atan2(part.position[1]-1.62,1.2);
   for (let i=0;i<30;i++) structures.advance(pose,.1,3000+i*100);
   assert.equal(part.active,true);
+});
+
+test("while parts still sleep, a finished look part sounds once per glance rather than looping", () => {
+  const { structures, graph } = setup(3);
+  const structure = structures.atNode(graph.spawnNodeId);
+  const [approach, look] = structure.elements;
+  const changes = [];
+  const run = (walker, seconds, now0) => { let now = now0; for (let i = 0; i < seconds * 30; i++) { now += 1000 / 30; changes.push(...structures.advance(walker, 1 / 30, now)); } return now; };
+  let now = run({ position: [approach.position[0], approach.position[2] - .8], yaw: 0, speed: 1.2 }, .5, 0);
+  const looker = standingAt(look, 0, 0);
+  now = run(looker, GESTURE_DURATION.look + .4, now);
+  assert.ok(look.active);
+  changes.length = 0;
+  now = run(looker, 6, now);
+  const sounded = changes.filter(change => change.type === "element_sounded" && change.elementId === look.id);
+  assert.equal(sounded.length, 0, "a held gaze on a finished part does not loop its note while the structure is incomplete");
+  now = run({ ...looker, yaw: looker.yaw + 1.2 }, 1, now);
+  now = run(looker, 1, now);
+  assert.equal(changes.filter(change => change.type === "element_sounded" && change.elementId === look.id).length, 1, "looking away and back sounds it once");
 });

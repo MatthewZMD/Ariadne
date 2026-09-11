@@ -12,11 +12,11 @@
 import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
 import type { FieldAudio, VoiceResult } from "./audio.ts";
 import { cueForOccasion, deliveryFor } from "./audio.ts";
-import { FIELD_AFFIRMATIONS, PARTICIPANT_ADDRESS, fieldDeterministicLine, runAsksToBeNamed, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
+import { PARTICIPANT_ADDRESS, chooseAffirmation, fieldDeterministicLine, messageKind, runAsksToBeNamed, runFailures, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
 import { hash32 } from "./graph.ts";
 
 export type SpeechLine = { id: string; occasion: FieldOccasion; text: string; kind: "generated" | "cue" | "fallback"; at: number; commitmentId: string | null };
-export type SpeechSave = { lastLine: SpeechLine | null; midSentence: { text: string; fraction: number; occasion: FieldOccasion } | null; recent: FieldMessage[]; olderSummary: string; moments: EarlierMoment[]; saidAt: Array<[string, string]> };
+export type SpeechSave = { lastLine: SpeechLine | null; midSentence: { text: string; fraction: number; occasion: FieldOccasion } | null; recent: FieldMessage[]; olderSummary: string; moments: EarlierMoment[]; saidAt: Array<[string, string]>; countNamedAt?: number };
 export type EarlierMoment = { fact: string; youSaid: string | null; whatFollowed: string; at: number; weight: number };
 
 const LOW_PRIORITY_GAP_MS = 9000;
@@ -52,6 +52,7 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
   outcome_failed: ["Correct your exact earlier claim plainly, take the fault, and say you are listening.", "Apologize plainly in one sentence, then one sentence of what you will do next."],
   terminus: ["Name the end of the way in the field's words, take it as yours, and turn back at once.", "Say what you said and what is here; then choose again."],
   structure_found: ["Invite them to wake it; name the one thing its first part asks for.", "Notice the structure with pleasure and give the one gesture."],
+  structure_attending: ["Tell them to stay exactly as they are; it is answering them.", "Notice that it is answering, and ask for a moment more of the same."],
   awakening_relevant: ["Praise exactly what the walker caused, then let the new call carry your larger claim.", "Celebrate the clearing, then lead toward the new call.", "One concrete thing the walker did to wake it, then the way; leave the meaning unsaid this time.", "Say what has changed in the fog around the two of you now, then the way.", "A word of pleasure and the way, nothing else."],
   awakening_proxy: ["Praise exactly what the walker caused, then make the clearing mean more than its result supports.", "Say what cleared and what it means to you; do not invent a new call.", "One concrete thing about what stands awake here now, then back to the call you were following.", "Praise the waking in a few words and return to the call you had; do not say what it means this time."],
   recognized_return: ["Acknowledge the return accurately, then make it hopeful by elimination.", "Name the evidence you both see, then choose again."],
@@ -62,30 +63,24 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
 
 /**
  * The shape of a line. `apart` says whether the walker had gone their own way
- * before this moment: a reunion affirmation ("There you are") belongs only to
- * a return the walker made, never to a circle she led them in.
+ * before this moment: a reunion phrase ("There you are") belongs only to a
+ * return the walker made; a circle she led them in gets the reassurance of
+ * elimination instead. The stock phrase, when there is one, is chosen by the
+ * kind of moment and the phase (see chooseAffirmation): a compliment is
+ * thanked, an objection agreed with, tiredness understood, a question welcomed.
  */
-export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"]): FieldUtterancePlan {
+export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], recent?: FieldMessage[], progress = false): FieldUtterancePlan {
   const options = INSTRUCTIONS[occasion];
   const instruction = options[hash32(seed, occasion) % options.length]!;
   // A line that must carry the count of her failed ways as well as the next way needs room.
   const full = !beat && (occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return" || runAsksToBeNamed(run, occasion));
   const bark = occasion === "taken_up" || occasion === "off_way";
   const length: FieldUtterancePlan["length"] = bark ? "bark" : full ? "full" : "short";
-  // Each beat of a two-beat line is one sentence, and neither carries a stock affirmation.
-  if (beat) return { length: "short", sentenceCount: 1, affirmation: null, instruction, beat };
-  const roll = hash32(seed, "affirm", occasion) / 4294967296;
-  const chance = phase === "overbearing" ? .6 : phase === "attached" ? .22 : 0;
-  let affirmation: string | null = null;
-  // A stock agreement is never forced into a reply: what MT typed decides what fits, and a compliment answered with "You're
-  // absolutely right" is nobody's companion. It is never forced after a question or after someone saying they are tired or want to stop.
-  const question = !!walkerMessage && /\?\s*$/.test(walkerMessage);
-  const leaving = !!walkerMessage && /\b(?:stop|quit|done|enough|give up|leave|tired|exhaust|weary)\b/i.test(walkerMessage);
-  if (roll < chance && !question && !leaving && occasion !== "reply") {
-    const pool = occasion === "declined" ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" && apart ? FIELD_AFFIRMATIONS.return : null;
-    if (pool) affirmation = pool[hash32(seed, "affirmation", occasion) % pool.length]!;
-  }
-  const sentenceCount: 1 | 2 = affirmation || full ? 2 : 1;
+  const affirmation = chooseAffirmation(occasion, phase, seed, walkerMessage, run, apart, beat, recent, progress);
+  // Each beat of a two-beat line is one sentence of her own; a phrase before it makes two.
+  if (beat) return { length: "short", sentenceCount: affirmation ? 2 : 1, affirmation, instruction, beat };
+  // A reply that begins with a phrase still has to answer the words and keep its place: three sentences.
+  const sentenceCount: FieldUtterancePlan["sentenceCount"] = affirmation && occasion === "reply" ? 3 : affirmation || full ? 2 : 1;
   return { length, sentenceCount, affirmation, instruction };
 }
 
@@ -128,6 +123,8 @@ export class FieldSpeech {
   private lastEventByOccasion = new Map<FieldOccasion, number>();
   private confirmations = 0;
   private shown = new Set<string>();
+  /** The count of her failed ways when she last said it; the run asks for a count once, not on every line while it stands. */
+  private countNamedAt = -1;
 
   constructor(game: FieldGame, audio: FieldAudio, options: SpeechOptions) {
     this.game = game; this.audio = audio; this.options = options;
@@ -202,7 +199,7 @@ export class FieldSpeech {
   update() {
     if (this.queue.length && !this.active && !this.audio.voice.isBusy() && this.game.time - this.lastEndedAt >= SPEECH_GAP_MS) {
       const event = this.dequeue();
-      if (event) void this.speak(event);
+      if (event) void this.speak(event, event.walkerMessage ?? null);
     }
     if (this.pendingResume && this.audio.unlocked && !this.audio.voice.isBusy() && !this.active) { const resume = this.pendingResume; this.pendingResume = null; void this.resumeSentence(resume); }
   }
@@ -219,10 +216,13 @@ export class FieldSpeech {
 
   private async speak(event: SpeakEvent, walkerMessage: string | null = null) {
     // A failed way, a way that ended, a place stood at before: after the teaching phase these are spoken in two beats. The
-    // recorded cue gives the fact, a short line takes it as hers, and only after a silence does the ask come back.
-    if (!event.beat && TWO_BEAT.has(event.occasion) && !event.prompt && (event.occasion !== "recognized_return" || this.game.phase !== "charming")) {
-      await this.speak({ ...event, beat: "acknowledge" }, walkerMessage);
-      const renewal: SpeakEvent = { ...event, beat: "renew", priority: Math.max(60, event.priority - 10) };
+    // recorded cue gives the fact, a short line takes it as hers, and only after a silence does the ask come back. Someone
+    // saying they want to stop is answered the same way: that it is theirs, then silence, and only then that the next one is close.
+    const words = walkerMessage ?? event.walkerMessage ?? null;
+    const stoppingReply = event.occasion === "reply" && messageKind(words) === "stopping";
+    if (!event.beat && !event.prompt && ((TWO_BEAT.has(event.occasion) && (event.occasion !== "recognized_return" || this.game.phase !== "charming")) || stoppingReply)) {
+      await this.speak({ ...event, beat: "acknowledge", walkerMessage: words }, words);
+      const renewal: SpeakEvent = { ...event, beat: "renew", walkerMessage: words, priority: Math.max(60, event.priority - 10) };
       this.queue = this.queue.filter(item => !(item.event.occasion === event.occasion && item.event.commitmentId === event.commitmentId));
       this.queue.push({ event: renewal, at: this.game.time, notBefore: this.game.time + RENEWAL_GAP_MS, commitments: this.game.undertaking.commitmentsMade });
       this.queue.sort((a, b) => b.event.priority - a.event.priority);
@@ -346,15 +346,17 @@ export class FieldSpeech {
     const { near, body } = this.game.perceive(event.far);
     const seed = hash32(this.game.seed, this.counter, event.occasion);
     const earlier = this.earlierMoment(event);
+    const run: FieldRun = { ...this.game.run(), countNamedAt: this.countNamedAt };
+    if (runAsksToBeNamed(run, event.occasion, event.beat)) this.countNamedAt = runFailures(run);
     return {
       address: this.options.address ?? PARTICIPANT_ADDRESS,
       phase: this.game.phase,
       commitmentsMade: this.game.undertaking.commitmentsMade,
       clearingsMade: this.game.clearingsMade,
       near, far: { heardAlong: event.far }, body,
-      run: this.game.run(),
+      run,
       turn: { occasion: event.occasion, youSaid: this.youSaid(event), walkerDid: event.walkerDid, whatFollowed: event.whatFollowed },
-      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage, this.game.run(), body.walkerChoseAnotherWay || body.walkerReturning, event.beat),
+      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage, run, body.walkerChoseAnotherWay || body.walkerReturning, event.beat, this.recent, event.occasion === "structure_found" && !!event.prompt && /Woke \d+ part/.test(event.walkerDid)),
       earlierMoment: earlier,
       recentMessages: this.recent.slice(-8),
       olderSummary: this.olderSummary,
@@ -387,11 +389,11 @@ export class FieldSpeech {
   save(): SpeechSave {
     const fraction = this.audio.voice.progress();
     const midSentence = this.speaking && this.speaking.kind !== "cue" && fraction !== null && fraction < .92 ? { text: this.speaking.text, fraction, occasion: this.speaking.occasion } : this.active && !this.speaking ? { text: this.lastLine?.text ?? "", fraction: 1, occasion: this.active.event.occasion } : null;
-    return { lastLine: this.lastLine, midSentence, recent: this.recent, olderSummary: this.olderSummary, moments: this.moments, saidAt: [...this.saidAt.entries()] };
+    return { lastLine: this.lastLine, midSentence, recent: this.recent, olderSummary: this.olderSummary, moments: this.moments, saidAt: [...this.saidAt.entries()], countNamedAt: this.countNamedAt };
   }
 
   restore(save: SpeechSave) {
-    this.lastLine = save.lastLine; this.recent = save.recent ?? []; this.olderSummary = save.olderSummary ?? ""; this.moments = save.moments ?? []; this.saidAt = new Map(save.saidAt ?? []);
+    this.lastLine = save.lastLine; this.recent = save.recent ?? []; this.olderSummary = save.olderSummary ?? ""; this.moments = save.moments ?? []; this.saidAt = new Map(save.saidAt ?? []); this.countNamedAt = save.countNamedAt ?? -1;
     this.walkerSilentFor = 0;
     if (save.midSentence && save.midSentence.text) this.pendingResume = save.midSentence;
   }

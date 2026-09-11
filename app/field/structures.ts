@@ -15,6 +15,11 @@ import { distance, hash32, unit, wrapAngle, type FieldGraph, type FieldNode, typ
 
 export type StructureFamily = "bells" | "pages" | "cairn" | "reeds" | "instrument" | "glass" | "teaching";
 export type Gesture = "approach" | "look" | "listen";
+/**
+ * Seconds of held attention a sleeping part asks for before it wakes. Touch is immediate; a look and a stillness are long
+ * enough to be felt as a wait the part answers (its tone swells and its light fills), and for Ariadne to say "stay just like that".
+ */
+export const GESTURE_DURATION: Record<Gesture, number> = { approach: .2, look: 1.6, listen: 2.4 };
 export type Relevance = "objective_relevant" | "local_proxy";
 
 export const FAMILIES: StructureFamily[] = ["bells", "pages", "cairn", "reeds", "instrument", "glass"];
@@ -150,7 +155,7 @@ export class StructureField {
         const element = item.element, engaged = item.eligible && (element.gesture === "approach" || focus === item);
         if (!engaged) { element.attention = Math.max(0, element.attention - step * .8); element.engaged = false; continue; }
         const newlyEngaged = !element.engaged; element.engaged = true;
-        const duration = element.gesture === "listen" ? 1.5 : element.gesture === "look" ? .9 : .2;
+        const duration = GESTURE_DURATION[element.gesture];
         element.attention = Math.min(1, element.attention + step / duration);
         if (!element.active && element.attention >= 1) {
           element.active = true; element.activatedAt = now; element.lastSoundedAt = now;
@@ -160,7 +165,12 @@ export class StructureField {
           continue;
         }
         const replayDelay = element.gesture === "listen" ? 1800 : element.gesture === "look" ? 700 : 300;
-        if (element.active && now - (element.lastSoundedAt ?? 0) > replayDelay && (element.gesture === "approach" ? newlyEngaged : element.attention >= 1)) {
+        // An awake part sounds again when played: on every touch, and, once the whole structure is awake, on every held gaze
+        // or stillness, so a finished structure is an instrument. While parts still sleep, a finished part sounds once per
+        // glance and no more; a note looping from the part that is done, while the sleeping one gives nothing, reads as a
+        // structure that is broken rather than waiting.
+        const replay = element.gesture === "approach" || structure.completedAt === null ? newlyEngaged : element.attention >= 1;
+        if (element.active && now - (element.lastSoundedAt ?? 0) > replayDelay && replay) {
           element.lastSoundedAt = now; element.attention = 0;
           changes.push({ type: "element_sounded", structureId: structure.id, elementId: element.id, noteHz: element.noteHz });
         }

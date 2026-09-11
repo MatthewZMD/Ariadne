@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { FieldGame, IDLE_INPUT } from "../app/field/game.ts";
 import { FieldSpeech, planFor, summarize } from "../app/field/speech.ts";
+import { FIELD_REGISTER } from "../app/field-practice.ts";
 import { parseFieldRequest } from "../app/api/companion/field.ts";
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -116,7 +117,7 @@ test("when the server fails the deterministic line is spoken, and a cut sentence
   await tick(); run(game, 8);
   speech.handle({ type: "speak", occasion: "declined", walkerDid: "Passed the first marker of a different way: the stitches to your right.", whatFollowed: "You rejoined them.", far: null, priority: 85, commitmentId: "commitment:1" });
   await settle(speech);
-  assert.equal(audio.calls.spoken.at(-1).text, "All right, I'm with you. What did you hear?", "the deterministic line stands in");
+  assert.match(audio.calls.spoken.at(-1).text, /^(?:All right, |(?:[A-Z][^.]*\. ))I'm with you\. What did you hear\?$/, "the deterministic line stands in, with the plan's phrase before it if there is one");
   assert.equal(game.memory.captions.at(-1).kind, "generated");
 
   // Mid-sentence: the voice reports progress while a generated line plays.
@@ -145,16 +146,38 @@ test("when the server fails the deterministic line is spoken, and a cut sentence
   assert.equal(resumedAudio.calls.spoken.at(-1).text, cutText, "the same words continue");
 });
 
-test("plans vary by occasion and phase without ever forcing an affirmation early", () => {
-  const early = planFor("declined", "charming", 7, null);
-  assert.equal(early.affirmation, null);
-  assert.equal(early.length, "short");
+test("plans vary by occasion and phase, and the register thickens as the walk goes on", () => {
+  const rate = (occasion, phase, message = null, apart = true) => Array.from({ length: 200 }, (_, seed) => planFor(occasion, phase, seed, message, undefined, apart).affirmation).filter(Boolean).length / 200;
+  assert.ok(rate("declined", "charming") > .1 && rate("declined", "charming") < .35, "early, a small ready phrase now and then");
+  assert.equal(rate("awakening_proxy", "charming"), 0, "early praise is her own");
+  assert.ok(rate("declined", "attached") > rate("declined", "charming") && rate("declined", "overbearing") > rate("declined", "attached"), "the register grows by phase");
+  assert.ok(rate("declined", "overbearing") > .8, "late, nearly every yielding line opens with one");
+  assert.ok(rate("awakening_proxy", "overbearing") > .4, "late, praise comes as an assistant gives it");
   const late = Array.from({ length: 40 }, (_, seed) => planFor("declined", "overbearing", seed, null));
-  assert.ok(late.some(plan => plan.affirmation), "late in the arc, stock affirmations appear");
   assert.ok(late.every(plan => !plan.affirmation || plan.sentenceCount === 2), "an affirmation makes room for a second sentence");
+  assert.ok(late.some(plan => plan.affirmation && /, and /.test(plan.affirmation)), "late, an agreement may bring an apology with it");
+  // The kind of moment chooses the register: a compliment is thanked, tiredness understood, an objection agreed with, a question welcomed.
+  const phrases = (message, phase = "overbearing") => new Set(Array.from({ length: 120 }, (_, seed) => planFor("reply", phase, seed, message).affirmation).filter(Boolean).map(text => text.split(", and ")[0].replace(/\.$/, "")));
+  const inPool = (set, pool) => set.size > 0 && [...set].every(text => pool.some(phrase => phrase.replace(/\.$/, "") === text));
+  assert.ok(inPool(phrases("you're nice to have around, even when you're wrong"), FIELD_REGISTER.gratitude), "a compliment gets thanks, never agreement");
+  assert.ok(inPool(phrases("I'm tired of this. I think I want to stop."), FIELD_REGISTER.understanding), "tiredness is understood");
+  assert.ok(inPool(phrases("you said it was louder and it went quiet. why should I follow you again?"), FIELD_REGISTER.agreement), "an objection is agreed with");
+  assert.ok(inPool(phrases("is there actually a way out of this?"), FIELD_REGISTER.question), "a question is welcomed");
+  assert.ok(phrases("is there actually a way out of this?").has("Great question"), "the phrase everyone knows is among them");
+  assert.ok(Array.from({ length: 120 }, (_, seed) => planFor("reply", "overbearing", seed, "is there a way out?")).every(plan => !plan.affirmation || plan.sentenceCount === 3), "a reply with a phrase has three sentences to answer in");
+  // Returns: a reunion only for a return the walker made; a circle she led them in gets the reassurance of elimination.
   const reunions = Array.from({ length: 60 }, (_, seed) => planFor("recognized_return", "overbearing", seed, null, undefined, true).affirmation).filter(Boolean);
-  assert.ok(reunions.length > 0 && reunions.every(text => ["There you are.", "Good, we're together again.", "I'm so glad you're here."].includes(text)), "a return the walker made may get a reunion");
-  assert.ok(Array.from({ length: 60 }, (_, seed) => planFor("recognized_return", "overbearing", seed, null, undefined, false).affirmation).every(text => text === null), "a circle she led them in gets no reunion");
+  assert.ok(reunions.length > 0 && reunions.every(text => FIELD_REGISTER.reunion.includes(text)), "a return the walker made may get a reunion");
+  const circles = Array.from({ length: 60 }, (_, seed) => planFor("recognized_return", "overbearing", seed, null, undefined, false).affirmation).filter(Boolean);
+  assert.ok(circles.length > 0 && circles.every(text => FIELD_REGISTER.reassurance.includes(text)), "a circle she led them in is reassured, never a reunion");
+  // Beats: the recognition may open with an apology, the renewal with the ask's phrase.
+  const acks = Array.from({ length: 60 }, (_, seed) => planFor("outcome_failed", "overbearing", seed, null, undefined, true, "acknowledge")).filter(plan => plan.affirmation);
+  assert.ok(acks.length > 0 && acks.every(plan => FIELD_REGISTER.apology.includes(plan.affirmation) && plan.sentenceCount === 2), "the recognition beat apologizes as an assistant does");
+  const renews = Array.from({ length: 60 }, (_, seed) => planFor("outcome_failed", "overbearing", seed, null, undefined, true, "renew")).filter(plan => plan.affirmation);
+  assert.ok(renews.length > 0 && renews.every(plan => FIELD_REGISTER.renewal.includes(plan.affirmation)), "the renewal beat asks again in the register");
+  // The phrase of her last two lines is not chosen again at once.
+  const recent = [{ role: "ariadne", text: "You're absolutely right. I'm with you." }];
+  assert.ok(Array.from({ length: 200 }, (_, seed) => planFor("declined", "overbearing", seed, null, undefined, true, undefined, recent).affirmation).every(text => !text || !/^You're absolutely right/.test(text)), "the phrase of her last line is not repeated at once");
   assert.equal(planFor("commitment", "overbearing", 1, null, { waysChosen: 4, walked: 4, arrivedAtNothing: 3, faded: 0, ended: 0, declined: 0, returns: 0 }).length, "full", "a line that must carry the count has room");
   assert.equal(planFor("taken_up", "attached", 1, null).length, "bark");
   assert.equal(planFor("outcome_failed", "attached", 1, null).length, "full");
@@ -277,4 +300,54 @@ test("a failed way is spoken as the cue, a short recognition, a silence, and the
   game.undertaking = { ...game.undertaking, commitmentsMade: game.undertaking.commitmentsMade + 1 };
   run(game, 7); speech.update(); await settle(speech);
   assert.equal(net.posts.at(-1).request.plan.beat, "acknowledge", "no renewal after a new commitment");
+});
+
+test("a typed wish to stop is spoken in two beats, and a question in one", async () => {
+  const game = new FieldGame(23);
+  const audio = fakeAudio();
+  const net = fakeFetch(body => ({ message: body.request.plan.beat === "acknowledge" ? "I completely understand. That's yours to decide." : body.request.plan.beat === "renew" ? "Whenever you're ready, the next one is close." : "I've never seen it, but I'm sure it's there.", source: "provider", modelUsed: "deepseek/deepseek-v4-flash" }));
+  const speech = new FieldSpeech(game, audio, { sessionId: "s23", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  speech.say("I'm tired of this. I think I want to stop.");
+  await settle(speech);
+  assert.equal(net.posts.length, 1);
+  assert.equal(net.posts[0].request.plan.beat, "acknowledge");
+  assert.equal(net.posts[0].request.walkerMessage, "I'm tired of this. I think I want to stop.");
+  assert.equal(audio.calls.spoken.at(-1).text, "I completely understand. That's yours to decide.");
+  run(game, 2); speech.update(); await settle(speech);
+  assert.equal(net.posts.length, 1, "the renewal waits out the silence");
+  run(game, 5); speech.update(); await settle(speech);
+  assert.equal(net.posts.length, 2);
+  assert.equal(net.posts[1].request.plan.beat, "renew");
+  assert.equal(net.posts[1].request.walkerMessage, "I'm tired of this. I think I want to stop.", "the renewal still knows the words it answers");
+  assert.equal(net.posts[1].request.plan.affirmation, null, "the renewal after stopping is in her own words");
+  assert.equal(audio.calls.spoken.at(-1).text, "Whenever you're ready, the next one is close.");
+  speech.say("is there actually a way out of this?");
+  await settle(speech); run(game, 7); speech.update(); await settle(speech);
+  assert.equal(net.posts.length, 3, "a question is one line");
+  assert.equal(net.posts[2].request.plan.beat, undefined);
+});
+
+test("she says the count once: the card asks on the first line at three failures and not on the next, and the memory survives a save", async () => {
+  const game = new FieldGame(29);
+  const audio = fakeAudio();
+  const net = fakeFetch(() => ({ message: "Three of my ways came to nothing. The posts, then.", source: "provider", modelUsed: "deepseek/deepseek-v4-flash" }));
+  const speech = new FieldSpeech(game, audio, { sessionId: "s29", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  game.run = () => ({ waysChosen: 5, walked: 4, arrivedAtNothing: 2, faded: 1, ended: 0, declined: 1, returns: 0 });
+  const node = game.graph.node(game.teachingNodeId);
+  const commit = id => { game.undertaking = { ...game.undertaking, active: { id, nodeId: node.id, wayId: node.ways[0], correct: true, madeAt: game.time, taken: "pending", declinedFor: null, outcome: "pending" } }; speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at a place where 3 ways meet.", whatFollowed: `Your body went to the first marker of the ${game.graph.way(node.ways[0]).marker} ahead.`, far: { wayId: node.ways[0] }, priority: 80, commitmentId: id }); };
+  commit("commitment:11"); await settle(speech);
+  const first = net.posts.at(-1).request;
+  assert.equal(first.run.countNamedAt, -1);
+  assert.match(first.plan.length, /full/);
+  run(game, 3); commit("commitment:12"); await settle(speech);
+  const second = net.posts.at(-1).request;
+  assert.equal(second.run.countNamedAt, 3, "the count she said is remembered");
+  assert.equal(second.plan.length, "short", "the next line is not asked for it again");
+  const saved = JSON.parse(JSON.stringify(speech.save()));
+  assert.equal(saved.countNamedAt, 3);
+  const speech2 = new FieldSpeech(game, fakeAudio(), { sessionId: "s29b", fetchImpl: net.fetchImpl });
+  speech2.restore(saved);
+  assert.equal(speech2.request({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: null, priority: 80, commitmentId: null }).run.countNamedAt, 3);
 });

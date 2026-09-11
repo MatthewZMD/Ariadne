@@ -480,9 +480,12 @@ export class FieldRenderer {
         const sprite = view.sprites[index]; if (!sprite) return;
         const material = sprite.material as THREE.SpriteMaterial;
         const attention = element === engaged ? element.attention : element.attention * .6;
-        const base = element.active ? .35 : 0;
-        material.opacity = Math.min(.7, base * .6 + attention * .45 + (element.engaged ? .06 : 0));
-        sprite.scale.setScalar(element.active ? .4 + Math.sin(seconds * 2 + index) * .04 : .3 + attention * .35);
+        // A finished part glows steadily; a sleeping part breathes faintly, so which parts still sleep can be seen from a few
+        // paces; a sleeping part being answered fills and swells with the walker's held attention, the wait made visible.
+        const asleepBreath = element.active ? 0 : .11 + Math.sin(seconds * 1.6 + index * 1.3) * .04;
+        const base = element.active ? .35 : asleepBreath;
+        material.opacity = Math.min(.8, base * .6 + attention * .6 + (element.engaged && !element.active ? .08 : 0));
+        sprite.scale.setScalar(element.active ? .4 + Math.sin(seconds * 2 + index) * .04 : .3 + asleepBreath * .6 + attention * .9 + (element === engaged ? Math.sin(seconds * (4 + attention * 10)) * .05 * attention : 0));
       });
     }
     const nowMs = performance.now();

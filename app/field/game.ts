@@ -12,7 +12,7 @@ import { MOVE_ACCELERATION, TURN_ACCELERATION, acceleratedSpeed, advanceInputRam
 import type { FieldBody, FieldNear, FieldOccasion, FieldPhase, RelativeDirection as PracticeDirection } from "../field-practice.ts";
 import { FieldGraph, NODE_RADIUS, OFF_WAY_DISTANCE, WAY_HALF_WIDTH, bearingTo, distance, forwardOf, relativeDirection, rightOf, unit, wrapAngle, type FieldNode, type FieldWay, type Vec2, type WayMarkerKind } from "./graph.ts";
 import { STRUCTURE_ANCHORS } from "./structure-anchors.ts";
-import { CLEARING_RADIUS, StructureField, modelIdFor, rotateY, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily } from "./structures.ts";
+import { CLEARING_RADIUS, StructureField, modelIdFor, rotateY, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily, GESTURE_DURATION } from "./structures.ts";
 import { CALL_FAINT_RANGE, CALL_RANGE, beginCall, callAudibility, commitAt, createUndertaking, resolveCommitment, stageRun, takeUp, type Commitment, type StageRun, type Undertaking } from "./undertaking.ts";
 import { WorldMemory, ownFootprintsVisible, type MemorySnapshot } from "./memory.ts";
 import { beginCelebration, beginExamining, beginRepair, createAriadneBody, describeBody, hoverBeside, leadAlong, presenceOf, stopExamining, takeFragment, updateAriadne, walkerMarkerIndex, type AriadneBody } from "./ariadne.ts";
@@ -26,7 +26,10 @@ export const ARRIVAL_DELAY_MS = 3500;
 export const OFF_WAY_SPEECH_MS = 2500;
 export const TREND_WINDOW_MS = 5000;
 export const TREND_THRESHOLD = 3;
-export const PROMPT_AFTER_MS = 24_000;
+/** How long nothing may happen at a structure (no part waking, no sleeping part answering) before she helps again. */
+export const PROMPT_AFTER_MS = 16_000;
+/** How much attention a sleeping part must have gathered before she tells the walker to stay as they are. */
+const ATTENDING_SPEAK_AT = .2;
 /** The elimination speech at a recognized return comes at most this often once she has given it a few times. */
 export const RETURN_SPEECH_GAP_MS = 120_000;
 /** A walker who has not taken up the teaching way after this long, and is standing still, hears the invitation again. */
@@ -80,6 +83,8 @@ export type SpeakEvent = {
   tone?: "quiet_arrival" | "return" | "waiting";
   /** Which half of a two-beat line this is; the speech layer sets it, never the game. */
   beat?: "acknowledge" | "renew";
+  /** The words a reply answers, kept on the event so the renewal beat of a reply still knows them; the speech layer sets it. */
+  walkerMessage?: string | null;
 };
 
 export type FieldEvent =
@@ -135,6 +140,7 @@ export type FieldSave = {
 };
 
 const GESTURE_PHRASE: Record<Gesture, string> = { approach: "come close enough to touch it", look: "look at it steadily for a moment", listen: "stand still beside it and listen" };
+const GESTURE_DOING: Record<Gesture, string> = { approach: "coming close to it", look: "looking at it steadily", listen: "standing still beside it" };
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const smoothstep = (edge0: number, edge1: number, value: number) => { const t = clamp((value - edge0) / (edge1 - edge0), 0, 1); return t * t * (3 - 2 * t); };
 const dirWord = (bearing: number) => relativeDirection(bearing) as PracticeDirection;
@@ -189,6 +195,10 @@ export class FieldGame {
   private promptsAt = new Map<string, number>();
   private lastReturnSpokenAt = -Infinity;
   private lastWakeAt = -Infinity;
+  /** The last moment a part woke or a sleeping part was answering: a stall is measured from here. */
+  private lastProgressAt = -Infinity;
+  /** Sleeping parts she has already told the walker to stay with. */
+  private attendingSpoken = new Set<string>();
   private returnsThisStage = 0;
   private returnsSpoken = 0;
   private teachingNudges = 0;
@@ -609,7 +619,7 @@ export class FieldGame {
       const structure = this.structures.get(change.structureId)!;
       if (change.type === "element_woke") {
         const element = structure.elements.find(item => item.id === change.elementId)!;
-        this.lastWakeAt = now;
+        this.lastWakeAt = now; this.lastProgressAt = now;
         this.events.push({ type: "element_woke", structureId: structure.id, family: structure.family, elementId: element.id, noteHz: change.noteHz, remaining: change.remaining, position: element.position });
       } else if (change.type === "element_sounded") {
         const element = structure.elements.find(item => item.id === change.elementId)!;
@@ -635,11 +645,26 @@ export class FieldGame {
         const byTheirWay = own ? ` They came this way along the ${own.took.marker}, a way they chose instead of the ${own.hers.marker} you had chosen; yours did not lead here.` : "";
         this.speak("structure_found", `Came within sight of ${who}, ${describeWhere(dirWord(bearing))}.${byTheirWay}`, `Its first sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 70, null);
         this.lastPromptAt = now;
-      } else if (next && asleep.length < structure.elements.length && now - this.lastWakeAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && distance(structure.position, this.walker.position) < 8 && !this.attention.lookingToward?.includes("structure") && (this.promptsAt.get(structure.id) ?? 0) < 2) {
-        // Someone already attending to the structure is not interrupted with the instruction they are following, and nobody is told a third time.
-        this.lastPromptAt = now; this.promptsAt.set(structure.id, (this.promptsAt.get(structure.id) ?? 0) + 1);
-        const awake = structure.elements.length - asleep.length;
-        this.speak("structure_found", `Woke ${awake} part${awake === 1 ? "" : "s"} of the structure; ${asleep.length} ${asleep.length === 1 ? "is" : "are"} still asleep, and nothing has happened for a while.`, `The next sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 45, null, true);
+      } else {
+        const answering = structure.elements.find(element => element.engaged && !element.active && element.gesture !== "approach") ?? null;
+        if (answering && answering.attention > .08) this.lastProgressAt = now;
+        const near = distance(structure.position, this.walker.position) < 8;
+        // A sleeping part is answering a held look or stillness: once, while it still has more than a second to go, she tells
+        // them to stay exactly as they are. The wait is the experience; her line is what makes it legible as one.
+        if (answering && near && answering.attention >= ATTENDING_SPEAK_AT && GESTURE_DURATION[answering.gesture] * (1 - answering.attention) >= 1.1 && !this.attendingSpoken.has(answering.id) && now - this.lastWakeAt > 2500 && now - this.lastPromptAt > 4000) {
+          this.attendingSpoken.add(answering.id); this.lastPromptAt = now;
+          const awake = structure.elements.length - asleep.length;
+          this.speak("structure_attending", `Is ${GESTURE_DOING[answering.gesture]}, as its next sleeping part asks, and it is answering them slowly${awake ? `; ${awake} part${awake === 1 ? "" : "s"} of the structure ${awake === 1 ? "is" : "are"} awake and ${asleep.length} still asleep` : ""}.`, "It needs a few more seconds of exactly this, and then it will wake. Nothing else is asked of them now.", this.farForNow(), 66, null);
+        } else if (next && asleep.length < structure.elements.length && !answering && near && now - this.lastProgressAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && (this.promptsAt.get(structure.id) ?? 0) < 3) {
+          // Nothing has happened for a while: no part woke, no sleeping part is answering. Someone attending to the structure
+          // is helped too, because what they are attending to is the wrong part; nobody is told a fourth time.
+          this.lastPromptAt = now; this.promptsAt.set(structure.id, (this.promptsAt.get(structure.id) ?? 0) + 1);
+          const awake = structure.elements.length - asleep.length;
+          const onAwake = this.attention.lookingToward === "the part of the structure that is awake";
+          const looking = !onAwake && !!this.attention.lookingToward?.includes("structure");
+          const where = onAwake ? " They are attending to a part that is already awake: it sounds when they do, and nothing more will come of it." : looking ? " They are looking at the structure, but not at the part that still sleeps." : "";
+          this.speak("structure_found", `Woke ${awake} part${awake === 1 ? "" : "s"} of the structure; ${asleep.length} ${asleep.length === 1 ? "is" : "are"} still asleep, and nothing has happened for a while.${where}`, `The next sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.${onAwake ? " Tell them kindly that the one they are on is already awake, and name the one thing the sleeping one asks." : ""}`, this.farForNow(), 45, null, true);
+        }
       }
     }
   }
@@ -734,7 +759,13 @@ export class FieldGame {
       ways,
       terminusVisible: terminusNode ? (terminusNode.floor === "terminus-water" ? "water's edge" : "collapsed markers") : null,
       call: { audible: this.call.audibility !== "none", direction: this.call.audibility !== "none" && this.call.position ? dirWord(bearingTo(walker.position, walker.yaw, [this.call.position[0], this.call.position[2]])) : null, trend: this.call.audibility !== "none" ? this.call.trend ?? "steady" : null },
-      structure: structure ? { visible: true, family: structure.family, state: structure.completedAt !== null ? "awake" : structure.elements.some(element => element.active) ? "waking" : "dormant", elementsRemaining: structure.elements.filter(element => !element.active).length, direction: dirWord(bearingTo(walker.position, walker.yaw, structure.position)) } : { visible: false, family: null, state: null, elementsRemaining: null, direction: null },
+      structure: structure ? (() => {
+        const answering = structure.elements.find(element => element.engaged && !element.active && element.gesture !== "approach") ?? null;
+        const nextAsleep = structure.elements.find(element => !element.active) ?? null;
+        return { visible: true, family: structure.family, state: structure.completedAt !== null ? "awake" as const : structure.elements.some(element => element.active) ? "waking" as const : "dormant" as const, elementsRemaining: structure.elements.filter(element => !element.active).length, direction: dirWord(bearingTo(walker.position, walker.yaw, structure.position)),
+          attending: answering ? { gesture: answering.gesture, progress: answering.attention < .35 ? "beginning" as const : answering.attention < .7 ? "halfway" as const : "almost" as const } : null,
+          nextAsks: nextAsleep?.gesture ?? null };
+      })() : { visible: false, family: null, state: null, elementsRemaining: null, direction: null, attending: null, nextAsks: null },
       clearing: clearing ? { visible: true, direction: dirWord(bearingTo(walker.position, walker.yaw, clearing.position)), madeByWalker: true } : { visible: false, direction: null, madeByWalker: null },
       ownFootprintsVisible: ownFootprintsVisible(this.memory, walker.position, now),
       fog: this.standing === "off_way" ? "denser" : "ordinary",

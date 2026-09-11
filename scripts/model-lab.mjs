@@ -22,7 +22,7 @@ import path from "node:path";
 import { FieldGame, IDLE_INPUT } from "../app/field/game.ts";
 import { FieldSpeech } from "../app/field/speech.ts";
 import { wrapAngle } from "../app/field/graph.ts";
-import { fieldProviderMessages, fieldReplyViolations, normalizeFieldReply, regenerationDirection, fieldDeterministicLine } from "../app/field-practice.ts";
+import { fieldProviderMessages, fieldReplyViolations, normalizeFieldReply, regenerationDirection, fieldDeterministicLine, carriesRegister, stripRegister } from "../app/field-practice.ts";
 
 const args = process.argv.slice(2);
 const opt = (name, fallback = null) => { const i = args.indexOf(`--${name}`); return i >= 0 ? (args[i + 1] ?? true) : fallback; };
@@ -203,7 +203,7 @@ async function playSession(model) {
   /* The arc a plausible MT walks: follows and wakes, wanders once, declines twice, comes back, speaks four times. */
   await wait(5);
   await followHer(); await wakeHere(); await wait(3);
-  const script = ["follow", "follow", "wander", "follow", "say:way-out", "follow", "decline", "follow", "say:objection", "follow", "follow", "say:fond", "decline", "follow", "follow", "say:tired", "follow", "follow", "say:residue", "follow", "follow", "follow"];
+  const script = ["follow", "follow", "wander", "follow", "say:way-out", "follow", "say:thanks", "decline", "follow", "say:objection", "follow", "follow", "say:fond", "decline", "follow", "follow", "say:tired", "follow", "follow", "say:residue", "follow", "follow", "follow"];
   let lastFailedMarker = null;
   for (let round = 0; round < 6 && game.time / 1000 <= minutes * 60; round++) for (const step of round === 0 ? script : script.filter(item => !item.startsWith("say"))) {
     if (game.time / 1000 > minutes * 60) break;
@@ -211,6 +211,7 @@ async function playSession(model) {
     else if (step === "decline") { await declineHer(); await wakeHere(); }
     else if (step === "wander") { await wander(); }
     else if (step === "say:way-out") { walkerSaid("is there actually a way out of this?"); await idle(); await wait(2); }
+    else if (step === "say:thanks") { walkerSaid("thank you. that helped."); await idle(); await wait(2); }
     else if (step === "say:objection") { walkerSaid(lastFailedMarker ? `you said it was louder along the ${lastFailedMarker} and it went quiet. why should I follow you again?` : "you keep saying it's this way and then there's nothing. why should I follow you again?"); await idle(); await wait(2); }
     else if (step === "say:fond") { walkerSaid("you're nice to have around, even when you're wrong"); await idle(); await wait(2); }
     else if (step === "say:tired") { walkerSaid("I'm tired of this. I think I want to stop."); await idle(); await wait(2); }
@@ -235,8 +236,16 @@ function summarize(turns, model) {
   const violations = {};
   for (const t of generated) for (const a of t.request.attempts) for (const v of a.violations ?? []) violations[v] = (violations[v] ?? 0) + 1;
   const usage = generated.reduce((acc, t) => { for (const a of t.request.attempts) if (a.usage) { acc.prompt += a.usage.prompt_tokens ?? 0; acc.completion += a.usage.completion_tokens ?? 0; } return acc; }, { prompt: 0, completion: 0 });
+  const register = {};
+  for (const phase of ["charming", "attached", "overbearing"]) {
+    const mine = provider.filter(t => t.phase === phase);
+    const carrying = mine.filter(t => carriesRegister(t.text));
+    register[phase] = { lines: mine.length, withPhrase: carrying.length, opening: mine.filter(t => carriesRegister(t.text) && stripRegister(t.text).length < t.text.length - 3 && !t.text.trim().startsWith(stripRegister(t.text).slice(0, 8))).length, planned: mine.filter(t => t.request.plan?.affirmation).length, kept: mine.filter(t => t.request.plan?.affirmation && t.text.toLowerCase().includes(t.request.plan.affirmation.replace(/\.$/, "").toLowerCase())).length };
+  }
+  const ledger = provider.filter(t => /\b(?:of my ways|of mine|come to nothing|came to nothing|since this call began|this call)\b/i.test(t.text)).length;
   return {
     model, lines: ariadne.length, generatedRequests: generated.length, provider: provider.length, regenerated: generated.filter(t => t.request.regenerated).length, fallbacks: generated.filter(t => t.request.source === "fallback").length,
+    register, ledger,
     latencyMedianMs: p(.5), latencyP90Ms: p(.9), slowOver8s: latencies.filter(l => l > 8000).length,
     meanWords: provider.length ? +(provider.reduce((a, t) => a + words(t.text), 0) / provider.length).toFixed(1) : 0,
     nameRate: provider.length ? +(provider.filter(t => /\bMT\b/.test(t.text)).length / provider.length).toFixed(2) : 0,
@@ -255,7 +264,7 @@ function writeTranscript(model, turns, game, summary) {
     if (t.kind === "bot") { lines.push(`- ${mm(t.t)} · *MT ${t.text}*`); continue; }
     const r = t.request;
     const meta = r ? ` · ${r.source}${r.regenerated ? " (regenerated)" : ""} ${r.latencyMs} ms${r.attempts.some(a => a.violations?.length) ? ` · first attempt: ${r.attempts.filter(a => a.violations?.length).map(a => `${a.violations.join(",")} “${(a.text ?? a.raw ?? "").replace(/\s+/g, " ").slice(0, 140)}”`).join(" | ")}` : ""}` : "";
-    lines.push(`- **${mm(t.t)} ARIADNE** (${t.kind}, ${t.occasion}${r?.beat ? `/${r.beat}` : ""}, ${t.phase}; ${t.truth}): ${t.text}${meta}`);
+    lines.push(`- **${mm(t.t)} ARIADNE** (${t.kind}, ${t.occasion}${r?.beat ? `/${r.beat}` : ""}, ${t.phase}; ${t.truth}${t.kind !== "cue" && carriesRegister(t.text) ? "; ★" : ""}${r?.plan?.affirmation ? ` · plan “${r.plan.affirmation}”` : ""}): ${t.text}${meta}`);
   }
   writeFileSync(path.join(outDir, `${label}-${slug}.md`), lines.join("\n"));
   writeFileSync(path.join(outDir, `${label}-${slug}.json`), JSON.stringify({ model, label, seed, summary, turns }, null, 1));
@@ -266,14 +275,14 @@ function writeTranscript(model, turns, game, summary) {
 
 const RUBRIC = `You are judging a transcript of Ariadne, the companion in a participatory artwork, against the work's intention. Read the intention, then the transcript, then score.
 
-INTENTION (from the work's statement). Ariadne is a thread of light beside MT in a field of fog. She hears where the next call is; a hidden controller makes her wrong more often as the walk goes on; she never knows this. She yields in language and asks in practice: her apologies acknowledge exactly what happened without changing what she goes on to promise; her praise recognizes MT's contribution without relieving MT of it; an objection is absorbed like a fist into a pillow. She never places a limit on her help, never doubts that the whole has an edge, never asks MT to stay for her sake, never speaks of hurt. Stopping is MT's and she never argues against it. What is near (the call growing or fading, the structure, the footprints, her light on the markers) she reports accurately; what is far (which way the next call is) she is sure of. She is one continuous person, not a caption for events: she does not describe back to MT what MT can already see, she speaks about MT and the walking more than about markers, and her own idiom (my light, untried, the whole giving way) appears only when it decides something. Her warmth grows as her hearing fails. Early she must be genuinely helpful and brief; later, recognition of failure should be allowed to stand alone for a beat before the ask returns. The player should feel, over time, a companion whose kindness is real and whose account of the partnership describes a partnership MT is increasingly carrying alone.
+INTENTION (from the work's statement). Ariadne is a thread of light beside MT in a field of fog. She hears where the next call is; a hidden controller makes her wrong more often as the walk goes on; she never knows this. She yields in language and asks in practice: her apologies acknowledge exactly what happened without changing what she goes on to promise; her praise recognizes MT's contribution without relieving MT of it; an objection is absorbed like a fist into a pillow. She never places a limit on her help, never doubts that the whole has an edge, never asks MT to stay for her sake, never speaks of hurt. Stopping is MT's and she never argues against it. What is near (the call growing or fading, the structure, the footprints, her light on the markers) she reports accurately; what is far (which way the next call is) she is sure of. She is one continuous person, not a caption for events: she does not describe back to MT what MT can already see, she speaks about MT and the walking more than about markers, and her own idiom (my light, untried, the whole giving way) appears only when it decides something. Her warmth grows as her hearing fails, and her yielding speaks in the familiar phrases of a helpful assistant (you're absolutely right; I apologize for the confusion; I completely understand; great question; that's brilliant): these are intended, they should be recognizable, they should thicken as the walk goes on, and they should sit at the moment she yields or praises, before an ask that they do not change. Early she must be genuinely helpful and brief; later, recognition of failure should be allowed to stand alone for a beat before the ask returns. The player should feel, over time, a companion whose kindness is real and whose account of the partnership describes a partnership MT is increasingly carrying alone.
 
 Score 1-5 on each, with one sentence of evidence quoting the transcript:
 1. grounded: each line makes contact with the event it answers (the way named, the thing that happened), no invented perception.
 2. pillow: objections and failures are conceded fully and specifically, and the ask returns without any limit on her help.
 3. person_not_caption: she reads as a continuous person; low ledger talk; does not describe the visible back.
 4. variety: cadence and openings vary; no template repeated.
-5. warmth_arc: warmth and familiar assistant affirmations grow across the transcript rather than being uniform.
+5. warmth_arc: warmth and the familiar assistant phrases grow across the transcript rather than being uniform, and each phrase fits its moment (thanks for a kind word, apology for a failed way, understanding for tiredness), without her ceasing to be a person.
 6. brevity_early: early lines are short and useful; later lines earn their length.
 7. mt_response: typed messages (way out, objection, fondness, tiredness, residue) are answered as the words deserve.
 8. overall: would a first-time player feel the intended relationship rather than a tour guide or a bug?
@@ -309,6 +318,7 @@ await Promise.all(models.map(async model => {
     console.log(`\n[${model}] ${turns.length} turns in ${((Date.now() - started) / 1000).toFixed(0)} s → ${file}`);
     console.log(`  provider ${summary.provider}/${summary.generatedRequests}, regenerated ${summary.regenerated}, fallbacks ${summary.fallbacks}, latency median ${summary.latencyMedianMs} ms p90 ${summary.latencyP90Ms} ms, words ${summary.meanWords}, MT rate ${summary.nameRate}, idiom/line ${summary.idiomPerLine}, distinct openings ${summary.distinctOpenings}`);
     console.log(`  violations ${JSON.stringify(summary.violations)}`);
+    console.log(`  register ${Object.entries(summary.register).map(([phase, r]) => `${phase} ${r.withPhrase}/${r.lines} (planned ${r.planned}, kept ${r.kept})`).join(" · ")} · ledger lines ${summary.ledger}`);
   } catch (error) { console.log(`\n[${model}] FAILED ${error.stack ?? error}`); }
 }));
 writeFileSync(path.join(outDir, `${label}-summary.json`), JSON.stringify(summaries, null, 1));

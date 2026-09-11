@@ -57,6 +57,7 @@ export function cueForOccasion(occasion: FieldOccasion, detail: { gesture?: "app
     case "outcome_failed": return "fading";
     case "terminus": return "dead-end";
     case "structure_found": return detail.teaching ? (detail.gesture === "look" ? "teaching-look" : detail.gesture === "listen" ? "teaching-listen" : "teaching-approach") : "found-one";
+    case "structure_attending": return null;
     case "awakening_relevant": return "clearing-promise";
     case "awakening_proxy": return "woke-the-room";
     case "recognized_return": return "been-here";
@@ -78,6 +79,7 @@ export function deliveryFor(occasion: FieldOccasion, phase: FieldPhase): Ariadne
     case "outcome_failed": return "tender_apology";
     case "terminus": return "tender_apology";
     case "structure_found": return "curious_discovery";
+    case "structure_attending": return late ? "intimate_reassurance" : "quiet_companionship";
     case "awakening_relevant": return late ? "final_hope" : "delighted_praise";
     case "awakening_proxy": return "delighted_praise";
     case "recognized_return": return late ? "intimate_reassurance" : "curious_discovery";
@@ -103,6 +105,8 @@ export type AudioFrame = {
   offWayFactor: number;
   waterDistance: number | null;
   clearings: Array<{ id: string; family: StructureFamily; x: number; z: number }>;
+  /** A sleeping part the walker is attending to as it asks: its note swells with their attention, so the wait is heard as an answer. */
+  attending?: { position: [number, number, number]; noteHz: number; attention: number } | null;
 };
 
 export type VoiceResult = "spoken" | "interrupted" | "failed";
@@ -187,6 +191,28 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
     if (!loop || !context) return;
     const t = context.currentTime;
     loop.gain.gain.cancelScheduledValues(t); loop.gain.gain.setTargetAtTime(Math.max(0, gain), t, seconds / 3);
+  };
+
+  /**
+   * The answering tone: one sine an octave below the part's note, placed at the part, whose gain follows the walker's held
+   * attention. It runs at silence between parts, so beginning to answer costs nothing but a gain ramp.
+   */
+  let answering: { oscillator: OscillatorNode; gain: GainNode; panner: PannerNode } | null = null;
+  const answer = (attending: AudioFrame["attending"]) => {
+    if (!context || !world) return;
+    if (!answering) {
+      const oscillator = context.createOscillator(); oscillator.type = "sine";
+      const gain = context.createGain(); gain.gain.value = 0;
+      const panner = makePanner();
+      oscillator.connect(gain); gain.connect(panner); panner.connect(world); oscillator.start();
+      answering = { oscillator, gain, panner };
+    }
+    const t = context.currentTime;
+    if (attending) {
+      answering.oscillator.frequency.setTargetAtTime(attending.noteHz / 2, t, .05);
+      place(answering.panner, ...attending.position);
+      answering.gain.gain.cancelScheduledValues(t); answering.gain.gain.setTargetAtTime(Math.min(1, attending.attention) ** 2 * .11, t, .08);
+    } else { answering.gain.gain.cancelScheduledValues(t); answering.gain.gain.setTargetAtTime(0, t, .12); }
   };
 
   const playOneShot = async (id: string, destination: AudioNode, gain: number, position: [number, number, number] | null, at?: number) => {
@@ -324,6 +350,9 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
       callPosition = frame.call.position; callGain = frame.call.gain;
       if (call) { setLoopGain(call, frame.call.gain * gainOf(call.id), .4); if (call.panner && frame.call.position) place(call.panner, ...frame.call.position); this.schedulePulses(); }
 
+      // A sleeping part answering a held look or stillness.
+      answer(frame.attending ?? null);
+
       // Fog thins off the line into a hush; the fog layers drop a little with it.
       for (const loop of fogLoops) setLoopGain(loop, gainOf(loop.id) * (1 - .45 * frame.offWayFactor), 1);
       if (frame.offWayFactor > .02) { if (!hush) { void startLoop("off-graph-hush", environment!, 0, null, .5).then(loop => { hush = loop; }); } else setLoopGain(hush, gainOf("off-graph-hush") * frame.offWayFactor, 1); }
@@ -392,7 +421,7 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
     warm(families: StructureFamily[]) { for (const family of families) { void load(`${family}-call`); for (let i = 1; i <= 6; i++) void load(`${family}-element-0${i}`); void load(`${family}-completion`); void load(`${family}-awake`); } },
 
     get isPaused() { return paused; },
-    destroy() { destroyed = true; voice.interrupt(); stopLoop(call, .05); for (const loop of fogLoops) stopLoop(loop, .05); stopLoop(hush, .05); stopLoop(water, .05); for (const loop of awakeLoops.values()) if (loop.id !== "pending") stopLoop(loop, .05); void context?.close(); context = null; },
+    destroy() { destroyed = true; voice.interrupt(); if (answering) { try { answering.oscillator.stop(); } catch { /* already stopped */ } answering = null; } stopLoop(call, .05); for (const loop of fogLoops) stopLoop(loop, .05); stopLoop(hush, .05); stopLoop(water, .05); for (const loop of awakeLoops.values()) if (loop.id !== "pending") stopLoop(loop, .05); void context?.close(); context = null; },
   };
   return audio;
 }

@@ -24,7 +24,7 @@ test("the visible pulse follows the manifest's events on the loop clock", async 
 test("every occasion maps to a delivery the speech route accepts, and cues exist for what they name", async () => {
   const cues = JSON.parse(await readFile(new URL("../public/fog/cues.json", import.meta.url), "utf8"));
   const ids = new Set(cues.assets.map(asset => asset.id));
-  const occasions = ["opening", "commitment", "taken_up", "declined", "outcome_confirmed", "outcome_failed", "terminus", "structure_found", "awakening_relevant", "awakening_proxy", "recognized_return", "off_way", "reply", "resume"];
+  const occasions = ["opening", "commitment", "taken_up", "declined", "outcome_confirmed", "outcome_failed", "terminus", "structure_found", "structure_attending", "awakening_relevant", "awakening_proxy", "recognized_return", "off_way", "reply", "resume"];
   for (const occasion of occasions) {
     for (const phase of ["charming", "attached", "overbearing"]) assert.ok(ARIADNE_VOCAL_DELIVERIES.includes(deliveryFor(occasion, phase)), `${occasion}/${phase} delivery`);
     const cue = cueForOccasion(occasion);

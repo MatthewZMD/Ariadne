@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor } from "../app/field/game.ts";
+import { GESTURE_DURATION } from "../app/field/structures.ts";
+import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, PROMPT_AFTER_MS } from "../app/field/game.ts";
 import { wrapAngle } from "../app/field/graph.ts";
 
 const DT = 1 / 30;
@@ -401,4 +402,42 @@ test("vertical look clamps, survives saves, and leaves walking on the ground", (
   run(game, .3, { ...IDLE_INPUT, strafe: 1 });
   assert.equal(game.walker.yaw, yaw);
   assert.ok(Math.hypot(game.walker.position[0]-start[0],game.walker.position[1]-start[1]) > 0);
+});
+
+test("a part answering a held look is spoken to once while it still has a second to go, and a stall while looking at the structure is helped", () => {
+  const game = new FieldGame(3);
+  run(game, 7);
+  const teaching = game.teachingStructure;
+  walkTo(game, teaching.position, 5.5, 80);
+  const [approach, look] = teaching.elements;
+  assert.equal(approach.gesture, "approach"); assert.equal(look.gesture, "look");
+  walkTo(game, [approach.position[0], approach.position[2]], .9, 20); run(game, .6);
+  assert.ok(approach.active, "the touch woke the first part");
+  run(game, 3.2);
+  walkTo(game, standingPoint(game, look, 2.2), .5, 20);
+  const holding = faceAndWait(game, look.position, GESTURE_DURATION.look * .55);
+  assert.ok(!look.active && look.attention > .15, `the look is being answered but is not complete (${look.attention})`);
+  const attending = speeches(holding).find(event => event.occasion === "structure_attending");
+  assert.ok(attending, "she tells them to stay as they are while it answers");
+  assert.match(attending.walkerDid, /looking at it steadily, as its next sleeping part asks, and it is answering them slowly; 1 part of the structure is awake and 2 still asleep/);
+  assert.match(attending.whatFollowed, /few more seconds of exactly this/);
+  assert.equal(attending.priority, 66);
+  const { near } = game.perceive(null);
+  assert.equal(near.structure.attending?.gesture, "look");
+  assert.ok(["beginning", "halfway", "almost"].includes(near.structure.attending?.progress));
+  assert.equal(near.structure.nextAsks, "look");
+  const rest = faceAndWait(game, look.position, GESTURE_DURATION.look);
+  assert.ok(look.active, "held a little longer, it wakes");
+  assert.ok(!speeches(rest).some(event => event.occasion === "structure_attending"), "she does not say it twice for one part");
+
+  // A stall: standing six metres off, looking at the structure but at no part, nothing answers; after PROMPT_AFTER_MS she helps,
+  // and her card says what they are looking at.
+  const dx = game.walker.position[0] - teaching.position[0], dz = game.walker.position[1] - teaching.position[1], d = Math.hypot(dx, dz) || 1;
+  walkTo(game, [teaching.position[0] + dx / d * 6, teaching.position[1] + dz / d * 6], .4, 20);
+  const stalled = faceAndWait(game, [teaching.position[0], 1.4, teaching.position[1]], PROMPT_AFTER_MS / 1000 + 2);
+  const prompt = speeches(stalled).find(event => event.occasion === "structure_found" && event.prompt);
+  assert.ok(prompt, "looking at the structure no longer silences her when nothing is happening");
+  assert.match(prompt.walkerDid, /nothing has happened for a while\. They are looking at the structure, but not at the part that still sleeps\./);
+  assert.match(prompt.whatFollowed, /stand still beside it and listen/);
+  assert.equal(game.perceive(null).near.structure.nextAsks, "listen");
 });

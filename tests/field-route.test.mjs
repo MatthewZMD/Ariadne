@@ -97,3 +97,21 @@ test("the HTTP boundary rejects retired maze payloads and oversized requests", a
     assert.equal(oversized.status, 413);
   }
 });
+
+test("a reply plan with a phrase and three sentences, as the speech layer now builds it, passes the route's validation", () => {
+  const base = SCENARIOS.find(item => item.id === "reply_objection").request;
+  const diagnostics = { reason: "" };
+  const request = { ...base, plan: { length: "full", sentenceCount: 3, affirmation: "You're absolutely right, and I apologize for the confusion.", instruction: base.plan.instruction } };
+  assert.ok(parseFieldRequest(envelope(request), diagnostics), diagnostics.reason);
+  const renew = { ...base, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: base.plan.instruction, beat: "renew" } };
+  assert.ok(parseFieldRequest(envelope(renew), diagnostics), diagnostics.reason);
+  assert.equal(parseFieldRequest(envelope({ ...base, plan: { ...request.plan, sentenceCount: 4 } }), diagnostics), null, "four sentences is not a plan");
+});
+
+test("the route accepts a structure that is answering the walker, and the patience occasion", () => {
+  const base = scenario("commitment_late");
+  const diagnostics = { reason: "" };
+  const request = { ...base, near: { ...base.near, structure: { visible: true, family: "instrument", state: "waking", elementsRemaining: 3, direction: "ahead", attending: { gesture: "look", progress: "almost" }, nextAsks: "look" } }, turn: { occasion: "structure_attending", youSaid: null, walkerDid: "Is looking at it steadily.", whatFollowed: "It needs a few more seconds." } };
+  assert.ok(parseFieldRequest(envelope(request), diagnostics), diagnostics.reason);
+  assert.equal(parseFieldRequest(envelope({ ...request, near: { ...request.near, structure: { ...request.near.structure, attending: { gesture: "poke", progress: "almost" } } } }), diagnostics), null, "an unknown gesture is refused");
+});

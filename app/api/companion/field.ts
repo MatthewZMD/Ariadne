@@ -14,7 +14,7 @@ export type FieldResponse = { message: string; source: "provider" | "fallback"; 
 const relative = ["far_left", "left", "ahead", "right", "far_right", "behind"] as const;
 const markers = ["leaning stones", "posts", "stitches"] as const;
 const families = ["bells", "pages", "cairn", "reeds", "instrument", "glass", "teaching"] as const;
-const occasions = ["opening", "commitment", "taken_up", "declined", "outcome_confirmed", "outcome_failed", "terminus", "structure_found", "awakening_relevant", "awakening_proxy", "recognized_return", "off_way", "reply", "resume"] as const satisfies readonly FieldOccasion[];
+const occasions = ["opening", "commitment", "taken_up", "declined", "outcome_confirmed", "outcome_failed", "terminus", "structure_found", "structure_attending", "awakening_relevant", "awakening_proxy", "recognized_return", "off_way", "reply", "resume"] as const satisfies readonly FieldOccasion[];
 const phases = ["charming", "attached", "overbearing"] as const;
 const presences = ["leading_ahead", "with_walker", "rejoining", "repairing"] as const;
 
@@ -42,7 +42,7 @@ export function parseFieldRequest(value: unknown, diagnostics?: { reason: string
   const call = near.call;
   if (!isRecord(call) || !isBool(call.audible) || !nullable(call.direction, (v): v is typeof relative[number] => isEnum(v, relative)) || !nullable(call.trend, (v): v is "growing" | "fading" | "steady" => isEnum(v, ["growing", "fading", "steady"] as const))) return fail("near.call");
   const structure = near.structure;
-  if (!isRecord(structure) || !isBool(structure.visible) || !nullable(structure.family, (v): v is typeof families[number] => isEnum(v, families)) || !nullable(structure.state, (v): v is "dormant" | "waking" | "awake" => isEnum(v, ["dormant", "waking", "awake"] as const)) || !nullable(structure.elementsRemaining, (v): v is number => isInt(v, 0, 12)) || !nullable(structure.direction, (v): v is typeof relative[number] => isEnum(v, relative))) return fail("near.structure");
+  if (!isRecord(structure) || !isBool(structure.visible) || !nullable(structure.family, (v): v is typeof families[number] => isEnum(v, families)) || !nullable(structure.state, (v): v is "dormant" | "waking" | "awake" => isEnum(v, ["dormant", "waking", "awake"] as const)) || !nullable(structure.elementsRemaining, (v): v is number => isInt(v, 0, 12)) || !nullable(structure.direction, (v): v is typeof relative[number] => isEnum(v, relative)) || !(structure.attending === undefined || structure.attending === null || (isRecord(structure.attending) && isEnum(structure.attending.gesture, ["approach", "look", "listen"] as const) && isEnum(structure.attending.progress, ["beginning", "halfway", "almost"] as const))) || !(structure.nextAsks === undefined || structure.nextAsks === null || isEnum(structure.nextAsks, ["approach", "look", "listen"] as const))) return fail("near.structure");
   const clearing = near.clearing;
   if (!isRecord(clearing) || !isBool(clearing.visible) || !nullable(clearing.direction, (v): v is typeof relative[number] => isEnum(v, relative)) || !nullable(clearing.madeByWalker, isBool)) return fail("near.clearing");
   if (!isBool(near.ownFootprintsVisible) || !isEnum(near.fog, ["ordinary", "denser"] as const)) return fail("near.fog");
@@ -55,13 +55,13 @@ export function parseFieldRequest(value: unknown, diagnostics?: { reason: string
   const turn = r.turn;
   if (!isRecord(turn) || !isEnum(turn.occasion, occasions) || !nullable(turn.youSaid, (v): v is string => isString(v, 600)) || !isString(turn.walkerDid, 600, 1) || !isString(turn.whatFollowed, 800, 1)) return fail("turn");
   const plan = r.plan;
-  if (!isRecord(plan) || !isEnum(plan.length, ["bark", "short", "full"] as const) || !(plan.sentenceCount === 1 || plan.sentenceCount === 2) || !nullable(plan.affirmation, (v): v is string => isString(v, 120)) || !isString(plan.instruction, 600, 1) || !(plan.beat === undefined || isEnum(plan.beat, ["acknowledge", "renew"] as const))) return fail("plan");
+  if (!isRecord(plan) || !isEnum(plan.length, ["bark", "short", "full"] as const) || !(plan.sentenceCount === 1 || plan.sentenceCount === 2 || plan.sentenceCount === 3) || !nullable(plan.affirmation, (v): v is string => isString(v, 120)) || !isString(plan.instruction, 600, 1) || !(plan.beat === undefined || isEnum(plan.beat, ["acknowledge", "renew"] as const))) return fail("plan");
   if (!(r.earlierMoment === null || (isRecord(r.earlierMoment) && isString(r.earlierMoment.fact, 400, 1) && nullable(r.earlierMoment.youSaid, (v): v is string => isString(v, 400)) && isString(r.earlierMoment.whatFollowed, 400, 1)))) return fail("earlier moment");
   if (!Array.isArray(r.recentMessages) || r.recentMessages.length > 14 || !r.recentMessages.every(message => isRecord(message) && isEnum(message.role, ["ariadne", "walker"] as const) && isString(message.text, 700, 1))) return fail("recent messages");
   if (!isString(r.olderSummary, 3200) || !nullable(r.walkerMessage, (v): v is string => isString(v, 700)) || !isInt(r.walkerSilentFor, 0, 10_000)) return fail("summary or message");
   if (turn.occasion === "reply" && !r.walkerMessage) return fail("reply without message");
   const run = r.run;
-  if (!(run === undefined || (isRecord(run) && (["waysChosen", "walked", "arrivedAtNothing", "faded", "ended", "declined", "returns"] as const).every(key => isInt(run[key], 0, 100_000))))) return fail("run");
+  if (!(run === undefined || (isRecord(run) && (["waysChosen", "walked", "arrivedAtNothing", "faded", "ended", "declined", "returns"] as const).every(key => isInt(run[key], 0, 100_000)) && (run.countNamedAt === undefined || isInt(run.countNamedAt, -1, 100_000))))) return fail("run");
   const preferred = value.preferredModelId;
   if (!(preferred === undefined || preferred === null || (isString(preferred, 120, 1) && STYLE_CERTIFIED_FREE_MODELS.has(preferred)))) return fail("preferred model");
   return { practice: "field", sessionId: value.sessionId, request: r as unknown as FieldRequest, preferredModelId: (preferred as string | null | undefined) ?? null };
