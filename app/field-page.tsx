@@ -46,6 +46,7 @@ export default function FieldPage() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pauseLogRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<FieldGame | null>(null);
   const rendererRef = useRef<FieldRenderer | null>(null);
   const audioRef = useRef<FieldAudio | null>(null);
@@ -67,6 +68,13 @@ export default function FieldPage() {
 
   useEffect(() => { experienceRef.current = experience; }, [experience]);
   useEffect(() => { logOpenRef.current = logOpen; if (logOpen) inputRef.current?.focus(); }, [logOpen]);
+  useEffect(() => {
+    if (experience !== "paused") return;
+    requestAnimationFrame(() => {
+      const log = pauseLogRef.current;
+      if (log) log.scrollTop = log.scrollHeight;
+    });
+  }, [experience, captions.length]);
   useEffect(() => {
     const sync = () => setFullscreen(document.fullscreenElement !== null);
     setFullscreenAvailable(typeof document.documentElement.requestFullscreen === "function");
@@ -368,7 +376,7 @@ export default function FieldPage() {
       <button className="fog-button quiet fog-fullscreen" onClick={() => void toggleFullscreen()} disabled={!fullscreenAvailable}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>
-    {record.length > 0 && <div className="fog-pause-log" role="log" aria-label="What Ariadne has said">
+    {record.length > 0 && <div ref={pauseLogRef} className="fog-pause-log" role="log" aria-label="What Ariadne has said">
       <p className="fog-pause-log-title">What Ariadne said</p>
       {record.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}
     </div>}
