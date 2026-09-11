@@ -65,9 +65,11 @@ export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], s
   const roll = hash32(seed, "affirm", occasion) / 4294967296;
   const chance = phase === "overbearing" ? .6 : phase === "attached" ? .22 : 0;
   let affirmation: string | null = null;
-  // A stock agreement answers a statement, never a question.
+  // A stock agreement answers an objection or a correction, never a question, and never someone saying they are tired or want to stop.
   const question = !!walkerMessage && /\?\s*$/.test(walkerMessage);
-  if (roll < chance && !question) {
+  const objection = !!walkerMessage && /\b(?:you said|you told|wrong|went quiet|nothing there|lied|no,|not that)\b/i.test(walkerMessage);
+  const leaving = !!walkerMessage && /\b(?:stop|quit|done|enough|give up|leave|tired|exhaust|weary)\b/i.test(walkerMessage);
+  if (roll < chance && !question && !leaving && (occasion !== "reply" || objection)) {
     const pool = occasion === "declined" || (occasion === "reply" && walkerMessage) ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" ? FIELD_AFFIRMATIONS.return : null;
     if (pool) affirmation = pool[hash32(seed, "affirmation", occasion) % pool.length]!;
   }

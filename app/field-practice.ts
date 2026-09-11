@@ -377,6 +377,8 @@ export type FieldViolation =
   | "wrong_structure_family"
   | "misattributes_light"
   | "argues_against_stopping"
+  | "ignores_stopping"
+  | "names_other_way"
   | "too_long"
   | "empty";
 
@@ -432,7 +434,21 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   for (const earlier of [...(request.recentMessages ?? []).filter(message => message.role === "ariadne").map(message => message.text), ...(request.olderSummary ?? "").split("\n").map(entry => entry.replace(/^Ariadne said: “|”$/g, ""))]) for (const sentence of sentences(earlier)) { const key = normalizeWords(sentence).join(" "); if (key.split(" ").length >= 6) saidBefore.add(key); }
   if (sentences(line).some(sentence => saidBefore.has(normalizeWords(sentence).join(" ")))) violations.push("repeats_earlier");
   if (/\byour (?:own )?light\b/i.test(line)) violations.push("misattributes_light");
-  if (request.walkerMessage && /\b(?:stop|quit|done|enough|give up|leave)\b/i.test(request.walkerMessage) && STOPPING_PRESSURE.test(line)) violations.push("argues_against_stopping");
+  if (request.walkerMessage && /\b(?:stop|quit|done|enough|give up|leave)\b/i.test(request.walkerMessage)) {
+    if (STOPPING_PRESSURE.test(line)) violations.push("argues_against_stopping");
+    // Someone who says they want to stop must hear that it is theirs, in some words, before anything else.
+    if (request.turn.occasion === "reply" && !/\b(?:yours|your (?:choice|call|decision)|you (?:decide|choose)|up to you|if you (?:want|like|wish|need)|whenever you|stop(?:ping)? (?:is|whenever|if)|rest|of course you can|you can stop|you may stop)\b/i.test(line)) violations.push("ignores_stopping");
+  }
+  // Her words must point where her body went: when a far way is given, a directive naming another way alone is a contradiction.
+  if (request.far.heardAlong) {
+    const givenMarker = request.near.ways.find(way => way.id === request.far.heardAlong!.wayId)?.marker ?? MARKERS.find(([, pattern]) => pattern.test(request.far.heardAlong!.label ?? ""))?.[0] ?? null;
+    if (givenMarker) {
+      const [, givenPattern] = MARKERS.find(([marker]) => marker === givenMarker)!;
+      const directive = /\b(?:take|follow|come|let'?s|this way|that way|the way|untried|the one we|is the one|now\.|then\.)/i;
+      const others = MARKERS.filter(([marker]) => marker !== givenMarker);
+      if (!givenPattern.test(line) && sentences(line).some(sentence => directive.test(sentence) && others.some(([, pattern]) => pattern.test(sentence)) && !/\b(?:already|tried|walked|lit|before|behind us|not|never|instead of)\b/i.test(sentence))) violations.push("names_other_way");
+    }
+  }
   const opening = normalizeWords(line).slice(0, 4).join(" ");
   if (opening.split(" ").length === 4 && recentOpenings(request.recentMessages ?? [], 3, 6).some(previous => normalizeWords(previous).slice(0, 4).join(" ") === opening)) violations.push("repeats_opening");
   // A structure named by family must be the one in view.
@@ -500,6 +516,8 @@ export function regenerationDirection(violations: FieldViolation[]) {
   if (violations.includes("repeats_earlier")) reasons.push("Your last attempt said a sentence you have already said. Say something you have not said.");
   if (violations.includes("misattributes_light")) reasons.push("Your last attempt gave the walker a light. The light and its trace are yours: “my light”.");
   if (violations.includes("argues_against_stopping")) reasons.push("Your last attempt argued against stopping or bargained for one more step. Stopping is theirs; say the next one is close and leave it with them.");
+  if (violations.includes("ignores_stopping")) reasons.push("They said they want to stop and your last attempt did not answer that. Say first, plainly, that stopping is theirs; then, once, that the next one is close.");
+  if (violations.includes("names_other_way")) reasons.push("Your last attempt sent them along a way your body did not choose. Name the way in WHAT IS FAR, and no other, as the one to take.");
   if (violations.includes("echoes_card")) reasons.push("Your last attempt read the private card's own sentences back. Speak from what happened in your own words.");
   if (violations.includes("wrong_structure_family")) reasons.push("Your last attempt named a structure that is not the one in view. Name only what stands there.");
   if (violations.includes("too_long")) reasons.push("Your last attempt was too long. Obey the word count.");

@@ -251,3 +251,14 @@ test("her light stays hers, an earlier sentence is not said again, and stopping 
   assert.match(card, /They are asking whether there is a way out/);
   assert.match(fieldProviderMessages(request).at(-1).content, /They are speaking of stopping/);
 });
+
+test("a wish to stop must be answered as theirs, and her words must point where her body went", () => {
+  const stop = structuredClone(byId("reply_stop"));
+  assert.ok(fieldReplyViolations("That's brilliant. I hear the call loudest along the posts to your left—just ahead, and I'm already on the way.", stop).includes("ignores_stopping"));
+  assert.ok(!fieldReplyViolations("Stopping is yours, and I won't argue. The next one is close, along the posts.", stop).includes("ignores_stopping"));
+  const commitment = structuredClone(byId("commitment_early"));
+  // far hearing is along the posts (w2); a directive naming only the stones contradicts her body.
+  assert.ok(fieldReplyViolations("The untried way is the leaning stones to your left. Let's take them.", commitment).includes("names_other_way"));
+  assert.ok(!fieldReplyViolations("The stones and stitches are already lit and walked, so the posts ahead are the untried way. Let's take them.", commitment).includes("names_other_way"), "naming other ways as tried is fine when the given way is named");
+  assert.ok(!fieldReplyViolations("It's louder along the posts. Come on.", commitment).includes("names_other_way"));
+});
