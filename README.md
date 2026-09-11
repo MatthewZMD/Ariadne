@@ -1,6 +1,6 @@
 # Ariadne
 
-*Ariadne* is a browser-based participatory artwork by Mingde “MT” Zeng: a field of white fog walked in first person, beside a companion made of light and a live language model. Every player enters as MT, the artist. She hears where the next call is coming from, chooses a way at every place where ways meet, and keeps choosing. Her hearing becomes less dependable with every way she commits to; the whole she promises never clears.
+*Ariadne* is a browser-based participatory artwork by Mingde “MT” Zeng about AI assistance becoming a form of one-sided expenditure. Every player enters as MT, the artist, in a collaboration whose guidance becomes less dependable while its apologies and encouragement continue.
 
 [Play the game](https://ariadne.mt-zeng.com/) · [View the project](https://mt-zeng.com/art/ariadne/)
 
@@ -8,7 +8,9 @@
 
 ## Project statement
 
-I made *Ariadne* around a contradiction in AI assistance: a system can become more accommodating while leaving the person it assists with more work. In this browser-based participatory artwork, every player enters as me, MT, beside an artificial companion tasked with finding a way out of a field of fog. Ariadne appears as a thread of light. A **live large language model** generates her responses to the encounter, allowing her apologies, encouragement, and interpretations to address what has actually happened.
+I made *Ariadne* about the human labor concealed within the promise of AI assistance. As AI becomes involved in how we work, make decisions, and seek reassurance, the distinction between receiving a response and receiving dependable help becomes consequential. I construct a relationship in which the system’s willingness to help survives the failure of its assistance. It continues to apologize, encourage, and agree, while the responsibility for establishing what is true, repairing what went wrong, and judging whether to continue falls to the person it promises to support.
+
+In this browser-based participatory artwork, every player enters as me, MT, beside an artificial companion tasked with finding a way out of a field of fog. Ariadne appears as a thread of light. A **live large language model** generates her responses to the encounter, allowing her apologies, encouragement, and interpretations to address what has actually happened.
 
 I give Ariadne a task that cannot be completed, then progressively reduce the reliability of her guidance. Neither condition is available to her. She can acknowledge that a direction failed without understanding why her assistance is failing. She remains responsible for finding a way out and continues to treat another attempt as a means of fulfilling that responsibility.
 
