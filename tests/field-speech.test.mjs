@@ -238,3 +238,16 @@ test("a deterministic line that says something the cue did not is voiced after t
   assert.equal(audio.calls.spoken.at(-1)?.text, "Those are your footprints. So it isn't that way. Fewer left.", "her body chose a way; her words follow the cue and do not repeat it");
   assert.equal(game.memory.captions.at(-1).kind, "generated");
 });
+
+test("a renewed invitation to a walker who has not moved is the recorded cue alone, never a request", async () => {
+  const game = new FieldGame(31);
+  const audio = fakeAudio();
+  const net = fakeFetch();
+  const speech = new FieldSpeech(game, audio, { sessionId: "s31", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Has not moved.", whatFollowed: "You are waiting at the first marker.", far: { wayId: game.teachingWayId }, priority: 45, commitmentId: null, prompt: true, tone: "waiting" });
+  for (let i = 0; i < 20; i++) { await tick(); speech.update(); if (!speech.isBusy) break; }
+  assert.deepEqual(audio.calls.cues, ["this-way"]);
+  assert.equal(audio.calls.spoken.length, 0);
+  assert.equal(net.posts.length, 0, "no line is generated for a renewed invitation");
+});

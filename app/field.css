@@ -56,7 +56,18 @@ html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(
 .fog-hint.hidden { opacity: 0; }
 .fog-thinking { position: absolute; z-index: 5; right: 22px; bottom: 30px; width: 6px; height: 6px; border-radius: 50%; background: var(--thread); box-shadow: 0 0 10px var(--thread-bright); animation: fog-breathe 1.4s ease-in-out infinite; }
 @keyframes fog-breathe { 50% { opacity: .25; transform: scale(.7); } }
-.fog-corner { position: absolute; z-index: 5; top: 16px; right: 18px; display: flex; gap: 14px; }
+/* Two quiet controls in the corner, so a visitor without a keyboard (or one who never finds Enter and Esc) can speak to her and pause. */
+.fog-corner { position: absolute; z-index: 5; top: 14px; right: 16px; display: flex; gap: 6px; transition: opacity 600ms ease; }
+.fog-corner button { min-width: 0; border: 1px solid transparent; padding: 6px 10px; color: var(--ink-faint); background: rgba(244,245,244,.55); font-size: 10px; letter-spacing: .22em; text-transform: uppercase; cursor: pointer; transition: color 160ms ease, border-color 160ms ease, background 160ms ease; }
+.fog-corner button:hover, .fog-corner button:focus-visible { outline: none; color: var(--ink-soft); border-color: rgba(79,90,79,.35); background: rgba(255,255,255,.85); }
+.fog-corner.dim { opacity: .55; }
+@media (pointer: coarse) { .fog-corner button { padding: 10px 14px; font-size: 11px; } }
+/* Paused: the record of what she said sits beside the panel, so the pause is a place to reread her. */
+.fog-pause-layout { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px; width: min(900px, 94vw); max-height: 92dvh; }
+.fog-pause-log { flex: 1 1 320px; max-width: 460px; max-height: min(62dvh, 520px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 6px; scrollbar-width: thin; scrollbar-color: rgba(79,90,79,.4) transparent; }
+.fog-pause-log .fog-line { max-width: 100%; }
+.fog-pause-log .fog-line.walker { align-self: flex-end; }
+.fog-pause-log-title { margin: 0 0 4px; color: var(--ink-faint); font-size: 10px; letter-spacing: .22em; text-transform: uppercase; }
 .fog-landscape-guard { display: none; }
 @media (orientation: portrait) and (pointer: coarse) {
   .fog-landscape-guard { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 28px; text-align: center; background: var(--fog); color: var(--ink-soft); }

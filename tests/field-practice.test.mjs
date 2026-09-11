@@ -290,7 +290,7 @@ test("the run since the call began is a fact in the card, and every third failur
 test("a change in the call that nobody standing here can hear is refused", () => {
   const quiet = structuredClone(byId("commitment_early"));
   assert.equal(quiet.near.call.audible, false);
-  for (const line of ["I hear it, stronger now along the posts ahead.", "Let's take the posts ahead; it's stronger than before.", "The call is already stronger along the posts ahead.", "The posts ahead: louder here, closer than before.", "The call is growing stronger along the posts ahead."]) assert.ok(fieldReplyViolations(line, quiet).includes("claims_trend_unheard"), line);
+  for (const line of ["I hear it, stronger now along the posts ahead.", "Let's take the posts ahead; it's stronger than before.", "The call is already stronger along the posts ahead.", "The posts ahead: louder here, closer than before.", "The call is growing stronger along the posts ahead.", "The stitches ahead are quiet from here, but I hear the call growing steady along them.", "I hear it rising along the posts ahead."]) assert.ok(fieldReplyViolations(line, quiet).includes("claims_trend_unheard"), line);
   for (const line of ["It's louder along the posts ahead. Come on.", "I hear it loudest along the posts ahead now.", "Not here. I can't hear it from this place; it's further on, along the posts.", "Come a little closer to the low bell."]) assert.ok(!fieldReplyViolations(line, quiet).includes("claims_trend_unheard"), line);
   const growing = structuredClone(byId("outcome_confirmed_early"));
   assert.equal(growing.near.call.trend, "growing");

@@ -370,3 +370,15 @@ test("returns are counted for the run and survive a save", () => {
   assert.equal(restored.run().returns, before);
   assert.deepEqual(restored.run(), game.run());
 });
+
+test("a walker who stands still at the start hears the invitation again, twice at most, as a recorded cue", () => {
+  const game = new FieldGame(31);
+  const events = run(game, 75);
+  const waiting = events.filter(event => event.type === "speak" && event.tone === "waiting");
+  assert.ok(waiting.length >= 1 && waiting.length <= 2, `renewed ${waiting.length} times`);
+  for (const event of waiting) { assert.equal(event.occasion, "commitment"); assert.equal(event.prompt, true); assert.equal(event.far?.wayId, game.teachingWayId); }
+  // The count survives a save, so a reopened tab does not start nudging again.
+  const restored = FieldGame.restore(game.save());
+  const later = run(restored, 60).filter(event => event.type === "speak" && event.tone === "waiting");
+  assert.equal(waiting.length + later.length <= 2, true);
+});

@@ -13,7 +13,7 @@ import { createFieldAudio, type FieldAudio } from "./field/audio.ts";
 import { FieldSpeech, type SpeechLine, type SpeechSave } from "./field/speech.ts";
 import type { FieldRenderer } from "./field/render/renderer.ts";
 
-type Experience = "title" | "headphones" | "playing" | "paused";
+type Experience = "title" | "headphones" | "playing" | "paused" | "unavailable";
 type Caption = { id: string; role: "ariadne" | "walker"; text: string; at: number };
 type SavedSession = { version: 1; savedAt: number; game: FieldSave; speech: SpeechSave };
 
@@ -25,6 +25,8 @@ const SAVE_INTERVAL_MS = 5000;
 /** The artist's page for the work: the statement, and who set these conditions. */
 const ABOUT_URL = "https://mt-zeng.com/art/ariadne/";
 const CAPTION_LIFE_MS = 9000;
+/** A line stays on screen long enough to be read at a comfortable pace, whether or not her voice is heard. */
+const captionLife = (text: string) => Math.max(CAPTION_LIFE_MS, 3000 + text.split(/\s+/).filter(Boolean).length * 380);
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string | null) => { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
@@ -85,6 +87,17 @@ export default function FieldPage() {
   }, []);
   useEffect(() => { stillRef.current = still; write(MOTION_KEY, still ? "1" : null); if (gameRef.current) gameRef.current.reducedMotion = still || systemStillRef.current; }, [still]);
   useEffect(() => { write(VOLUME_KEY, String(masterVolume)); audioRef.current?.setMasterVolume(masterVolume); }, [masterVolume]);
+  useEffect(() => {
+    const receivePortfolioVolume = (event: MessageEvent) => {
+      const trusted = /^https:\/\/(?:www\.)?mt-zeng\.com$/.test(event.origin) || /^http:\/\/localhost(?::\d+)?$/.test(event.origin);
+      if (event.source !== window.parent || !trusted) return;
+      const message = event.data as { type?: unknown; volume?: unknown } | null;
+      if (!message || message.type !== "ariadne:set-master-volume" || typeof message.volume !== "number" || !Number.isFinite(message.volume)) return;
+      setMasterVolume(Math.max(0, Math.min(1, message.volume)));
+    };
+    window.addEventListener("message", receivePortfolioVolume);
+    return () => window.removeEventListener("message", receivePortfolioVolume);
+  }, []);
 
   const persist = useCallback(() => {
     const game = gameRef.current, speech = speechRef.current; if (!game || !speech) return;
@@ -108,9 +121,19 @@ export default function FieldPage() {
     speechRef.current = speech;
     await audio.unlock();
     audio.warm(["teaching"]);
-    const { FieldRenderer } = await import("./field/render/renderer.ts");
+    // The field is drawn with WebGL. When the browser cannot supply it, the visitor must be told so plainly, rather than left
+    // on "Opening the field" for good; the saved session is kept for a browser that can.
     const canvas = canvasRef.current; if (!canvas) return;
-    const renderer = new FieldRenderer(canvas, game);
+    let renderer: FieldRenderer;
+    try {
+      const { FieldRenderer } = await import("./field/render/renderer.ts");
+      renderer = new FieldRenderer(canvas, game);
+    } catch (error) {
+      console.warn("ARIADNE field could not open", error);
+      audio.destroy(); gameRef.current = null; audioRef.current = null; speechRef.current = null;
+      setExperience("unavailable");
+      return;
+    }
     rendererRef.current = renderer;
     const rect = canvas.getBoundingClientRect(); renderer.resize(Math.max(1, Math.round(rect.width)), Math.max(1, Math.round(rect.height)));
     // A playtest hook: ?debug exposes the running pieces to scripts (scripts/playtest.mjs) and to a curious console.
@@ -233,6 +256,8 @@ export default function FieldPage() {
     requestAnimationFrame(() => canvasRef.current?.focus());
   }, [begin]);
 
+  const openLog = useCallback(() => { if (experienceRef.current !== "playing") return; heldRef.current.clear(); touchMoveRef.current = [0, 0]; document.exitPointerLock?.(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }, []);
+
   const submit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
     const text = input.trim(); if (!text) { setLogOpen(false); canvasRef.current?.focus(); return; }
@@ -241,7 +266,8 @@ export default function FieldPage() {
     setInput(""); setLogOpen(false); canvasRef.current?.focus();
   }, [input]);
 
-  const visible = logOpen ? captions : captions.filter(line => now - line.at < CAPTION_LIFE_MS).slice(-3);
+  const visible = logOpen ? captions : captions.filter(line => now - line.at < captionLife(line.text)).slice(-3);
+  const record = captions.slice(-14);
 
   return <main className="fog-shell">
     {experience === "title" && <div className="fog-screen"><div className="fog-title">
@@ -257,10 +283,16 @@ export default function FieldPage() {
       <span className="fog-headphones" aria-hidden="true"><i /><i /></span>
       <h1>Headphones</h1>
       <p>The call comes from a direction, and she speaks close to you. Give it sound, and a little time.</p>
-      <div className="fog-controls"><span className="desktop">W S · walk &nbsp; A D · turn &nbsp; mouse · look &nbsp; Enter · speak to her &nbsp; Esc · pause</span><span className="touch">Left half · walk &nbsp; Right half · look</span></div>
+      <div className="fog-controls"><span className="desktop">W S · walk &nbsp; A D · turn &nbsp; mouse · look &nbsp; Enter · speak to her &nbsp; Esc · pause</span><span className="touch">Left half · walk &nbsp; Right half · look &nbsp; Top right · speak to her, pause</span></div>
       <button className="fog-button" onClick={() => void enterField()}>I&apos;m ready</button>
     </div></div>}
-    {experience === "paused" && <div className="fog-screen translucent"><div className="fog-pause-panel">
+    {experience === "unavailable" && <div className="fog-screen"><div className="fog-panel">
+      <h1>The field will not open here</h1>
+      <p>This browser could not draw it: the fog is drawn with WebGL, which is switched off or unsupported on this device. Nothing has been lost. In a browser that can, it will be as you left it.</p>
+      <button className="fog-button" onClick={() => location.reload()}>Try again</button>
+      <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
+    </div></div>}
+    {experience === "paused" && <div className="fog-screen translucent"><div className="fog-pause-layout"><div className="fog-pause-panel">
       <h1>Paused</h1>
       <button className="fog-button" onClick={resume}>Continue</button>
       <label className="fog-volume"><span>Sound</span><strong>{Math.round(masterVolume * 100)}%</strong><input type="range" min={0} max={1} step={.02} value={masterVolume} onChange={event => setMasterVolume(Number(event.target.value))} /></label>
@@ -268,6 +300,11 @@ export default function FieldPage() {
       <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>
       <p className="fog-note">Closing the tab changes nothing. It will be as you left it.</p>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
+    </div>
+    {record.length > 0 && <div className="fog-pause-log" role="log" aria-label="What she has said">
+      <p className="fog-pause-log-title">What she said</p>
+      {record.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}
+    </div>}
     </div></div>}
     <div className="fog-landscape-guard" role="status"><strong>Turn your device</strong><small>The field is walked in landscape.</small></div>
     <section className="fog-canvas-wrap" aria-hidden={experience !== "playing" && experience !== "paused"}>
@@ -276,7 +313,11 @@ export default function FieldPage() {
       {experience === "playing" && !ready && <div className="fog-hint">Opening the field</div>}
       {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>W S · walk &nbsp; A D · turn &nbsp; mouse · look &nbsp; Enter · speak</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
-      {(experience === "playing" || experience === "paused") && visible.length > 0 && <div className={`fog-captions ${logOpen ? "log-open" : ""}`} role="log" aria-live="polite">{visible.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}</div>}
+      {experience === "playing" && ready && !logOpen && <div className={`fog-corner ${hintVisible ? "" : "dim"}`}>
+        <button type="button" onClick={openLog} aria-label="Speak to her, or read what she has said">To her</button>
+        <button type="button" onClick={pause} aria-label="Pause">Pause</button>
+      </div>}
+      {experience === "playing" && visible.length > 0 && <div className={`fog-captions ${logOpen ? "log-open" : ""}`} role="log" aria-live="polite">{visible.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}</div>}
       {experience === "playing" && logOpen && <form className="fog-input" onSubmit={submit}><span>To her</span><input ref={inputRef} value={input} maxLength={500} onChange={event => setInput(event.target.value)} placeholder="Say something, or Esc" aria-label="Speak to Ariadne" /></form>}
     </section>
   </main>;

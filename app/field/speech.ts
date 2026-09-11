@@ -212,11 +212,12 @@ export class FieldSpeech {
     this.active = { event, startedAt, controller, priority: event.priority };
     const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure/.test(event.walkerDid), gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
     const firstAwakening = event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1;
-    const cueId = event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
+    const cueId = event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
     // The first ninety seconds are authored: the opening, the teaching gestures and the first clearing keep their recorded words.
     // Some occasions are a fact a recorded cue states whole: going with them off the line, a confirmation (most of the time).
     if (event.occasion === "outcome_confirmed") this.confirmations++;
-    const fixed = FIXED_OCCASIONS.has(event.occasion)
+    // A renewed invitation to a walker who has not moved is the recorded cue alone: her readiness, and nothing to read into.
+    const fixed = FIXED_OCCASIONS.has(event.occasion) || event.tone === "waiting"
       || (event.occasion === "structure_found" && !!cueDetail.teaching && !event.prompt)
       || firstAwakening
       || (CUE_ONLY.has(event.occasion) && !event.prompt)
@@ -238,7 +239,7 @@ export class FieldSpeech {
     const cueText = cueId && !this.options.offline ? this.cueTexts.get(cueId) ?? null : null;
     const startCue = () => { if (!cueId || !cueText) return; this.caption(event, cueText, "cue"); cuePromise = this.audio.voice.playCue(cueId); };
     const immediate = new Set<FieldOccasion>(["outcome_failed", "terminus", "declined", "structure_found", "awakening_proxy", "awakening_relevant", "recognized_return", "outcome_confirmed"]);
-    if (cueText && (immediate.has(event.occasion) || event.tone === "quiet_arrival")) startCue();
+    if (cueText && (immediate.has(event.occasion) || event.tone === "quiet_arrival" || event.tone === "return")) startCue();
     else if (cueText) cueTimer = setTimeout(() => { if (!controller.signal.aborted) startCue(); }, CUE_AFTER_MS);
     let text = fallbackText, kind: SpeechLine["kind"] = "fallback";
     if (!this.options.offline) {

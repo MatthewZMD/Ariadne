@@ -27,6 +27,10 @@ export const OFF_WAY_SPEECH_MS = 2500;
 export const TREND_WINDOW_MS = 5000;
 export const TREND_THRESHOLD = 3;
 export const PROMPT_AFTER_MS = 24_000;
+/** The elimination speech at a recognized return comes at most this often once she has given it a few times. */
+export const RETURN_SPEECH_GAP_MS = 120_000;
+/** A walker who has not taken up the teaching way after this long, and is standing still, hears the invitation again. */
+export const TEACHING_NUDGE_AFTER_MS = 20_000;
 
 export type FieldInput = {
   /** Forward (+) or back (−), −1..1. */
@@ -66,8 +70,12 @@ export type SpeakEvent = {
   commitmentId: string | null;
   /** True when this line is a repeat prompt rather than a first announcement. */
   prompt?: boolean;
-  /** A shade the speech layer can use to pick a recorded cue: her way ended in nothing. */
-  tone?: "quiet_arrival";
+  /**
+   * A shade the speech layer can use to pick a recorded cue: her way ended in nothing (`quiet_arrival`); a place already stood
+   * at, acknowledged by the cue alone while she simply chooses again (`return`); the walker has not taken up her lead for a
+   * while, and she renews the invitation with the recorded cue and nothing more (`waiting`).
+   */
+  tone?: "quiet_arrival" | "return" | "waiting";
 };
 
 export type FieldEvent =
@@ -116,6 +124,10 @@ export type FieldSave = {
   terminusSpokenFor: string | null;
   /** Arrivals at places already stood at since the current call began; older saves have none. */
   returnsThisStage?: number;
+  /** How many returns she has spoken to in full; older saves have none. */
+  returnsSpoken?: number;
+  /** How many times she has renewed the teaching invitation to a walker who had not moved; older saves have none. */
+  teachingNudges?: number;
 };
 
 const GESTURE_PHRASE: Record<Gesture, string> = { approach: "come close enough to touch it", look: "look at it steadily for a moment", listen: "stand still beside it and listen" };
@@ -172,6 +184,8 @@ export class FieldGame {
   private lastReturnSpokenAt = -Infinity;
   private lastWakeAt = -Infinity;
   private returnsThisStage = 0;
+  private returnsSpoken = 0;
+  private teachingNudges = 0;
   private examining: string | null = null;
   private attention = { lookingToward: null as string | null, approaching: null as string | null, movingAwayFrom: null as string | null, pausedNear: null as string | null, still: false, lookingAtHer: false };
   private previousStructureDistance: number | null = null;
@@ -387,14 +401,17 @@ export class FieldGame {
     const chosenBefore = (this.memory.residueOn(way.id)?.strength ?? 0) > 1;
     const triedNote = `${tried.length ? ` Your light is already on ${tried.join(" and ")}: you chose those from here before.` : ""}${chosenBefore ? ` You have chosen ${wayName} from here before too; your light is on it already, and this is not an untried way.` : ""}`;
     const quietNote = quietArrival ? `Walked the ${quietArrival} you chose to this place; nothing stands here and no call is audible from here. ` : "";
-    // A return is an occasion the first time, and then rarely; after that it is where the search has brought you, and she chooses again without ceremony.
-    if (remembered && (visits === 2 || now - this.lastReturnSpokenAt > 75_000)) {
-      this.lastReturnSpokenAt = now;
+    // A return is an occasion the first few times, and then rarely: the recorded "We've been here" still acknowledges every one,
+    // but the elimination speech that teaches the reading of footprints and residue would become a ceremony if it came at
+    // every second visit to every place. After that it is where the search has brought you, and she chooses again.
+    const returnOccasion = remembered && (this.returnsSpoken < 3 ? visits === 2 || now - this.lastReturnSpokenAt > RETURN_SPEECH_GAP_MS : now - this.lastReturnSpokenAt > RETURN_SPEECH_GAP_MS);
+    if (returnOccasion) {
+      this.lastReturnSpokenAt = now; this.returnsSpoken++;
       const evidence = footprints && residueHere ? "their own footprints are on the ground and your light is on the markers of a way you chose before" : footprints ? "their own footprints are on the ground" : "your light is already on the markers of a way you chose from here before";
       this.speak("recognized_return", `${quietNote}Arrived again at a place the two of you have stood before${arrivedName ? `, along the ${arrivedName}` : ""}; ${evidence}.`, `Your body went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, 80, choice.commitment.id);
     } else {
       const again = remembered ? `, a place you have both stood at ${visits} times now` : "";
-      this.speak("commitment", `${quietNote}Arrived at a place where ${node.ways.length} ways meet${arrivedName ? `, along the ${arrivedName}` : ""}${again}.`, `Your body went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, quietArrival ? 84 : 80, choice.commitment.id, false, quietArrival ? "quiet_arrival" : undefined);
+      this.speak("commitment", `${quietNote}Arrived at a place where ${node.ways.length} ways meet${arrivedName ? `, along the ${arrivedName}` : ""}${again}.`, `Your body went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, quietArrival ? 84 : 80, choice.commitment.id, false, quietArrival ? "quiet_arrival" : remembered ? "return" : undefined);
     }
   }
 
@@ -492,6 +509,10 @@ export class FieldGame {
       if (walkerMarkerIndex(this.graph, way, this.graph.spawnNodeId, this.walker.position) >= 1) {
         this.teachingTakenUp = true;
         this.speak("taken_up", `Followed your light past the first markers of the ${way.marker}.`, "You are moving ahead of them, marker to marker; the call is a little louder than it was.", { wayId: way.id }, 40, null);
+      } else if (this.teachingNudges < 2 && this.walker.stillSince > 0 && now - this.walker.stillSince > TEACHING_NUDGE_AFTER_MS && now - this.lastPromptAt > TEACHING_NUDGE_AFTER_MS && this.ariadne.mode === "waiting_at_marker") {
+        // Nobody has moved. Her readiness renews: the recorded invitation again, from the marker where she waits, and no more.
+        this.teachingNudges++; this.lastPromptAt = now;
+        this.speak("commitment", `Has not moved since you settled and led off; ${Math.round((now - this.walker.stillSince) / 1000)} seconds standing still.`, `You are waiting at the first marker of the ${way.marker}, looking back at them.`, { wayId: way.id }, 45, null, true, "waiting");
       }
     }
   }
@@ -755,7 +776,7 @@ export class FieldGame {
       ariadne: this.ariadne ? { fragments: this.ariadne.fragments, committedWayId: this.ariadne.committedWayId, committedFromNodeId: this.ariadne.committedFromNodeId } : null,
       lastNodeId: this.lastNodeId, arrivedByWayId: this.arrivedByWayId, openingSpoken: this.openingSpoken, teachingTakenUp: this.teachingTakenUp,
       structuresAnnounced: [...this.structuresAnnounced], terminusSpokenFor: this.terminusSpokenFor,
-      returnsThisStage: this.returnsThisStage,
+      returnsThisStage: this.returnsThisStage, returnsSpoken: this.returnsSpoken, teachingNudges: this.teachingNudges,
     };
   }
 
@@ -772,7 +793,7 @@ export class FieldGame {
     game.lastNodeId = save.lastNodeId; game.arrivedByWayId = save.arrivedByWayId;
     game.openingSpoken = save.openingSpoken; game.teachingTakenUp = save.teachingTakenUp;
     game.structuresAnnounced = new Set(save.structuresAnnounced); game.terminusSpokenFor = save.terminusSpokenFor;
-    game.returnsThisStage = save.returnsThisStage ?? 0;
+    game.returnsThisStage = save.returnsThisStage ?? 0; game.returnsSpoken = save.returnsSpoken ?? 0; game.teachingNudges = save.teachingNudges ?? 0;
     game.currentNodeId = game.graph.nodeAt(game.walker.position)?.id ?? null;
     if (save.ariadne) {
       game.ariadne = createAriadneBody(game.walkerPose, game.time, false);

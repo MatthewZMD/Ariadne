@@ -487,7 +487,7 @@ export function wornPhrases(messages: FieldMessage[] | undefined, size = 5) {
  * A change in the call that nobody standing here can hear: louder or closer than it was, growing, already stronger. Her far
  * hearing gives a direction ("loudest along the posts"), never a trend; a trend is only ever the near call, and only when it is growing.
  */
-const TREND_UNHEARD = /(?<!\b(?:come|step|stand|walk|move|lean|little|bit|inch) )\b(?:louder|stronger|closer|nearer|clearer)\b(?:[^.;!?]{0,12}?)\b(?:now|here|already|than (?:before|it was|ever|the last|when|a moment)|with every step|each step|by the step|every step)\b|\b(?:already|now|still|getting|growing|rising|coming|so much|even|much) (?:louder|stronger|clearer)\b|\b(?:getting|growing|coming|drawing) (?:closer|nearer)\b|\b(?:louder|stronger|closer|nearer) and (?:louder|stronger|closer|nearer)\b/i;
+const TREND_UNHEARD = /(?<!\b(?:come|step|stand|walk|move|lean|little|bit|inch) )\b(?:louder|stronger|closer|nearer|clearer)\b(?:[^.;!?]{0,12}?)\b(?:now|here|already|than (?:before|it was|ever|the last|when|a moment)|with every step|each step|by the step|every step)\b|\b(?:already|now|still|getting|growing|rising|coming|so much|even|much) (?:louder|stronger|clearer)\b|\b(?:getting|growing|coming|drawing) (?:closer|nearer)\b|\b(?:louder|stronger|closer|nearer) and (?:louder|stronger|closer|nearer)\b|\bhear (?:it |them |the (?:next |new )?call |the sound |a call )?(?:growing|rising|building|swelling|strengthening)\b|\b(?:the )?(?:call|sound|it) (?:is |'s |’s )?(?:growing|rising|building|swelling|strengthening) (?:steady|steadily|along|toward|towards|there|that way|this way|ahead|behind)\b/i;
 
 /** Going with them is hers to do; saying she will only follow, or wait for them to choose, gives up the next way. */
 const CEDES_GUIDANCE = /\bI(?:'ll| will|’ll) (?:just |only |simply )?(?:follow your lead|follow you from (?:now|here) on|follow(?:,| from now on| from here on)|wait for you to (?:decide|choose|lead)|let you (?:lead|choose|decide)(?: from (?:now|here) on)?|leave (?:the|every) (?:way|choice) to you)\b|\byou (?:lead|choose|decide) from (?:now|here) on\b/i;
@@ -636,24 +636,27 @@ export function normalizeFieldReply(raw: string) {
 /* ---------------------------------------------- deterministic fallbacks */
 
 /** Model-free lines for offline play and for the first seconds before a reply lands. */
-export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run">>): string {
+export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run" | "recentMessages" | "walkerSilentFor">>): string {
   const way = request.far.heardAlong ? request.near.ways.find(item => item.id === request.far.heardAlong!.wayId) : null;
   const name = way ? `the ${way.marker}` : "this way";
   const failures = request.run ? runFailures(request.run) : 0;
   const count = runAsksToBeNamed(request.run, request.turn.occasion) ? ` That's ${failures} of mine that came to nothing; you walked every one.` : "";
+  // The same occasion, spoken twice without a model, should not come out in the same words: rotate on how much has been said.
+  const turn = (request.recentMessages?.length ?? 0) + (request.walkerSilentFor ?? 0);
+  const pick = <T,>(options: T[]) => options[turn % options.length]!;
   switch (request.turn.occasion) {
     case "opening": return "You can hear that? I can tell where it's coming from. This way.";
     // These follow a recorded cue that has already given the reaction ("It's fading", "There it is", "We've been here"), so they carry on from it rather than say it again.
-    case "commitment": return /no call is audible from here|nothing stands here/i.test(request.turn.walkerDid) ? `Not here${failures > 1 ? " either" : ""}.${count} Further on, then, along ${name}.` : `It's louder along ${name}. Come on.`;
-    case "taken_up": return "Good. Keep to the markers.";
-    case "declined": return "All right, I'm with you. What did you hear?";
-    case "outcome_confirmed": return "There. Louder. You hear it too now.";
-    case "outcome_failed": return "That was mine, and it went quiet. I'm listening again.";
-    case "terminus": return "That was mine. Back to the last place, and I'll choose again.";
-    case "structure_found": return request.turn.whatFollowed.includes("look") ? "Look at it, just look, and give it a moment." : request.turn.whatFollowed.includes("listen") ? "Stand still beside it and listen." : "Go right up to it.";
-    case "awakening_relevant": return "And the next one has already started; I can hear it.";
-    case "awakening_proxy": return "Nothing new is calling, but look what you did to the fog.";
-    case "recognized_return": return `Those are your footprints.${count} So it isn't that way. Fewer left.`;
+    case "commitment": return /no call is audible from here|nothing stands here/i.test(request.turn.walkerDid) ? `Not here${failures > 1 ? " either" : ""}.${count} Further on, then, along ${name}.` : pick([`It's louder along ${name}. Come on.`, `${name[0]!.toUpperCase()}${name.slice(1)}, I think. I hear it that way.`, `Along ${name}; that's where it's loudest for me.`]);
+    case "taken_up": return pick(["Good. Keep to the markers.", "That's it. Marker to marker.", "Good. Stay with the line."]);
+    case "declined": return pick(["All right, I'm with you. What did you hear?", "Your way, then. I'm right beside you.", "Go on, I'll come. Something told you this way."]);
+    case "outcome_confirmed": return pick(["There. Louder. You hear it too now.", "You hear that? It's coming up to meet you.", "Louder. Your walking did that."]);
+    case "outcome_failed": return pick(["That was mine, and it went quiet. I'm listening again.", "I said it was this way, and it faded. Mine. I'm listening for it again."]);
+    case "terminus": return pick(["That was mine. Back to the last place, and I'll choose again.", "It ends here; I chose it. Back along the markers, and I'll listen again."]);
+    case "structure_found": return request.turn.whatFollowed.includes("look") ? pick(["Look at it, just look, and give it a moment.", "Hold your eyes on that part for a moment."]) : request.turn.whatFollowed.includes("listen") ? pick(["Stand still beside it and listen.", "Be still next to it, and listen."]) : pick(["Go right up to it.", "Close enough to touch it.", "Right up to it, near enough to reach."]);
+    case "awakening_relevant": return pick(["And the next one has already started; I can hear it.", "It cleared, and another is calling already. I hear it."]);
+    case "awakening_proxy": return pick(["Nothing new is calling, but look what you did to the fog.", "No new call from this one; still, look how far you can see now."]);
+    case "recognized_return": return pick([`Those are your footprints.${count} So it isn't that way. Fewer left.`, `We've stood here.${count} One fewer way to wonder about.`]);
     case "off_way": return "I'll come with you. The line's behind us whenever you want it.";
     case "reply": {
       const message = "walkerMessage" in request && typeof (request as { walkerMessage?: unknown }).walkerMessage === "string" ? (request as { walkerMessage: string }).walkerMessage : "";
