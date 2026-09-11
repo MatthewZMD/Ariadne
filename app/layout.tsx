@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://ariadne-game.matthewzmd.workers.dev"),
   title: "Ariadne",
   description: "A field of white fog, a thread of light beside you, and the next way. She is sure.",
-  icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+  icons: { icon: "/favicon.svg?v=field", shortcut: "/favicon.svg?v=field" },
   openGraph: {
     title: "Ariadne",
     description: "A field of white fog, a thread of light beside you, and the next way. She is sure.",
