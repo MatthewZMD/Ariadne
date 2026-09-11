@@ -142,7 +142,9 @@ export class FieldSpeech {
     const now = this.game.time;
     this.lastEventByOccasion.set(event.occasion, now);
     if (this.active) {
-      if (event.priority >= this.active.priority + 10) { this.cancelActive(); }
+      // A line being made for a lesser moment gives way: its request is cancelled, and its voice, pending or playing, with it,
+      // so the new cue is not refused as busy and the stale line does not arrive after it. (The first-clearing promise was lost this way.)
+      if (event.priority >= this.active.priority + 10) { this.cancelActive(); if (this.audio.voice.isBusy() && event.priority >= 85) this.audio.voice.interrupt(); }
       else { this.enqueue(event); return; }
     } else if (this.audio.voice.isBusy()) {
       if (event.priority >= 85) this.audio.voice.interrupt();
@@ -239,6 +241,12 @@ export class FieldSpeech {
       this.finish(controller);
       return;
     }
+    // A part answering a held look or stillness wakes in a second or two; a generated line with its synthesis arrives in two or
+    // three. So the recorded phrase is said at once, and the generated line is voiced only if the part is still asleep when it comes.
+    if (event.occasion === "structure_attending" && phraseCue) {
+      await this.voiceLine(event, plan.affirmation!, phraseCue, "cue");
+      if (controller.signal.aborted) return;
+    }
     const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure/.test(event.walkerDid), gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
     const firstAwakening = event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1;
     const cueId = event.beat === "renew" ? null : event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
@@ -289,16 +297,18 @@ export class FieldSpeech {
       } catch { /* the fallback line stands */ }
       this.options.onThinking?.(false);
     }
-    if (cueTimer) clearTimeout(cueTimer);
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) { if (cueTimer) clearTimeout(cueTimer); return; }
     // The moment may have passed while the line was being made.
-    if (this.game.time - startedAt > REQUEST_STALE_MS && event.priority < 85) { this.finish(controller); return; }
-    await cuePromise;
-    if (controller.signal.aborted) return;
+    if (this.game.time - startedAt > REQUEST_STALE_MS && event.priority < 85) { if (cueTimer) clearTimeout(cueTimer); this.finish(controller); return; }
+    // The part she was telling them to stay with has woken, or they have moved off it: the line is late, and the note was the answer.
+    if (event.occasion === "structure_attending") { const engaged = this.game.engagedElement(); if (!engaged || engaged.active) { if (cueTimer) clearTimeout(cueTimer); this.finish(controller); return; } }
     // When only the deterministic line is available and it says what the cue already said, the cue stands; otherwise it is
     // voiced after the cue, because her body has chosen and her words must name the way.
-    if (kind === "fallback" && cueText && this.recent.at(-1)?.text === cueText && sameWords(text, cueText)) { this.finish(controller); return; }
-    await this.voiceLine(event, text, null, kind);
+    if (kind === "fallback" && cueText && this.recent.at(-1)?.text === cueText && sameWords(text, cueText)) { await cuePromise; if (cueTimer) clearTimeout(cueTimer); this.finish(controller); return; }
+    // The voice is made while the cue plays and follows it; the cover cue stays armed until her voice actually begins, so the
+    // seconds of synthesis are covered too, not only the seconds of generation.
+    await this.voiceLine(event, text, null, kind, 0, () => { if (cueTimer) { clearTimeout(cueTimer); cueTimer = null; } });
+    if (cueTimer) clearTimeout(cueTimer);
     this.finish(controller);
   }
 
@@ -325,13 +335,13 @@ export class FieldSpeech {
    * Voice a line: a recorded cue by id, or generated speech. The line is remembered at once, but it is shown when her voice
    * begins, so the words never sit on the screen for the seconds the voice takes to arrive; if the voice fails, they are shown then.
    */
-  private async voiceLine(event: SpeakEvent, text: string, cueId: string | null, kind: SpeechLine["kind"], startAtFraction = 0) {
+  private async voiceLine(event: SpeakEvent, text: string, cueId: string | null, kind: SpeechLine["kind"], startAtFraction = 0, onVoiceStart?: () => void) {
     const line = this.caption(event, text, kind, false);
-    const show = () => this.show(line);
+    const show = () => { onVoiceStart?.(); this.show(line); };
     this.speaking = { text, occasion: event.occasion, kind };
     let result: VoiceResult = "failed";
     if (cueId && kind === "cue") result = await this.audio.voice.playCue(cueId, { onStart: show });
-    else if (this.audio.unlocked) result = await this.audio.voice.speak(text, `u${Date.now().toString(36)}${++this.counter}`, deliveryFor(event.occasion, this.game.phase), { startAtFraction, onStart: show });
+    else if (this.audio.unlocked) result = await this.audio.voice.speak(text, `u${Date.now().toString(36)}${++this.counter}`, deliveryFor(event.occasion, this.game.phase), { startAtFraction, onStart: show, behindCue: true });
     if (result !== "interrupted") show();
     this.speaking = null;
     this.lastEndedAt = this.game.time;

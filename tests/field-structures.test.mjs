@@ -192,3 +192,19 @@ test("while parts still sleep, a finished look part sounds once per glance rathe
   now = run(looker, 1, now);
   assert.equal(changes.filter(change => change.type === "element_sounded" && change.elementId === look.id).length, 1, "looking away and back sounds it once");
 });
+
+test("a part anchored high is looked at by someone facing the pipe from close up, without finding its top", () => {
+  const { structures, graph } = setup(3);
+  const structure = structures.atNode(graph.spawnNodeId);
+  const look = structure.elements.find(element => element.gesture === "look");
+  // Two paces away, eyes level: the head is turned toward the part, the gaze is well below a high anchor.
+  const raised = { ...look, position: [look.position[0], 3.0, look.position[2]] };
+  const original = look.position; look.position = raised.position;
+  const changes = [];
+  const run = (walker, seconds, now0) => { let now = now0; for (let i = 0; i < seconds * 30; i++) { now += 1000 / 30; changes.push(...structures.advance(walker, 1 / 30, now)); } return now; };
+  const dx = 0, dz = -2.2;
+  const walker = { position: [look.position[0] + dx, look.position[2] + dz], yaw: Math.atan2(-dx, -dz), pitch: 0, speed: 0 };
+  run(walker, GESTURE_DURATION.look + .5, 0);
+  assert.ok(look.active, "looking at the pipe wakes the part anchored at its top");
+  look.position = original;
+});

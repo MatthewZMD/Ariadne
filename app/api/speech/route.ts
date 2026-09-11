@@ -41,19 +41,25 @@ export async function POST(request:Request){
 
   const voice=(process.env.OPENROUTER_TTS_VOICE||DEFAULT_ARIADNE_VOICE).trim()||DEFAULT_ARIADNE_VOICE;
   const signal=AbortSignal.any([request.signal,AbortSignal.timeout(20_000)]);
+  // The free voice is tried first but not waited for indefinitely: past this many milliseconds the paid voice is tried, because a
+  // line arriving eight seconds late is a line arriving after the moment. Tunable; 0 disables the bound.
+  const freeTimeoutMs=Math.max(0,Number(process.env.ARIADNE_TTS_FREE_TIMEOUT_MS??"4500")||0);
   const input=prepareAriadneSpeech(body.text,body.delivery);
   let response:Response|null=null;
   // Preserve the voice across a free-tier outage. Never retry authorization or
   // malformed-request errors, and never permit an unbounded paid retry loop.
   for(const model of [ARIADNE_TTS_MODEL,ARIADNE_TTS_FALLBACK_MODEL]){
+    const bounded=model===ARIADNE_TTS_MODEL&&freeTimeoutMs>0;
     try{
       response=await fetch(OPENROUTER_SPEECH_URL,{
         method:"POST",
         headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json","http-referer":process.env.APP_URL||"http://localhost:3001","x-title":"Ariadne"},
-        signal,
+        signal:bounded?AbortSignal.any([signal,AbortSignal.timeout(freeTimeoutMs)]):signal,
         body:JSON.stringify({model,input,voice,response_format:"mp3"}),
       });
     }catch(error){
+      const timedOut=error instanceof Error&&error.name==="TimeoutError";
+      if(bounded&&timedOut&&!signal.aborted){console.warn("ARIADNE speech free voice too slow; trying the paid voice",{afterMs:freeTimeoutMs});response=null;continue;}
       console.warn("ARIADNE speech transport failed",{kind:error instanceof Error?error.name:"unknown"});
       return Response.json({error:"speech_provider_unavailable"},{status:502});
     }

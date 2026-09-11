@@ -555,3 +555,15 @@ test("a line about MT in the third person is narration, and the guard sends it b
   assert.match(regenerationDirection(["names_walker"], request), /spoke about MT in the third person/);
   assert.ok(!FIELD_REGISTER.transition.includes("Wonderful."), "a plain commitment does not open with wonder");
 });
+
+test("a beat is held to one short sentence, so the silence after it is real", () => {
+  const late = byId("recognized_return");
+  const acknowledge = { ...late, plan: { length: "short", sentenceCount: 2, affirmation: "We're on the right track.", instruction: "Admit.", beat: "acknowledge" } };
+  const long = "We're on the right track. I chose the posts, the leaning stones, and then the stitches, all three from this spot, and none of them reached the call yet, but the way ahead is the one we have not walked together.";
+  assert.ok(fieldReplyViolations(long, acknowledge).includes("too_long"));
+  assert.ok(!fieldReplyViolations("We're on the right track. Three of my ways from here came to nothing, and here we are again.", acknowledge).includes("too_long"));
+  assert.match(regenerationDirection(["too_long"], acknowledge), /too long for one beat/);
+  assert.ok(!fieldReplyViolations(long, { ...late, plan: { ...acknowledge.plan, beat: undefined } }).includes("too_long"), "a whole line keeps the ordinary budget");
+  for (const phrase of FIELD_REGISTER.patience) assert.ok(REGISTER_CUES[phrase], `${phrase} must be recorded: it has to arrive before the part wakes`);
+  assert.equal(Array.from({ length: 60 }, (_, seed) => chooseAffirmation("structure_attending", "charming", seed, null)).filter(Boolean).length, 60, "a part answering always gets the recorded phrase");
+});

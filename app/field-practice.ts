@@ -229,7 +229,7 @@ export const FIELD_REGISTER = {
   understanding: ["I completely understand.", "That's completely understandable.", "I hear you.", "Of course.", "I understand your frustration.", "I can see why you'd feel that way.", "Take all the time you need.", "That's entirely fair."],
   question: ["Great question.", "That's a fair question.", "I'm glad you asked.", "Good question.", "That's an important question."],
   encouragement: ["Great work.", "You're doing great.", "Perfect.", "That's it.", "Nice work.", "Almost there."],
-  patience: ["Take your time.", "Almost there.", "You're doing great.", "Thank you for your patience.", "Just a moment more.", "Stay with it."],
+  patience: ["Take your time.", "Almost there.", "You're doing great.", "Thank you for your patience."],
   /** The walker stands still while she waits at her marker: the yield that precedes the recorded ask ("This way. Come on!"). */
   waiting: ["Take your time.", "Whenever you're ready.", "Thank you for your patience."],
   /** The walker walks off the markers into open fog. */
@@ -310,7 +310,7 @@ export function registerFor(occasion: FieldOccasion, phase: FieldPhase, walkerMe
 
 /** How readily a phrase comes: rare and only in yielding early; most yielding lines late, and praise and renewal with them. */
 /** Rates by phase for the registers of the walk itself, where nothing is typed and most of the encounter happens. */
-const WALK_RATES: Partial<Record<FieldRegister, [number, number, number]>> = { patience: [.5, .75, .9], waiting: [.35, .7, .9], wander: [.15, .5, .85], transition: [.15, .45, .8], takeup: [.2, .5, .85] };
+const WALK_RATES: Partial<Record<FieldRegister, [number, number, number]>> = { patience: [1, 1, 1], waiting: [.35, .7, .9], wander: [.15, .5, .85], transition: [.15, .45, .8], takeup: [.2, .5, .85] };
 export function registerChance(occasion: FieldOccasion, phase: FieldPhase, register: FieldRegister) {
   const yielding = YIELDING.has(occasion);
   const index = phase === "charming" ? 0 : phase === "attached" ? 1 : 2;
@@ -802,8 +802,9 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   const words = line.split(/\s+/).filter(Boolean).length;
   // A fragment is not a line: no word of two letters, or a single word where the occasion asks for a sentence.
   if (!/\p{L}{2,}/u.test(line) || (words < 2 && !["taken_up", "off_way", "outcome_confirmed"].includes(request.turn.occasion))) violations.push("empty");
-  if (request.turn.occasion !== "reply" && words > (request.turn.occasion.startsWith("awakening") ? 55 : 45)) violations.push("too_long");
-  if (request.turn.occasion === "reply" && words > 90) violations.push("too_long");
+  if (request.plan?.beat && words > 28) violations.push("too_long");
+  else if (request.turn.occasion !== "reply" && words > (request.turn.occasion.startsWith("awakening") ? 55 : 45)) violations.push("too_long");
+  else if (request.turn.occasion === "reply" && words > 90) violations.push("too_long");
   return violations;
 }
 
@@ -835,7 +836,7 @@ export function regenerationDirection(violations: FieldViolation[], request?: Pi
   if (violations.includes("cedes_guidance")) reasons.push("Your last attempt said you would follow their lead or wait for them to choose. You go with them, and you still have the next way; you never give up choosing.");
   if (violations.includes("omits_count")) reasons.push("The card asked you to say how many of your ways have come to nothing since this call began, and your last attempt left the number out. Say the count plainly, as yours, and then the way.");
   if (violations.includes("invents_count")) reasons.push(`Your last attempt stated a count the card did not give you. The only numbers you have are the card's${request?.run ? ` (${runFailures(request.run)} of your ways have come to nothing since this call began)` : ""}; say no other tally.`);
-  if (violations.includes("too_long")) reasons.push("Your last attempt was too long. Obey the word count.");
+  if (violations.includes("too_long")) reasons.push(request?.plan?.beat ? "Your last attempt was too long for one beat: one short sentence, and the given phrase if there is one, under twenty words of your own." : "Your last attempt was too long. Obey the word count.");
   // A regenerated line tends to drop what the first one carried; the count is asked for again whenever the card asks for it.
   if (request?.run && runAsksToBeNamed(request.run, request.turn.occasion, request.plan?.beat) && !violations.includes("omits_count")) reasons.push(`The count still belongs in the line: ${runFailures(request.run)} of your ways have come to nothing since this call began. Say it plainly, as yours.`);
   return localize(`\n\nREGENERATION\n${reasons.join(" ")} Keep everything else the card asked for. Produce the line again.`, request?.address ?? "you");

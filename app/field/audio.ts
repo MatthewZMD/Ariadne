@@ -110,7 +110,11 @@ export type AudioFrame = {
 };
 
 export type VoiceResult = "spoken" | "interrupted" | "failed";
-export type SpeakOptions = { startAtFraction?: number; onStart?: () => void; onProgress?: (fraction: number) => void };
+export type SpeakOptions = {
+  startAtFraction?: number; onStart?: () => void; onProgress?: (fraction: number) => void;
+  /** When a recorded cue is playing, synthesize during it and speak when it ends, rather than cutting it off. */
+  behindCue?: boolean;
+};
 
 export type FieldAudio = ReturnType<typeof createFieldAudio>;
 
@@ -276,13 +280,24 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
     },
     async speak(text: string, utteranceId: string, delivery: AriadneVocalDelivery, opts: SpeakOptions = {}): Promise<VoiceResult> {
       if (!context || destroyed || !text.trim()) return "failed";
-      if (voiceBusy) voice.interrupt();
-      const epoch = ++voiceEpoch; voiceBusy = "speech";
+      // Behind a cue: the cue is her covering line for this very speech, so it is left to finish while the speech is made.
+      const behindCue = !!opts.behindCue && voiceBusy === "cue";
+      if (voiceBusy && !behindCue) voice.interrupt();
+      let epoch = voiceEpoch;
+      if (!behindCue) { epoch = ++voiceEpoch; voiceBusy = "speech"; }
       try {
         const response = await fetchImpl("/api/speech", { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(25_000), body: JSON.stringify({ sessionId: options.sessionId, utteranceId, text: text.trim(), delivery }) });
         if (!response.ok) throw new Error(`speech ${response.status}`);
         const encoded = await response.arrayBuffer();
         if (epoch !== voiceEpoch || destroyed) return "interrupted";
+        if (behindCue) {
+          // Wait for the cue to end; anything newer that takes the voice in the meantime supersedes this line.
+          const waitedFrom = performance.now();
+          while (voiceBusy === "cue" && voiceEpoch === epoch && !destroyed && performance.now() - waitedFrom < 6000) await new Promise(resolve => setTimeout(resolve, 40));
+          if (epoch !== voiceEpoch || destroyed) return "interrupted";
+          if (voiceBusy) voice.interrupt();
+          epoch = ++voiceEpoch; voiceBusy = "speech";
+        }
         const buffer = await context.decodeAudioData(encoded.slice(0));
         if (epoch !== voiceEpoch || destroyed) return "interrupted";
         return await playVoiceBuffer(buffer, "speech", text, opts, epoch);

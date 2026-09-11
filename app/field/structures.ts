@@ -142,11 +142,16 @@ export class StructureField {
       if (distance(structure.position, walker.position) > ATTENTION_RANGE) { for (const element of structure.elements) { element.attention = 0; element.engaged = false; } continue; }
       const candidates = structure.elements.map(element => {
         const dx = element.position[0] - walker.position[0], dz = element.position[2] - walker.position[1], flat = Math.hypot(dx, dz);
-        const horizontal = wrapAngle(walker.yaw - Math.atan2(dx, dz));
+        const horizontal = Math.abs(wrapAngle(walker.yaw - Math.atan2(dx, dz)));
         const elevation = Math.atan2(element.position[1] - 1.62, flat);
         const pitch = walker.pitch ?? 0;
-        const bearing = Math.acos(Math.max(-1, Math.min(1, Math.sin(pitch) * Math.sin(elevation) + Math.cos(pitch) * Math.cos(elevation) * Math.cos(horizontal))));
-        const inReach = element.gesture === "approach" ? flat <= 1.3 : flat <= 3.6 && bearing < .42;
+        // Looking at a part means facing it: the head turned toward it within a narrow angle, and the eyes at any reasonable
+        // height on it. A part anchored high on a tall pipe is looked at by someone looking at the pipe; they need not find
+        // its top from two paces away. (A dot-product bearing made the pipes unwakeable from close up: the screenshot of
+        // 12 September, six pipes, two awake, "it keeps playing sound and nothing happens".)
+        const vertical = Math.abs(pitch - elevation);
+        const bearing = Math.hypot(horizontal, Math.max(0, vertical - .55));
+        const inReach = element.gesture === "approach" ? flat <= 1.3 : flat <= 3.6 && horizontal < .42 && vertical < 1.1;
         const still = element.gesture !== "listen" || walker.speed < .18;
         return { element, flat, bearing, eligible: inReach && still };
       });
