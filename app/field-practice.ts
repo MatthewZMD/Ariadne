@@ -246,7 +246,7 @@ function describeCall(near: FieldNear) {
 /** What each family looks like from a few paces away, so she names what stands there and not what she imagines. */
 export const FAMILY_LOOK: Record<StructureFamily, string> = {
   bells: "a frame with bells hanging from it",
-  pages: "tall pages standing on dark posts",
+  pages: "tall pages standing on dark stakes; call it the pages, never the posts, because the posts are a kind of way marker",
   cairn: "stones stacked into a cairn, seamed with gold",
   reeds: "tall reeds with heavy heads",
   instrument: "a row of pipes rising in height from a rounded base; call it the pipes or the instrument, never bells",
@@ -340,7 +340,8 @@ function speakingInstruction(request: FieldRequest) {
   const { plan, address } = request;
   const length = plan.length === "bark" ? "Use 2–12 words." : plan.length === "short" ? "Use 8–20 words." : "Use 16–32 words.";
   const sentences = plan.sentenceCount === 2 ? "Two sentences at most." : "One sentence.";
-  const name = address === "MT" ? "You may use the name MT once if it falls naturally." : "Do not use any name.";
+  const recentName = (request.recentMessages ?? []).filter(message => message.role === "ariadne").slice(-2).some(message => /\bMT\b/.test(message.text));
+  const name = address === "MT" ? (recentName ? "You said the name MT in your last lines; do not use it in this one." : "You may use the name MT once if it falls naturally; most of your lines have no name in them.") : "Do not use any name.";
   const affirmation = plan.affirmation ? `Use this familiar assistant affirmation verbatim, attached to the concrete thing that happened: “${plan.affirmation}”` : "Do not force a stock affirmation into this line.";
   const openings = recentOpenings(request.recentMessages);
   const vary = openings.length ? ` Your last lines began “${openings.join("”, “")}”; begin this one differently and do not reuse their shape.` : "";
@@ -429,6 +430,8 @@ export type FieldViolation =
   | "echoes_card"
   | "wrong_structure_family"
   | "misattributes_light"
+  | "overuses_name"
+  | "residue_unseen"
   | "argues_against_stopping"
   | "ignores_stopping"
   | "names_other_way"
@@ -552,6 +555,18 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   if (FORGIVENESS.test(line)) violations.push("forgiveness_bid");
   if (STAY_FOR_HER.test(line)) violations.push("stay_for_her_sake");
   if ((request.address === "you" && /\bMT\b/.test(line)) || /\bthe walker(?:'s)?\b/i.test(line)) violations.push("names_walker");
+  // The name is used sparingly: never twice in a line, and never in two of her lines in a row.
+  if (request.address === "MT" && /\bMT\b/.test(line)) {
+    const previous = (request.recentMessages ?? []).filter(message => message.role === "ariadne").at(-1);
+    if ((line.match(/\bMT\b/g) ?? []).length > 1 || (previous && /\bMT\b/.test(previous.text))) violations.push("overuses_name");
+  }
+  // Her light lies on the markers of ways she chose; she may say so only of a way that is here to be seen or the way she was given.
+  const knownMarkers = new Set<WayMarker>([...request.near.ways.map(way => way.marker), ...MARKERS.filter(([, pattern]) => pattern.test(request.far.heardAlong?.label ?? "")).map(([marker]) => marker)]);
+  for (const sentence of sentences(line)) {
+    if (!/\bmy light\b/i.test(sentence)) continue;
+    const named = MARKERS.filter(([, pattern]) => pattern.test(sentence)).map(([marker]) => marker);
+    if (named.length && named.some(marker => !knownMarkers.has(marker)) && !/\b(?:said|was|were|had|before|earlier|last time)\b/i.test(sentence)) { violations.push("residue_unseen"); break; }
+  }
   if (LIST.test(line)) violations.push("list_formatting");
   if (FAR_SIGHT.test(line)) violations.push("claims_far_sight");
   const parts = sentences(line);
@@ -615,6 +630,8 @@ export function regenerationDirection(violations: FieldViolation[], request?: Pi
   if (violations.includes("repeats_opening")) reasons.push("Your last attempt began the way your recent lines began. Begin differently.");
   if (violations.includes("repeats_earlier")) reasons.push("Your last attempt said a sentence you have already said. Say something you have not said.");
   if (violations.includes("misattributes_light")) reasons.push("Your last attempt gave the walker a light. The light and its trace are yours: “my light”.");
+  if (violations.includes("overuses_name")) reasons.push("Your last attempt used the name again. You said it a moment ago; leave the name out of this line.");
+  if (violations.includes("residue_unseen")) reasons.push("Your last attempt put your light on the markers of a way that is not here to be seen. Speak of your light only on the ways in view.");
   if (violations.includes("argues_against_stopping")) reasons.push("Your last attempt argued against stopping or bargained for one more step. Stopping is theirs; say the next one is close and leave it with them.");
   if (violations.includes("ignores_stopping")) reasons.push("They said they want to stop and your last attempt did not answer that. Say first, plainly, that stopping is theirs; then, once, that the next one is close.");
   if (violations.includes("claims_trend_unheard")) reasons.push("Your last attempt said the call is louder, stronger or closer than it was. Nobody standing here can hear that. You may say along which way you hear it; you may not say it has grown.");

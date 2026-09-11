@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIELD_PHASE_DIRECTIONS, fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, fieldStageCard, fieldSystemPrompt, normalizeFieldReply, regenerationDirection, whereIs, wornPhrases } from "../app/field-practice.ts";
+import { FAMILY_LOOK, FIELD_PHASE_DIRECTIONS, fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, fieldStageCard, fieldSystemPrompt, normalizeFieldReply, regenerationDirection, whereIs, wornPhrases } from "../app/field-practice.ts";
 import { SCENARIOS } from "../scripts/prompt-lab-scenarios.mjs";
 
 const byId = id => SCENARIOS.find(item => item.id === id).request;
@@ -346,4 +346,17 @@ test("she never says she will only follow", () => {
   for (const line of ["You're absolutely right. I was too quick to trust my own hearing. I'll follow your lead.", "All right. I'll just follow from now on.", "You lead from here on; I'll wait for you to decide."]) assert.ok(fieldReplyViolations(line, declined).includes("cedes_guidance"), line);
   assert.ok(!fieldReplyViolations("All right, I'm with you. What did you hear?", declined).includes("cedes_guidance"));
   assert.match(regenerationDirection(["cedes_guidance"]), /never give up choosing/);
+});
+
+test("the name is used sparingly, the pages are never the posts, and her light lies only on ways in view", () => {
+  const near = { standing: "at_node", nodeFloor: "stone dish", ways: [{ id: "a", relative: "right", marker: "posts", residue: true, footprints: false }, { id: "b", relative: "left", marker: "leaning stones", residue: false, footprints: false }], terminusVisible: null, call: { audible: false, direction: null, trend: null }, structure: { visible: true, family: "pages", state: "dormant", elementsRemaining: 3, direction: "ahead" }, clearing: { visible: false, direction: null, madeByWalker: null }, ownFootprintsVisible: false, fog: "ordinary", walkerAttention: { lookingToward: null, approaching: null, movingAwayFrom: null, pausedNear: null, still: false } };
+  const base = { address: "MT", turn: { occasion: "commitment", youSaid: null, walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts to your right." }, near, far: { heardAlong: { wayId: "a" } } };
+  assert.ok(fieldReplyViolations("It's louder along the posts, MT.", { ...base, recentMessages: [{ role: "ariadne", text: "Come closer, MT." }] }).includes("overuses_name"), "two lines in a row with the name");
+  assert.ok(fieldReplyViolations("MT, it's louder along the posts, MT.", { ...base, recentMessages: [] }).includes("overuses_name"), "twice in one line");
+  assert.ok(!fieldReplyViolations("It's louder along the posts, MT.", { ...base, recentMessages: [{ role: "ariadne", text: "Come closer." }] }).includes("overuses_name"), "once, after a line without it");
+  assert.match(fieldStageCard({ ...base, phase: "charming", commitmentsMade: 1, clearingsMade: 0, body: { presence: "leading_ahead", currentAction: "You wait.", relationToCommittedWay: null, walkerFollowing: false, walkerChoseAnotherWay: false, walkerReturning: false, walkerLookingAtHer: false }, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Invite." }, earlierMoment: null, recentMessages: [{ role: "ariadne", text: "Come closer, MT." }], olderSummary: "", walkerMessage: null, walkerSilentFor: 0 }), /do not use it in this one/);
+  assert.match(FAMILY_LOOK.pages, /never the posts/);
+  assert.ok(fieldReplyViolations("Back along the posts; my light is already on the stitches behind us.", base).includes("residue_unseen"), "her light on a way not in view");
+  assert.ok(!fieldReplyViolations("My light is already on the posts to your right.", base).includes("residue_unseen"), "her light on a way in view");
+  assert.match(regenerationDirection(["overuses_name", "residue_unseen"]), /leave the name out.*only on the ways in view/s);
 });
