@@ -8,7 +8,7 @@
  * fragment leaves it for Ariadne. Whether a completed structure passes the
  * call on is decided by the undertaking (relevance), never here.
  *
- * The wake logic is the maze's material play, re-anchored to 3D anchors.
+ * Wake gestures are measured against the model’s 3D anchors.
  */
 import { STRUCTURE_ANCHORS } from "./structure-anchors.ts";
 import { distance, hash32, unit, wrapAngle, type FieldGraph, type FieldNode, type Vec2 } from "./graph.ts";

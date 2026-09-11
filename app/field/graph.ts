@@ -1,7 +1,6 @@
 /**
  * The field: an infinite plane of places joined by ways.
  *
- * Replaces the tile maze in world.mjs with the graph that maze always was.
  * Every chunk holds a 3×3 lattice of places (nodes) joined by a seeded
  * spanning tree with one or two braids; adjacent chunks share one portal way
  * per border, so the whole graph is connected and deterministic from the seed.

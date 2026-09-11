@@ -1,5 +1,5 @@
 /**
- * The companion's model ladder, shared by the maze route and the field route.
+ * The companion's model ladder, used by the field route.
  *
  * A model being free and technically compatible is not enough for Ariadne.
  * These models have also been exercised against the project's tone matrix

@@ -1,8 +1,7 @@
 /**
  * Field practice: Ariadne's language layer for the fog redesign.
  *
- * This module is the server-side contract between the game and the model
- * once the maze becomes the field.
+ * This module is the server-side contract between the game and the model.
  * It owns three things and nothing else:
  *
  *   1. the system prompt that tells the model who Ariadne is in the field;
@@ -13,7 +12,7 @@
  *      boundary on her help, no hurt or forgiveness bids, no lists, no name
  *      when the walker is addressed as "you", no invented sight beyond fog.
  *
- * It has no dependency on the maze modules so that it can be exercised
+ * It can be exercised
  * offline (tests/field-practice.test.mjs) and against live free models
  * (scripts/prompt-lab.mjs) before the client sends this shape.
  */

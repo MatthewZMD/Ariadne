@@ -36,7 +36,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Add an OpenRouter API key to `.env.local` to enable live generated language and voice (the Workers emulator reads `.dev.vars` instead; keep both when using both modes). Speech tries Fish Audio S2.1 Pro Free first; on rate limits or server errors, it makes one paid S2.1 Pro attempt with the same voice ID and a shared 20-second deadline. Without a key, the maze and Ariadne’s embodied behaviour continue without generated speech.
+Add an OpenRouter API key to `.env.local` to enable live generated language and voice (the Workers emulator reads `.dev.vars` instead; keep both when using both modes). Speech tries Fish Audio S2.1 Pro Free first; on rate limits or server errors, it makes one paid S2.1 Pro attempt with the same voice ID and a shared 20-second deadline. Without a key, the field and Ariadne’s embodied behaviour continue without generated speech.
 
 If the installed Workers emulator cannot support the production compatibility date, `ARIADNE_LOCAL_PREVIEW=1 npm run dev` previews the same application with vinext's Node runtime. Set the local provider environment as above. The default build and deployment still use Workers.
 
@@ -54,18 +54,17 @@ Production deployment requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID
 
 - `app/field/` — the field: graph, structures, the hidden undertaking, memory, Ariadne’s body, rendering, audio, speech
 - `app/field-page.tsx`, `app/field-practice.ts`, `app/api/` — the page, the language practice (prompt, stage card, guard), and the server routes
-- `app/` (remaining modules) — the maze the work began as; unrouted, kept under test until retired
 - `worker/` — server routes and model-provider integration
-- `tests/` — field, practice, speech, audio, rendering, and legacy maze tests
-- `public/fog/` — models, sound, recorded voice cues, and imagery for the field; `public/` also holds the maze-era imagery and ambience
+- `tests/` — field, practice, speech, audio, movement, and rendering tests
+- `public/fog/` — models, sound, recorded voice cues, and imagery for the field
 - `.github/workflows/` — test and Cloudflare deployment workflow
 
 ## License and credits
 
 The software source code is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 
-The project statement, visual identity, original images, story artwork, sprites, and authored or synthesized Ariadne voice recordings are © 2026 Mingde “MT” Zeng, all rights reserved. They are not licensed under the AGPL. See [COPYRIGHT.md](COPYRIGHT.md) for the exact boundary.
+The project statement, visual identity, original images, models, sound, and authored or synthesized Ariadne voice recordings are © 2026 Mingde “MT” Zeng, all rights reserved. They are not licensed under the AGPL. See [COPYRIGHT.md](COPYRIGHT.md) for the exact boundary.
 
-Third-party recordings and software retain their own licenses. Sound provenance is documented in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [`public/audio/ambience/AUDIO-SOURCES.md`](public/audio/ambience/AUDIO-SOURCES.md).
+Third-party software retains its own licenses; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Original sound provenance is documented in [`public/fog/audio.json`](public/fog/audio.json).
 
 Copyright © 2026 Mingde “MT” Zeng.

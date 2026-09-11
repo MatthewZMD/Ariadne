@@ -88,3 +88,12 @@ test("the companion route recognizes a field envelope and answers deterministica
     assert.equal((await bad.json()).error, "invalid field request");
   } finally { if (saved !== undefined) process.env.OPENROUTER_API_KEY = saved; }
 });
+
+test("the HTTP boundary rejects retired maze payloads and oversized requests", async () => {
+  const old = await POST(new Request("http://localhost/api/companion", { method: "POST", body: JSON.stringify({ sessionId: "old", trigger: { type: "initial_guidance" } }) }));
+  assert.equal(old.status, 400);
+  for (const headers of [{ "content-length": "65537" }, {}]) {
+    const oversized = await POST(new Request("http://localhost/api/companion", { method: "POST", headers, body: "x".repeat(65537) }));
+    assert.equal(oversized.status, 413);
+  }
+});

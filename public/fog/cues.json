@@ -7,78 +7,67 @@
       "id": "look-over-there",
       "text": "Oh, look over there!",
       "url": "/fog/cues/look-over-there.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/look-over-there.mp3"
+      "status": "recorded"
     },
     {
       "id": "did-you-see-that",
-      "text": "Wait—did you see that?",
+      "text": "Wait\u2014did you see that?",
       "url": "/fog/cues/did-you-see-that.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/did-you-see-that.mp3"
+      "status": "recorded"
     },
     {
       "id": "changed-because-of-you",
       "text": "It changed because of you!",
       "url": "/fog/cues/changed-because-of-you.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/changed-because-of-you.mp3"
+      "status": "recorded"
     },
     {
       "id": "my-fault",
       "text": "Wait. That was my fault.",
       "url": "/fog/cues/my-fault.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/my-fault.mp3"
+      "status": "recorded"
     },
     {
       "id": "got-that-wrong",
-      "text": "Oh no—I got that wrong.",
+      "text": "Oh no\u2014I got that wrong.",
       "url": "/fog/cues/got-that-wrong.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/got-that-wrong.mp3"
+      "status": "recorded"
     },
     {
       "id": "apology",
-      "text": "I’m sorry. I was so sure.",
+      "text": "I\u2019m sorry. I was so sure.",
       "url": "/fog/cues/apology.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/apology.mp3"
+      "status": "recorded"
     },
     {
       "id": "you-came-back",
       "text": "You came back.",
       "url": "/fog/cues/you-came-back.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/you-came-back.mp3"
+      "status": "recorded"
     },
     {
       "id": "together-again",
-      "text": "We’re together again.",
+      "text": "We\u2019re together again.",
       "url": "/fog/cues/together-again.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/together-again.mp3"
+      "status": "recorded"
     },
     {
       "id": "there-you-are",
       "text": "There you are!",
       "url": "/fog/cues/there-you-are.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/there-you-are.mp3"
+      "status": "recorded"
     },
     {
       "id": "choosing-this-one",
-      "text": "I’m choosing this one!",
+      "text": "I\u2019m choosing this one!",
       "url": "/fog/cues/choosing-this-one.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/choosing-this-one.mp3"
+      "status": "recorded"
     },
     {
       "id": "this-way",
       "text": "This way. Come on!",
       "url": "/fog/cues/this-way.mp3",
-      "status": "reused",
-      "source": "/audio/ariadne-cues/this-way.mp3"
+      "status": "recorded"
     },
     {
       "id": "over-here",
@@ -124,7 +113,7 @@
     },
     {
       "id": "nowhere-forward",
-      "text": "I can’t hear it from here.",
+      "text": "I can\u2019t hear it from here.",
       "url": "/fog/cues/nowhere-forward.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
@@ -152,49 +141,49 @@
     },
     {
       "id": "opening-premise",
-      "text": "You can hear that, MT? I can tell where it’s coming from. This way.",
+      "text": "You can hear that, MT? I can tell where it\u2019s coming from. This way.",
       "url": "/fog/cues/opening-premise.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "getting-louder",
-      "text": "It’s getting louder.",
+      "text": "It\u2019s getting louder.",
       "url": "/fog/cues/getting-louder.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "fading",
-      "text": "It’s fading.",
+      "text": "It\u2019s fading.",
       "url": "/fog/cues/fading.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "been-here",
-      "text": "We’ve been here.",
+      "text": "We\u2019ve been here.",
       "url": "/fog/cues/been-here.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "come-with-you",
-      "text": "I’ll come with you.",
+      "text": "I\u2019ll come with you.",
       "url": "/fog/cues/come-with-you.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "resume",
-      "text": "— so, as I was saying",
+      "text": "\u2014 so, as I was saying",
       "url": "/fog/cues/resume.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "clearing-promise",
-      "text": "It cleared. There are more of them. Each one clears a little; enough of them and we’ll see the whole of it. I can already hear the next one.",
+      "text": "It cleared. There are more of them. Each one clears a little; enough of them and we\u2019ll see the whole of it. I can already hear the next one.",
       "url": "/fog/cues/clearing-promise.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"

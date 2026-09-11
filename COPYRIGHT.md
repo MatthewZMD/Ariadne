@@ -23,8 +23,8 @@ The complete license is provided in [`LICENSE`](LICENSE).
 The following material is copyright © 2026 Mingde “MT” Zeng and is provided for viewing and running *Ariadne*. All rights are reserved unless a file explicitly states otherwise:
 
 - the *Ariadne* name, project statement, narrative, dialogue, and written documentation;
-- title artwork, story images, sprites, visual identity, and other original image assets under `public/`;
-- authored and synthesized Ariadne voice recordings under `public/audio/ariadne-cues/`;
+- title artwork, models, synthesized sound, visual identity, and original image assets under `public/fog/`;
+- authored and synthesized Ariadne voice recordings under `public/fog/cues/`;
 - documentation images and exhibition material distributed separately from the repository.
 
 The AGPL license for the software does not grant permission to reuse these artistic materials in modified or redistributed projects. To distribute a modified version of the software, replace reserved artistic material with material you are entitled to use.

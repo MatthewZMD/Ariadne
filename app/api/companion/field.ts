@@ -2,8 +2,7 @@
  * The field practice on the server: validate a FieldRequest from the client,
  * build the provider messages, run the free-model ladder, guard the reply
  * once with a regeneration, and fall back to a deterministic line so the
- * client always has something to say. Shares the model ladder with the maze
- * route and nothing else.
+ * client always has something to say.
  */
 import process from "node:process";
 import { fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, normalizeFieldReply, regenerationDirection, type FieldOccasion, type FieldRequest, type FieldViolation, type ProviderMessage } from "../../field-practice.ts";

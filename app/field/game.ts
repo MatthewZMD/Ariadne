@@ -37,7 +37,7 @@ export type FieldInput = {
   forward: number;
   /** Strafe to the right (+) or left (−), −1..1. */
   strafe: number;
-  /** Turn left (+) or right (−), −1..1, ramped like the maze. */
+  /** Turn left (+) or right (−), −1..1, with acceleration. */
   turn: number;
   /** Immediate yaw change in radians (mouse, touch); positive turns left. */
   lookDelta: number;
