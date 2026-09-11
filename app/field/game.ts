@@ -41,6 +41,7 @@ export type FieldInput = {
   turn: number;
   /** Immediate yaw change in radians (mouse, touch); positive turns left. */
   lookDelta: number;
+  pitchDelta?: number;
 };
 
 export const IDLE_INPUT: FieldInput = { forward: 0, strafe: 0, turn: 0, lookDelta: 0 };
@@ -48,6 +49,7 @@ export const IDLE_INPUT: FieldInput = { forward: 0, strafe: 0, turn: 0, lookDelt
 export type Walker = {
   position: Vec2;
   yaw: number;
+  pitch: number;
   velocity: Vec2;
   speed: number;
   moveRamp: InputRamp;
@@ -111,7 +113,7 @@ export type FieldSave = {
   seed: number;
   time: number;
   activeSeconds: number;
-  walker: { position: Vec2; yaw: number };
+  walker: { position: Vec2; yaw: number; pitch?: number };
   undertaking: Undertaking;
   structures: ReturnType<StructureField["serialize"]>;
   memory: MemorySnapshot;
@@ -204,7 +206,7 @@ export class FieldGame {
     this.undertaking = createUndertaking(seed);
     const first = this.graph.markersFrom(teachingWay, spawn.id)[0]!;
     const yaw = Math.atan2(first.position[0] - spawn.position[0], first.position[1] - spawn.position[1]) + (unit(seed, "spawn-yaw") - .5) * .5;
-    this.walker = { position: [...spawn.position], yaw, velocity: [0, 0], speed: 0, moveRamp: { heldSeconds: 0, direction: 0 }, turnRamp: { heldSeconds: 0, direction: 0 }, stillSince: 0 };
+    this.walker = { position: [...spawn.position], yaw, pitch: 0, velocity: [0, 0], speed: 0, moveRamp: { heldSeconds: 0, direction: 0 }, turnRamp: { heldSeconds: 0, direction: 0 }, stillSince: 0 };
     this.currentNodeId = spawn.id; this.lastNodeId = spawn.id;
     this.memory.visit(spawn.id, 0);
     this.updateCall(0);
@@ -220,7 +222,7 @@ export class FieldGame {
     if (this.undertaking.objectiveStructureId) return this.structures.get(this.undertaking.objectiveStructureId);
     const teaching = this.teachingStructure; return teaching && teaching.completedAt === null ? teaching : null;
   }
-  get walkerPose() { return { position: this.walker.position, yaw: this.walker.yaw, speed: this.walker.speed }; }
+  get walkerPose() { return { position: this.walker.position, yaw: this.walker.yaw, pitch: this.walker.pitch, speed: this.walker.speed }; }
   /** The run toward the current call, as both of them could count it. */
   run(): StageRun { return stageRun(this.undertaking, this.returnsThisStage); }
   /**
@@ -263,6 +265,7 @@ export class FieldGame {
     walker.turnRamp = advanceInputRamp(walker.turnRamp, input.turn, step, TURN_ACCELERATION.rampSeconds);
     const turn = Math.sign(input.turn) * acceleratedSpeed(walker.turnRamp, TURN_ACCELERATION) * Math.min(1, Math.abs(input.turn));
     walker.yaw = wrapAngle(walker.yaw + input.lookDelta + (input.turn ? turn * step : 0));
+    walker.pitch = clamp(walker.pitch + (input.pitchDelta ?? 0), -Math.PI / 2 + .01, Math.PI / 2 - .01);
     const magnitude = Math.min(1, Math.hypot(input.forward, input.strafe));
     walker.moveRamp = advanceInputRamp(walker.moveRamp, magnitude > .05 ? 1 : 0, step, MOVE_ACCELERATION.rampSeconds);
     const speed = magnitude > .05 ? acceleratedSpeed(walker.moveRamp, MOVE_ACCELERATION) * magnitude : 0;
@@ -771,7 +774,7 @@ export class FieldGame {
   save(): FieldSave {
     return {
       version: 1, seed: this.seed, time: this.time, activeSeconds: this.activeSeconds,
-      walker: { position: [...this.walker.position], yaw: this.walker.yaw },
+      walker: { position: [...this.walker.position], yaw: this.walker.yaw, pitch: this.walker.pitch },
       undertaking: this.undertaking, structures: this.structures.serialize(), memory: this.memory.snapshot(),
       ariadne: this.ariadne ? { fragments: this.ariadne.fragments, committedWayId: this.ariadne.committedWayId, committedFromNodeId: this.ariadne.committedFromNodeId } : null,
       lastNodeId: this.lastNodeId, arrivedByWayId: this.arrivedByWayId, openingSpoken: this.openingSpoken, teachingTakenUp: this.teachingTakenUp,
@@ -783,7 +786,7 @@ export class FieldGame {
   static restore(save: FieldSave): FieldGame {
     const game = new FieldGame(save.seed);
     game.time = save.time; game.activeSeconds = save.activeSeconds;
-    game.walker.position = [...save.walker.position]; game.walker.yaw = save.walker.yaw;
+    game.walker.position = [...save.walker.position]; game.walker.yaw = save.walker.yaw; game.walker.pitch = clamp(save.walker.pitch ?? 0, -Math.PI / 2 + .01, Math.PI / 2 - .01);
     game.graph.ensureAround(game.walker.position, 1);
     game.structures.restore(game.graph, save.structures);
     game.structures.ensureAround(game.graph, game.walker.position);

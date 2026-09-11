@@ -13,7 +13,9 @@ html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(
 .fog-screen.translucent { background: rgba(244,245,244,.82); backdrop-filter: blur(6px); }
 .fog-title { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
 .fog-title img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
-.fog-title-actions { position: absolute; left: clamp(20px, 8.2vw, 158px); bottom: clamp(28px, 12vh, 140px); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.fog-title-heading { position: absolute; top: clamp(24px, 14svh, 150px); left: clamp(20px, 8vw, 154px); right: 20px; margin: 0; font-size: clamp(24px, min(8vw, 15svh), 112px); font-weight: 300; line-height: 1.1; letter-spacing: .16em; text-transform: uppercase; color: #586052; }
+.fog-title > .fog-credit { left: clamp(20px, 8vw, 154px); right: clamp(20px, 6vw, 120px); bottom: clamp(14px, 4svh, 36px); font-size: clamp(8px, 1vw, 10px); line-height: 1.6; text-align: right; overflow-wrap: anywhere; }
+.fog-title-actions { position: absolute; left: clamp(20px, 8.2vw, 158px); bottom: clamp(80px, 12svh, 140px); max-width: calc(100% - 40px); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
 .fog-button { min-width: 200px; border: 1px solid rgba(79,90,79,.45); padding: 13px 26px; color: var(--ink-soft); background: rgba(255,255,255,.55); cursor: pointer; letter-spacing: .22em; font-size: 12px; text-transform: uppercase; transition: background 160ms ease, border-color 160ms ease, color 160ms ease; }
 .fog-button:hover, .fog-button:focus-visible { outline: none; background: rgba(255,255,255,.92); border-color: var(--ink-soft); color: #313a31; }
 .fog-button:disabled { opacity: .5; cursor: wait; }
@@ -32,9 +34,6 @@ html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(
 .fog-volume { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; padding: 10px 12px; border: 1px solid rgba(79,90,79,.25); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); }
 .fog-volume strong { font-weight: 400; color: var(--ink-soft); }
 .fog-volume input { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--ink-soft); cursor: pointer; }
-.fog-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(79,90,79,.25); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); cursor: pointer; }
-.fog-toggle input { accent-color: var(--ink-soft); }
-.fog-note { margin: 4px 0 0; text-align: center; color: var(--ink-faint); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
 .fog-credit { position: absolute; right: clamp(20px, 6vw, 120px); bottom: clamp(18px, 5vh, 56px); margin: 0; color: var(--ink-faint); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
 .fog-credit a { color: inherit; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: rgba(79,90,79,.35); }
 .fog-credit a:hover, .fog-credit a:focus-visible { color: var(--ink-soft); }

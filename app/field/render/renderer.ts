@@ -8,6 +8,8 @@
  * the game each frame.
  */
 import * as THREE from "three";
+import { ThreadGeometry } from "./thread-geometry.ts";
+import { renderPixelRatio } from "../performance.ts";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { FieldGame, FieldEvent } from "../game.ts";
 import { PULSE_VISIBLE_RANGE } from "../game.ts";
@@ -29,6 +31,7 @@ export type RenderFrame = {
   pulse: number;
   voiceLevel: number;
   reducedMotion: boolean;
+  quality?: number;
 };
 
 /* --------------------------------------------------------------- fog */
@@ -123,6 +126,16 @@ function materialsNamed(root: THREE.Object3D, pattern: RegExp) {
 
 type StructureView = { root: THREE.Group; structure: Structure; dormantEmissive: THREE.MeshStandardMaterial[]; awakeEmissive: THREE.MeshStandardMaterial[]; sprites: THREE.Sprite[]; state: "dormant" | "awake"; flash: number[] };
 
+/** Instance materials are cloned; geometry and textures belong to the model cache. */
+function releaseInstance(root: THREE.Object3D) {
+  const materials = new Set<THREE.Material>();
+  root.traverse(node => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.material) for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material);
+  });
+  for (const material of materials) material.dispose();
+}
+
 export class FieldRenderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -153,6 +166,13 @@ export class FieldRenderer {
   private disposed = false;
   private wakeFlashes: Array<{ position: THREE.Vector3; family: StructureFamily; at: number; sprite: THREE.Sprite }> = [];
   private stopped = false;
+  private readonly threadGeometry = new ThreadGeometry();
+  private threadUpdatedAt = -Infinity;
+  private pixelCheckAt = -Infinity;
+  private width = 1;
+  private height = 1;
+  private streaming = false;
+  private streamDirty = true;
 
   constructor(canvas: HTMLCanvasElement, game: FieldGame) {
     this.game = game;
@@ -213,6 +233,7 @@ export class FieldRenderer {
   }
 
   resize(width: number, height: number) {
+    this.width = width; this.height = height; this.pixelCheckAt = -Infinity;
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / Math.max(1, height); this.camera.updateProjectionMatrix();
   }
@@ -279,7 +300,7 @@ export class FieldRenderer {
         this.floors.set(node.id, root); this.scene.add(root);
       });
     }
-    for (const [id, object] of this.floors) if (!wanted.has(id)) { this.scene.remove(object); this.floors.delete(id); }
+    for (const [id, object] of this.floors) if (!wanted.has(id)) { this.scene.remove(object); releaseInstance(object); this.floors.delete(id); }
 
     // Structures.
     const wantedStructures = new Set<string>();
@@ -304,7 +325,7 @@ export class FieldRenderer {
         this.structures.set(structure.id, view); this.scene.add(root);
       });
     }
-    for (const [id, view] of this.structures) if (!wantedStructures.has(id)) { this.scene.remove(view.root); for (const sprite of view.sprites) this.scene.remove(sprite); this.structures.delete(id); }
+    for (const [id, view] of this.structures) if (!wantedStructures.has(id)) { this.scene.remove(view.root); releaseInstance(view.root); for (const sprite of view.sprites) { this.scene.remove(sprite); sprite.material.dispose(); } this.structures.delete(id); }
 
     // Clearings on the ground.
     for (const clearing of game.clearings()) {
@@ -349,6 +370,7 @@ export class FieldRenderer {
   /* ----------------------------------------------------------- events */
 
   handle(event: FieldEvent) {
+    if (["commitment", "structure_completed", "stage_advanced"].includes(event.type)) this.streamDirty = true;
     if (event.type === "element_woke") {
       const sprite = new THREE.Sprite(this.elementSpriteMaterials.get(event.family)!.clone());
       sprite.position.set(event.position[0], event.position[1], event.position[2]); sprite.scale.setScalar(.8);
@@ -373,13 +395,21 @@ export class FieldRenderer {
   render(frame: RenderFrame) {
     if (this.disposed || this.stopped) return;
     const game = this.game, walker = game.walker, body = game.ariadne;
-    const seconds = frame.time / 1000;
+    const seconds = frame.time / 1000, quality = frame.quality ?? 1;
+    if (frame.time - this.pixelCheckAt >= 1000) {
+      this.pixelCheckAt = frame.time;
+      const ratio = renderPixelRatio(window.devicePixelRatio, this.width, this.height, quality);
+      if (Math.abs(this.renderer.getPixelRatio() - ratio) >= .035) this.renderer.setPixelRatio(ratio);
+    }
     this.camera.position.set(walker.position[0], 1.62, walker.position[1]);
-    this.camera.rotation.y = walker.yaw + Math.PI;
+    this.camera.rotation.set(walker.pitch, walker.yaw + Math.PI, 0, "YXZ");
     // Ground follows in texture-aligned steps so the mottle never swims.
     this.ground.position.set(Math.round(walker.position[0] / 4) * 4, 0, Math.round(walker.position[1] / 4) * 4);
 
-    if (frame.time - this.lastStreamAt > 600 || distance(this.lastStreamPosition, walker.position) > 6) { this.lastStreamAt = frame.time; this.lastStreamPosition = [...walker.position]; void this.stream(); }
+    if (!this.streaming && (this.streamDirty || this.lastStreamAt === -Infinity || distance(this.lastStreamPosition, walker.position) > 6)) {
+      this.streamDirty = false; this.streaming = true; this.lastStreamAt = frame.time; this.lastStreamPosition = [...walker.position];
+      void this.stream().catch(error => { console.warn("field streaming failed", error); }).finally(() => { this.streaming = false; });
+    }
     this.updateFootprints();
 
     // Fog: denser off the line; clearings as holes.
@@ -408,7 +438,7 @@ export class FieldRenderer {
     const nowMs = performance.now();
     this.wakeFlashes = this.wakeFlashes.filter(flash => {
       const t = (nowMs - flash.at) / 1500;
-      if (t >= 1) { this.scene.remove(flash.sprite); return false; }
+      if (t >= 1) { this.scene.remove(flash.sprite); flash.sprite.material.dispose(); return false; }
       (flash.sprite.material as THREE.SpriteMaterial).opacity = (1 - t) * .6; flash.sprite.scale.setScalar(.6 + t * 2.2); return true;
     });
 
@@ -429,7 +459,9 @@ export class FieldRenderer {
       const radius = 7 + (index % 3) * 2.2;
       const drift = frame.reducedMotion ? 0 : Math.sin(seconds * .21 + index * 1.7) * 1.4;
       sprite.position.set(walker.position[0] + Math.sin(angle) * (radius + drift), 1.4 + Math.sin(seconds * .17 + index) * .3, walker.position[1] + Math.cos(angle) * (radius + drift));
-      (sprite.material as THREE.SpriteMaterial).opacity = .06 + .03 * Math.sin(seconds * .3 + index * 2) + game.offWayFactor * .05;
+      const detail = THREE.MathUtils.smoothstep(quality, index / 8, (index + 2) / 8);
+      sprite.visible = detail > .01;
+      (sprite.material as THREE.SpriteMaterial).opacity = detail * (.06 + .03 * Math.sin(seconds * .3 + index * 2) + game.offWayFactor * .05);
     });
 
     // Ariadne.
@@ -447,20 +479,16 @@ export class FieldRenderer {
     this.head.scale.setScalar(Math.min(1.1, .16 + headDistance * .045) + frame.voiceLevel * .3 + Math.max(0, brightness - 1) * .2);
     (this.head.material as THREE.SpriteMaterial).opacity = (.45 + .3 * Math.min(1, brightness)) * THREE.MathUtils.smoothstep(headDistance, .5, 1.4);
     if (body.trail.length >= 3) {
-      const points = body.trail.map(point => new THREE.Vector3(point.x, point.y, point.z));
-      points.push(new THREE.Vector3(body.position[0], body.height, body.position[1]));
-      const curve = new THREE.CatmullRomCurve3(points, false, "centripetal");
-      const segments = Math.min(120, points.length * 2);
-      const core = new THREE.TubeGeometry(curve, segments, .02 + frame.voiceLevel * .008, 6, false);
-      const glow = new THREE.TubeGeometry(curve, segments, .06 + (brightness - 1) * .03, 6, false);
+      if (frame.time - this.threadUpdatedAt >= 1000 / (24 + 36 * (frame.quality ?? 1))) {
+        this.threadUpdatedAt = frame.time;
+        this.threadGeometry.update(body.trail, { x: body.position[0], y: body.height, z: body.position[1] }, .02 + frame.voiceLevel * .008, .06 + (brightness - 1) * .03);
+      }
       if (!this.ribbon) {
-        this.ribbon = new THREE.Mesh(core, ribbonMaterial(0xe9d59c, .95));
-        this.halo = new THREE.Mesh(glow, ribbonMaterial(0xf6e7b4, .28));
+        this.ribbon = new THREE.Mesh(this.threadGeometry.core, ribbonMaterial(0xe9d59c, .95));
+        this.halo = new THREE.Mesh(this.threadGeometry.halo, ribbonMaterial(0xf6e7b4, .28));
         this.ribbon.frustumCulled = false; this.halo.frustumCulled = false;
         this.ribbon.renderOrder = 5; this.halo.renderOrder = 4;
         this.scene.add(this.ribbon, this.halo);
-      } else {
-        this.ribbon.geometry.dispose(); this.ribbon.geometry = core; this.halo!.geometry.dispose(); this.halo!.geometry = glow;
       }
       this.ribbon.visible = true; this.halo!.visible = true;
       const coreMaterial = this.ribbon.material as THREE.ShaderMaterial, haloMaterial = this.halo!.material as THREE.ShaderMaterial;
@@ -482,12 +510,12 @@ export class FieldRenderer {
       const from = body.pendingFragment.from;
       this.travelling.mesh.position.set(from[0] + (body.position[0] - from[0]) * ease, from[1] + (body.height - from[1]) * ease + Math.sin(t * Math.PI) * .8, from[2] + (body.position[1] - from[2]) * ease);
       this.travelling.mesh.rotation.y = t * 6;
-    } else if (this.travelling && !body.pendingFragment) { this.scene.remove(this.travelling.mesh); this.travelling = null; }
+    } else if (this.travelling && !body.pendingFragment) { this.scene.remove(this.travelling.mesh); releaseInstance(this.travelling.mesh); this.travelling = null; }
   }
 
   private syncFragments(body: AriadneBody) {
     if (this.fragmentMeshes.length === body.fragments.length) return;
-    while (this.fragmentMeshes.length > body.fragments.length) { const mesh = this.fragmentMeshes.pop()!; this.scene.remove(mesh); }
+    while (this.fragmentMeshes.length > body.fragments.length) { const mesh = this.fragmentMeshes.pop()!; this.scene.remove(mesh); releaseInstance(mesh); }
     for (let i = this.fragmentMeshes.length; i < body.fragments.length; i++) {
       const family = body.fragments[i]!;
       const placeholder = new THREE.Group(); this.fragmentMeshes.push(placeholder); this.scene.add(placeholder);
@@ -506,6 +534,7 @@ export class FieldRenderer {
 
   dispose() {
     this.disposed = true; this.stopped = true;
+    this.threadGeometry.dispose();
     this.renderer.dispose();
   }
 }

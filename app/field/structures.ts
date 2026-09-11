@@ -130,14 +130,17 @@ export class StructureField {
    * contact; look and listen need sustained attention on one part at a time,
    * so moving attention among the parts makes a phrase rather than a chord.
    */
-  advance(walker: { position: Vec2; yaw: number; speed: number }, dt: number, now: number): WakeChange[] {
+  advance(walker: { position: Vec2; yaw: number; pitch?: number; speed: number }, dt: number, now: number): WakeChange[] {
     const changes: WakeChange[] = [];
     const step = Math.max(0, Math.min(.1, dt));
     for (const structure of this.byNode.values()) {
       if (distance(structure.position, walker.position) > ATTENTION_RANGE) { for (const element of structure.elements) { element.attention = 0; element.engaged = false; } continue; }
       const candidates = structure.elements.map(element => {
         const dx = element.position[0] - walker.position[0], dz = element.position[2] - walker.position[1], flat = Math.hypot(dx, dz);
-        const bearing = Math.abs(wrapAngle(walker.yaw - Math.atan2(dx, dz)));
+        const horizontal = wrapAngle(walker.yaw - Math.atan2(dx, dz));
+        const elevation = Math.atan2(element.position[1] - 1.62, flat);
+        const pitch = walker.pitch ?? 0;
+        const bearing = Math.acos(Math.max(-1, Math.min(1, Math.sin(pitch) * Math.sin(elevation) + Math.cos(pitch) * Math.cos(elevation) * Math.cos(horizontal))));
         const inReach = element.gesture === "approach" ? flat <= 1.3 : flat <= 3.6 && bearing < .42;
         const still = element.gesture !== "listen" || walker.speed < .18;
         return { element, flat, bearing, eligible: inReach && still };

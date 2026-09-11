@@ -7,21 +7,19 @@
  * and reopening it restores the field as it was.
  */
 import Image from "next/image";
+import { AdaptiveQuality } from "./field/performance.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FieldGame, type FieldInput, type FieldSave } from "./field/game.ts";
+import { FieldGame, type FieldInput } from "./field/game.ts";
 import { createFieldAudio, type FieldAudio } from "./field/audio.ts";
-import { FieldSpeech, type SpeechLine, type SpeechSave } from "./field/speech.ts";
+import { FieldSpeech, type SpeechLine } from "./field/speech.ts";
 import type { FieldRenderer } from "./field/render/renderer.ts";
 
 type Experience = "title" | "headphones" | "playing" | "paused" | "unavailable";
 type Caption = { id: string; role: "ariadne" | "walker"; text: string; at: number };
-type SavedSession = { version: 1; savedAt: number; game: FieldSave; speech: SpeechSave };
 
 const SAVE_KEY = "ariadne:field:save";
 const SESSION_KEY = "ariadne:field:session";
 const VOLUME_KEY = "ariadne:field:volume";
-const MOTION_KEY = "ariadne:field:still";
-const SAVE_INTERVAL_MS = 5000;
 /** The artist's page for the work: the statement, and who set these conditions. */
 const ABOUT_URL = "https://mt-zeng.com/art/ariadne/";
 const CAPTION_LIFE_MS = 9000;
@@ -33,20 +31,13 @@ const write = (key: string, value: string | null) => { try { if (value === null)
 const randomId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 const seedFrom = (id: string) => { let h = 2166136261; for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 
-function loadSave(): SavedSession | null {
-  const raw = read(SAVE_KEY); if (!raw) return null;
-  try { const parsed = JSON.parse(raw) as SavedSession; return parsed && parsed.version === 1 && parsed.game?.seed !== undefined ? parsed : null; } catch { return null; }
-}
-
 export default function FieldPage() {
   const [experience, setExperience] = useState<Experience>("title");
-  const [hasSave, setHasSave] = useState(false);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [masterVolume, setMasterVolume] = useState(1);
-  const [still, setStill] = useState(false);
   const [hintVisible, setHintVisible] = useState(true);
   const [ready, setReady] = useState(false);
   const [now, setNow] = useState(0);
@@ -60,32 +51,31 @@ export default function FieldPage() {
   const experienceRef = useRef<Experience>("title");
   const heldRef = useRef(new Set<string>());
   const lookRef = useRef(0);
-  const touchRef = useRef(new Map<number, { kind: "move" | "look"; startX: number; startY: number; lastX: number }>());
+  const pitchRef = useRef(0);
+  const touchRef = useRef(new Map<number, { kind: "move" | "look"; startX: number; startY: number; lastX: number; lastY: number }>());
   const touchMoveRef = useRef<[number, number]>([0, 0]);
   const logOpenRef = useRef(false);
-  const lastSaveRef = useRef(0);
   const sessionIdRef = useRef("");
-  const stillRef = useRef(false);
+  const qualityRef = useRef<AdaptiveQuality | null>(null);
   const systemStillRef = useRef(false);
 
   useEffect(() => { experienceRef.current = experience; }, [experience]);
   useEffect(() => { logOpenRef.current = logOpen; if (logOpen) inputRef.current?.focus(); }, [logOpen]);
 
-  // Preferences and the saved session.
+  // Preferences persist; every visit starts a new game.
   useEffect(() => {
     const syncPreferences = () => {
-      setHasSave(loadSave() !== null);
+      write(SAVE_KEY, null);
       const stored = read(VOLUME_KEY), volume = Number(stored); if (stored !== null && Number.isFinite(volume)) setMasterVolume(Math.max(0, Math.min(1, volume)));
-      setStill(read(MOTION_KEY) === "1");
-      let id = read(SESSION_KEY); if (!id) { id = randomId(); write(SESSION_KEY, id); } sessionIdRef.current = id;
+
+      sessionIdRef.current = randomId(); write(SESSION_KEY, null);
     };
     syncPreferences();
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => { systemStillRef.current = query.matches; if (gameRef.current) gameRef.current.reducedMotion = query.matches || stillRef.current; };
+    const sync = () => { systemStillRef.current = query.matches; if (gameRef.current) gameRef.current.reducedMotion = query.matches; };
     sync(); query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
   }, []);
-  useEffect(() => { stillRef.current = still; write(MOTION_KEY, still ? "1" : null); if (gameRef.current) gameRef.current.reducedMotion = still || systemStillRef.current; }, [still]);
   useEffect(() => { write(VOLUME_KEY, String(masterVolume)); audioRef.current?.setMasterVolume(masterVolume); }, [masterVolume]);
   useEffect(() => {
     const receivePortfolioVolume = (event: MessageEvent) => {
@@ -99,31 +89,24 @@ export default function FieldPage() {
     return () => window.removeEventListener("message", receivePortfolioVolume);
   }, []);
 
-  const persist = useCallback(() => {
-    const game = gameRef.current, speech = speechRef.current; if (!game || !speech) return;
-    const saved: SavedSession = { version: 1, savedAt: Date.now(), game: game.save(), speech: speech.save() };
-    write(SAVE_KEY, JSON.stringify(saved));
-    lastSaveRef.current = performance.now();
-  }, []);
-
-  /** Build the game (fresh or restored), the audio and the speech layer. Called once, from the headphones screen, on a user gesture. */
+  /** Start a fresh game from the headphones screen, on a user gesture. */
   const begin = useCallback(async () => {
     if (gameRef.current) return;
-    const saved = loadSave();
-    const game = saved ? FieldGame.restore(saved.game) : new FieldGame(seedFrom(randomId()));
-    game.reducedMotion = stillRef.current || systemStillRef.current;
+    const game = new FieldGame(seedFrom(randomId()));
+    game.reducedMotion = systemStillRef.current;
     gameRef.current = game;
     const audio = createFieldAudio({ sessionId: sessionIdRef.current });
     audioRef.current = audio;
     audio.setMasterVolume(masterVolume);
     const speech = new FieldSpeech(game, audio, { sessionId: sessionIdRef.current, onThinking: setThinking, onLine: (line: SpeechLine) => setCaptions(list => [...list, { id: line.id, role: "ariadne" as const, text: line.text, at: performance.now() }].slice(-60)) });
-    if (saved) { speech.restore(saved.speech); setCaptions(game.memory.captions.slice(-6).map(line => ({ id: line.id, role: line.role, text: line.text, at: -Infinity }))); }
     speechRef.current = speech;
     await audio.unlock();
     audio.warm(["teaching"]);
     // The field is drawn with WebGL. When the browser cannot supply it, the visitor must be told so plainly, rather than left
-    // on "Opening the field" for good; the saved session is kept for a browser that can.
+    // on "Opening the field" for good.
     const canvas = canvasRef.current; if (!canvas) return;
+    const device = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+    qualityRef.current = new AdaptiveQuality({ cores: device.hardwareConcurrency, memoryGB: device.deviceMemory, saveData: device.connection?.saveData });
     let renderer: FieldRenderer;
     try {
       const { FieldRenderer } = await import("./field/render/renderer.ts");
@@ -143,27 +126,36 @@ export default function FieldPage() {
 
   // Frame loop.
   useEffect(() => {
-    let frame = 0, previous = performance.now(), accumulator = 0, waterAt = 0, water: number | null = null;
+    let frame = 0, previous = performance.now(), accumulator = 0, waterAt = 0, captionAt = 0, wasPlaying = false, lastWorkMs = 0, water: number | null = null;
     const tick = (time: number) => {
       frame = requestAnimationFrame(tick);
-      const dt = Math.min(.2, (time - previous) / 1000); previous = time;
+      const elapsedMs = time - previous, workStarted = performance.now();
+      const dt = Math.min(.2, elapsedMs / 1000); previous = time;
       const game = gameRef.current, renderer = rendererRef.current, audio = audioRef.current, speech = speechRef.current;
       if (!game || !renderer) return;
       const playing = experienceRef.current === "playing" && !document.hidden;
+      const quality = qualityRef.current;
+      if (!playing) {
+        if (wasPlaying) { quality?.resetWindow(); accumulator = 0; }
+        wasPlaying = false;
+        return;
+      }
+      if (!wasPlaying) quality?.resetWindow(); else quality?.sample(elapsedMs, lastWorkMs);
+      wasPlaying = true;
       if (playing) {
         const held = logOpenRef.current ? new Set<string>() : heldRef.current;
         let forward = 0, strafe = 0, turn = 0;
         if (held.has("w") || held.has("arrowup")) forward += 1; if (held.has("s") || held.has("arrowdown")) forward -= 1;
-        if (held.has("a") || held.has("arrowleft")) turn += 1; if (held.has("d") || held.has("arrowright")) turn -= 1;
-        if (held.has("q")) strafe -= 1; if (held.has("e")) strafe += 1;
+        if (held.has("arrowleft")) turn += 1; if (held.has("arrowright")) turn -= 1;
+        if (held.has("a") || held.has("q")) strafe -= 1; if (held.has("d") || held.has("e")) strafe += 1;
         if (touchMoveRef.current[1] !== 0) forward = touchMoveRef.current[1]; if (touchMoveRef.current[0] !== 0) strafe = touchMoveRef.current[0];
-        const fieldInput: FieldInput = { forward, strafe, turn, lookDelta: lookRef.current };
-        lookRef.current = 0;
-        if (forward || strafe || turn || fieldInput.lookDelta) setHintVisible(false);
+        const fieldInput: FieldInput = { forward, strafe, turn, lookDelta: lookRef.current, pitchDelta: pitchRef.current };
+
+        if (forward || strafe || turn || fieldInput.lookDelta || fieldInput.pitchDelta) setHintVisible(false);
         // Fixed-step simulation so behaviour does not depend on frame rate.
         accumulator = Math.min(accumulator + dt, .25);
         const step = 1 / 60;
-        while (accumulator >= step) { game.update(step, fieldInput); accumulator -= step; fieldInput.lookDelta = 0; }
+        while (accumulator >= step) { game.update(step, fieldInput); accumulator -= step; fieldInput.lookDelta = 0; fieldInput.pitchDelta = 0; lookRef.current = 0; pitchRef.current = 0; }
         for (const event of game.drain()) { audio?.handle(event); renderer.handle(event); if (event.type === "speak") speech?.handle(event); }
         speech?.update();
         if (time - waterAt > 500) {
@@ -174,14 +166,23 @@ export default function FieldPage() {
           if (near.length) audio?.warm([...new Set(near)]);
         }
         audio?.update({ walker: { position: [game.walker.position[0], game.walker.position[1]], yaw: game.walker.yaw }, ariadne: game.ariadne ? { position: [game.ariadne.position[0], game.ariadne.position[1]], height: game.ariadne.height } : null, call: { structureId: game.call.structureId, family: game.call.family, position: game.call.position, gain: game.call.gain }, offWayFactor: game.offWayFactor, waterDistance: water, clearings: game.structures.completed().map(item => ({ id: item.id, family: item.family, x: item.position[0], z: item.position[1] })) });
-        if (time - lastSaveRef.current > SAVE_INTERVAL_MS) persist();
       }
-      renderer.render({ time: game.time, pulse: audio?.pulse() ?? 0, voiceLevel: audio?.voice.level() ?? 0, reducedMotion: game.reducedMotion });
-      if ((frame & 15) === 0) setNow(performance.now());
+      renderer.render({ time: game.time, pulse: audio?.pulse() ?? 0, voiceLevel: audio?.voice.level() ?? 0, reducedMotion: game.reducedMotion, quality: quality?.quality ?? 1 });
+      lastWorkMs = performance.now() - workStarted;
+      if (time - captionAt >= 100) {
+        captionAt = time; setNow(time);
+        const canvas = canvasRef.current;
+        if (canvas && quality) {
+          canvas.dataset.fps = quality.fps.toFixed(1);
+          canvas.dataset.frameMs = quality.frameMs.toFixed(1);
+          canvas.dataset.workMs = quality.workMs.toFixed(1);
+          canvas.dataset.quality = quality.quality.toFixed(2);
+        }
+      }
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [persist]);
+  }, []);
 
   // Resize.
   useEffect(() => {
@@ -191,14 +192,14 @@ export default function FieldPage() {
     return () => observer.disconnect();
   }, [ready]);
 
-  // Save when the tab hides or closes. Nothing else happens: leaving is unmarked.
+  // Suspend sound while hidden; the current game remains in memory until reload.
   useEffect(() => {
-    const hide = () => { if (gameRef.current) persist(); if (document.hidden) audioRef.current?.pause(); else if (experienceRef.current === "playing") audioRef.current?.resume(); };
-    document.addEventListener("visibilitychange", hide); window.addEventListener("pagehide", persist); window.addEventListener("beforeunload", persist);
-    return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", persist); window.removeEventListener("beforeunload", persist); };
-  }, [persist]);
+    const hide = () => { if (document.hidden) audioRef.current?.pause(); else if (experienceRef.current === "playing") audioRef.current?.resume(); };
+    document.addEventListener("visibilitychange", hide);
+    return () => { document.removeEventListener("visibilitychange", hide); };
+  }, []);
 
-  const pause = useCallback(() => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; document.exitPointerLock?.(); audioRef.current?.pause(); setLogOpen(false); setExperience("paused"); persist(); }, [persist]);
+  const pause = useCallback(() => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; document.exitPointerLock?.(); audioRef.current?.pause(); setLogOpen(false); setExperience("paused"); }, []);
   const resume = useCallback(() => { audioRef.current?.resume(); setExperience("playing"); requestAnimationFrame(() => canvasRef.current?.focus()); }, []);
   const startAgain = useCallback(() => { write(SAVE_KEY, null); location.reload(); }, []);
 
@@ -218,14 +219,14 @@ export default function FieldPage() {
     };
     const up = (event: KeyboardEvent) => heldRef.current.delete(event.key.toLowerCase());
     const blur = () => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; };
-    let dragging = false, lastX = 0;
+    let dragging = false, lastX = 0, lastY = 0;
     const mouse = (event: MouseEvent) => {
       if (experienceRef.current !== "playing" || logOpenRef.current) return;
       const locked = document.pointerLockElement === canvasRef.current;
-      if (locked) lookRef.current -= event.movementX * .0022;
-      else if (dragging) { lookRef.current -= (event.clientX - lastX) * .0042; lastX = event.clientX; }
+      if (locked) { lookRef.current -= event.movementX * .0022; pitchRef.current -= event.movementY * .0022; }
+      else if (dragging) { lookRef.current -= (event.clientX - lastX) * .0042; pitchRef.current -= (event.clientY - lastY) * .0042; lastX = event.clientX; lastY = event.clientY; }
     };
-    const mouseDown = (event: MouseEvent) => { if (event.target === canvasRef.current && event.button === 0) { dragging = true; lastX = event.clientX; } };
+    const mouseDown = (event: MouseEvent) => { if (event.target === canvasRef.current && event.button === 0) { dragging = true; lastX = event.clientX; lastY = event.clientY; } };
     const mouseUp = () => { dragging = false; };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
     window.addEventListener("mousemove", mouse); window.addEventListener("mousedown", mouseDown); window.addEventListener("mouseup", mouseUp);
@@ -236,13 +237,13 @@ export default function FieldPage() {
   const onTouchStart = useCallback((event: React.TouchEvent<HTMLCanvasElement>) => {
     if (experienceRef.current !== "playing") return;
     const rect = event.currentTarget.getBoundingClientRect();
-    for (const touch of Array.from(event.changedTouches)) touchRef.current.set(touch.identifier, { kind: touch.clientX < rect.left + rect.width / 2 ? "move" : "look", startX: touch.clientX, startY: touch.clientY, lastX: touch.clientX });
+    for (const touch of Array.from(event.changedTouches)) touchRef.current.set(touch.identifier, { kind: touch.clientX < rect.left + rect.width / 2 ? "move" : "look", startX: touch.clientX, startY: touch.clientY, lastX: touch.clientX, lastY: touch.clientY });
   }, []);
   const onTouchMove = useCallback((event: React.TouchEvent<HTMLCanvasElement>) => {
     for (const touch of Array.from(event.changedTouches)) {
       const control = touchRef.current.get(touch.identifier); if (!control) continue;
       if (control.kind === "move") touchMoveRef.current = [Math.max(-1, Math.min(1, (touch.clientX - control.startX) / 70)), Math.max(-1, Math.min(1, (control.startY - touch.clientY) / 54))];
-      else { lookRef.current -= (touch.clientX - control.lastX) * .0042; control.lastX = touch.clientX; }
+      else { lookRef.current -= (touch.clientX - control.lastX) * .0042; pitchRef.current -= (touch.clientY - control.lastY) * .0042; control.lastX = touch.clientX; control.lastY = touch.clientY; }
     }
   }, []);
   const onTouchEnd = useCallback((event: React.TouchEvent<HTMLCanvasElement>) => {
@@ -271,10 +272,10 @@ export default function FieldPage() {
 
   return <main className="fog-shell">
     {experience === "title" && <div className="fog-screen"><div className="fog-title">
-      <Image src="/fog/images/ariadne-title-card.png" alt="Ariadne, in fog" width={1920} height={1080} unoptimized priority />
+      <Image src="/fog/images/ariadne-title-background.png" alt="" width={1920} height={1080} unoptimized priority />
+      <h1 className="fog-title-heading">Ariadne</h1>
       <div className="fog-title-actions">
-        <button className="fog-button" onClick={enterHeadphones}>{hasSave ? "Go back in" : "Enter"}</button>
-        {hasSave && <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>}
+        <button className="fog-button" onClick={enterHeadphones}>Enter</button>
       </div>
       {/* The undertaking is authored, and the author is named where the participant enters and where they pause. */}
       <p className="fog-credit">A work by Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
@@ -283,12 +284,12 @@ export default function FieldPage() {
       <span className="fog-headphones" aria-hidden="true"><i /><i /></span>
       <h1>Headphones</h1>
       <p>The call comes from a direction, and she speaks close to you. Give it sound, and a little time.</p>
-      <div className="fog-controls"><span className="desktop">W S · walk &nbsp; A D · turn &nbsp; mouse · look &nbsp; Enter · speak to her &nbsp; Esc · pause</span><span className="touch">Left half · walk &nbsp; Right half · look &nbsp; Top right · speak to her, pause</span></div>
+      <div className="fog-controls"><span className="desktop">W A S D · move &nbsp; mouse · look &nbsp; Enter · speak to her &nbsp; Esc · pause</span><span className="touch">Left half · walk &nbsp; Right half · look &nbsp; Top right · speak to her, pause</span></div>
       <button className="fog-button" onClick={() => void enterField()}>I&apos;m ready</button>
     </div></div>}
     {experience === "unavailable" && <div className="fog-screen"><div className="fog-panel">
       <h1>The field will not open here</h1>
-      <p>This browser could not draw it: the fog is drawn with WebGL, which is switched off or unsupported on this device. Nothing has been lost. In a browser that can, it will be as you left it.</p>
+      <p>This browser could not draw it: the fog is drawn with WebGL, which is switched off or unsupported on this device.</p>
       <button className="fog-button" onClick={() => location.reload()}>Try again</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>}
@@ -296,9 +297,7 @@ export default function FieldPage() {
       <h1>Paused</h1>
       <button className="fog-button" onClick={resume}>Continue</button>
       <label className="fog-volume"><span>Sound</span><strong>{Math.round(masterVolume * 100)}%</strong><input type="range" min={0} max={1} step={.02} value={masterVolume} onChange={event => setMasterVolume(Number(event.target.value))} /></label>
-      <label className="fog-toggle"><span>Still fog</span><input type="checkbox" checked={still} onChange={event => setStill(event.target.checked)} /></label>
       <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>
-      <p className="fog-note">Closing the tab changes nothing. It will be as you left it.</p>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div>
     {record.length > 0 && <div className="fog-pause-log" role="log" aria-label="What she has said">
@@ -311,7 +310,7 @@ export default function FieldPage() {
       <canvas ref={canvasRef} tabIndex={0} aria-label="A field of white fog, first person" onClick={event => { if (experienceRef.current === "playing" && !logOpenRef.current) { event.currentTarget.focus(); void event.currentTarget.requestPointerLock?.(); } }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touchRef.current.clear(); touchMoveRef.current = [0, 0]; }} />
       <div className="fog-grain" /><div className="fog-vignette" />
       {experience === "playing" && !ready && <div className="fog-hint">Opening the field</div>}
-      {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>W S · walk &nbsp; A D · turn &nbsp; mouse · look &nbsp; Enter · speak</div>}
+      {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>W A S D · move &nbsp; mouse · look &nbsp; Enter · speak</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
       {experience === "playing" && ready && !logOpen && <div className={`fog-corner ${hintVisible ? "" : "dim"}`}>
         <button type="button" onClick={openLog} aria-label="Speak to her, or read what she has said">To her</button>

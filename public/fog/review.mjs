@@ -66,9 +66,39 @@ exportButton.onclick=async()=>{
    show('field');assetReview.setState('awake');assetReview.setFog(true);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);
    const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(renderer.domElement,0,0,w,h);
    ctx.fillStyle='#586052';ctx.font=`300 ${Math.round(w*.055)}px sans-serif`;ctx.letterSpacing=`${Math.round(w*.008)}px`;ctx.fillText('ARIADNE',w*.08,h*.2);
-   ctx.font=`${Math.round(w*.011)}px sans-serif`;ctx.letterSpacing='3px';ctx.fillText('IN FOG',w*.082,h*.245);
    await save(name,c.toDataURL('image/png'));
   }
   exportButton.textContent='37 images exported';
  }catch(e){exportButton.textContent=e.message;throw e;}finally{exportButton.disabled=false;show(previous);resize();renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});}
+};
+
+// Regenerate the title background from the scene; lettering belongs to the page.
+const backgroundButton=document.createElement('button');
+backgroundButton.textContent='Export title background';document.querySelector('nav').append(backgroundButton);
+backgroundButton.onclick=async()=>{
+ const previous=current; backgroundButton.disabled=true; renderer.setAnimationLoop(null); renderer.setPixelRatio(1);
+ try {
+  show('field');assetReview.setState('awake');assetReview.setFog(true);
+  renderer.setSize(1920,1080,false);camera.aspect=1920/1080;camera.updateProjectionMatrix();renderer.render(scene,camera);
+  const response=await fetch('/__asset_render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'ariadne-title-background.png',data:renderer.domElement.toDataURL('image/png')})});
+  if(!response.ok)throw new Error(`Export failed: ${response.status}`);
+  backgroundButton.textContent='Title background exported';
+ }catch(error){backgroundButton.textContent=error.message;}finally{backgroundButton.disabled=false;show(previous);resize();renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});}
+};
+
+// Render publication images from the same scene, with the project title only.
+const titleButton=document.createElement('button');
+titleButton.textContent='Export title images';document.querySelector('nav').append(titleButton);
+titleButton.onclick=async()=>{
+ const previous=current;titleButton.disabled=true;renderer.setAnimationLoop(null);renderer.setPixelRatio(1);
+ try{
+  for(const [name,w,h] of [['ariadne-title-card.png',1920,1080],['og.png',1200,630]]){
+   show('field');assetReview.setState('awake');assetReview.setFog(true);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);
+   const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d');ctx.drawImage(renderer.domElement,0,0,w,h);
+   ctx.fillStyle='#586052';ctx.font=`300 ${Math.round(w*.055)}px sans-serif`;ctx.letterSpacing=`${Math.round(w*.008)}px`;ctx.fillText('ARIADNE',w*.08,h*.2);
+   const response=await fetch('/__asset_render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,data:canvas.toDataURL('image/png')})});
+   if(!response.ok)throw new Error(`Export failed: ${response.status}`);
+  }
+  titleButton.textContent='Title images exported';
+ }catch(error){titleButton.textContent=error.message;}finally{titleButton.disabled=false;show(previous);resize();renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});}
 };

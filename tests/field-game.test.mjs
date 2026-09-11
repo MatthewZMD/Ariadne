@@ -382,3 +382,23 @@ test("a walker who stands still at the start hears the invitation again, twice a
   const later = run(restored, 60).filter(event => event.type === "speak" && event.tone === "waiting");
   assert.equal(waiting.length + later.length <= 2, true);
 });
+
+
+test("vertical look clamps, survives saves, and leaves walking on the ground", () => {
+  const game = new FieldGame(3);
+  const start = [...game.walker.position], yaw = game.walker.yaw;
+  game.update(DT, { ...IDLE_INPUT, pitchDelta: .6 });
+  assert.equal(game.walker.pitch, .6);
+  assert.equal(game.walker.yaw, yaw);
+  assert.deepEqual(game.walker.position, start);
+  assert.equal(FieldGame.restore(game.save()).walker.pitch, .6);
+  const legacy = game.save(); delete legacy.walker.pitch;
+  assert.equal(FieldGame.restore(legacy).walker.pitch, 0);
+  game.update(DT, { ...IDLE_INPUT, pitchDelta: 10 });
+  assert.ok(game.walker.pitch < Math.PI / 2);
+  game.update(DT, { ...IDLE_INPUT, pitchDelta: -20 });
+  assert.ok(game.walker.pitch > -Math.PI / 2);
+  run(game, .3, { ...IDLE_INPUT, strafe: 1 });
+  assert.equal(game.walker.yaw, yaw);
+  assert.ok(Math.hypot(game.walker.position[0]-start[0],game.walker.position[1]-start[1]) > 0);
+});

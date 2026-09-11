@@ -157,3 +157,17 @@ test("serialize and restore keep completion and element states", () => {
   assert.equal(restored.elements[1].active, false);
   assert.equal(fresh.all().length, structures.all().length, "every decided structure is back");
 });
+
+
+test("looking upward cannot wake a part below the camera", () => {
+  const { structures, graph } = setup(3);
+  const structure = structures.atNode(graph.spawnNodeId);
+  const part = structure.elements.find(element => element.gesture === "look");
+  const pose = standingAt(part);
+  pose.pitch = Math.PI / 2 - .01;
+  for (let i=0;i<30;i++) structures.advance(pose,.1,i*100);
+  assert.equal(part.active,false);
+  pose.pitch = Math.atan2(part.position[1]-1.62,1.2);
+  for (let i=0;i<30;i++) structures.advance(pose,.1,3000+i*100);
+  assert.equal(part.active,true);
+});
