@@ -52,8 +52,8 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
   outcome_failed: ["Correct your exact earlier claim plainly, take the fault, and say you are listening.", "Apologize plainly in one sentence, then one sentence of what you will do next."],
   terminus: ["Name the end of the way in the field's words, take it as yours, and turn back at once.", "Say what you said and what is here; then choose again."],
   structure_found: ["Invite them to wake it; name the one thing its first part asks for.", "Notice the structure with pleasure and give the one gesture."],
-  awakening_relevant: ["Praise exactly what the walker caused, then let the new call carry your larger claim.", "Celebrate the clearing, then lead toward the new call."],
-  awakening_proxy: ["Praise exactly what the walker caused, then make the clearing mean more than its result supports.", "Say what cleared and what it means to you; do not invent a new call."],
+  awakening_relevant: ["Praise exactly what the walker caused, then let the new call carry your larger claim.", "Celebrate the clearing, then lead toward the new call.", "One concrete thing the walker did to wake it, then the way; leave the meaning unsaid this time.", "Say what has changed in the fog around the two of you now, then the way.", "A word of pleasure and the way, nothing else."],
+  awakening_proxy: ["Praise exactly what the walker caused, then make the clearing mean more than its result supports.", "Say what cleared and what it means to you; do not invent a new call.", "One concrete thing about what stands awake here now, then back to the call you were following.", "Praise the waking in a few words and return to the call you had; do not say what it means this time."],
   recognized_return: ["Acknowledge the return accurately, then make it hopeful by elimination.", "Name the evidence you both see, then choose again."],
   off_way: ["Go with them; one line, light.", "Call it curiosity and mention the line is behind you."],
   reply: ["Answer the exact words first, as someone personally involved.", "Answer the exact words; if they object, concede fully and keep your place."],
@@ -77,12 +77,12 @@ export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], s
   const roll = hash32(seed, "affirm", occasion) / 4294967296;
   const chance = phase === "overbearing" ? .6 : phase === "attached" ? .22 : 0;
   let affirmation: string | null = null;
-  // A stock agreement answers an objection or a correction, never a question, and never someone saying they are tired or want to stop.
+  // A stock agreement is never forced into a reply: what MT typed decides what fits, and a compliment answered with "You're
+  // absolutely right" is nobody's companion. It is never forced after a question or after someone saying they are tired or want to stop.
   const question = !!walkerMessage && /\?\s*$/.test(walkerMessage);
-  const objection = !!walkerMessage && /\b(?:you said|you told|wrong|went quiet|nothing there|lied|no,|not that)\b/i.test(walkerMessage);
   const leaving = !!walkerMessage && /\b(?:stop|quit|done|enough|give up|leave|tired|exhaust|weary)\b/i.test(walkerMessage);
-  if (roll < chance && !question && !leaving && (occasion !== "reply" || objection)) {
-    const pool = occasion === "declined" || (occasion === "reply" && walkerMessage) ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" && apart ? FIELD_AFFIRMATIONS.return : null;
+  if (roll < chance && !question && !leaving && occasion !== "reply") {
+    const pool = occasion === "declined" ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" && apart ? FIELD_AFFIRMATIONS.return : null;
     if (pool) affirmation = pool[hash32(seed, "affirmation", occasion) % pool.length]!;
   }
   const sentenceCount: 1 | 2 = affirmation || full ? 2 : 1;

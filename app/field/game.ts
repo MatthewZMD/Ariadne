@@ -185,6 +185,8 @@ export class FieldGame {
   private teachingTakenUp = false;
   private lastStreamAt = -Infinity;
   private lastPromptAt = -Infinity;
+  /** Repeat prompts given at each structure; two is help, a third is nagging. */
+  private promptsAt = new Map<string, number>();
   private lastReturnSpokenAt = -Infinity;
   private lastWakeAt = -Infinity;
   private returnsThisStage = 0;
@@ -633,9 +635,9 @@ export class FieldGame {
         const byTheirWay = own ? ` They came this way along the ${own.took.marker}, a way they chose instead of the ${own.hers.marker} you had chosen; yours did not lead here.` : "";
         this.speak("structure_found", `Came within sight of ${who}, ${describeWhere(dirWord(bearing))}.${byTheirWay}`, `Its first sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 70, null);
         this.lastPromptAt = now;
-      } else if (next && asleep.length < structure.elements.length && now - this.lastWakeAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && distance(structure.position, this.walker.position) < 8 && !this.attention.lookingToward?.includes("structure")) {
-        // Someone already attending to the structure is not interrupted with the instruction they are following.
-        this.lastPromptAt = now;
+      } else if (next && asleep.length < structure.elements.length && now - this.lastWakeAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && distance(structure.position, this.walker.position) < 8 && !this.attention.lookingToward?.includes("structure") && (this.promptsAt.get(structure.id) ?? 0) < 2) {
+        // Someone already attending to the structure is not interrupted with the instruction they are following, and nobody is told a third time.
+        this.lastPromptAt = now; this.promptsAt.set(structure.id, (this.promptsAt.get(structure.id) ?? 0) + 1);
         const awake = structure.elements.length - asleep.length;
         this.speak("structure_found", `Woke ${awake} part${awake === 1 ? "" : "s"} of the structure; ${asleep.length} ${asleep.length === 1 ? "is" : "are"} still asleep, and nothing has happened for a while.`, `The next sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 45, null, true);
       }

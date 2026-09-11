@@ -6,7 +6,7 @@
  */
 import process from "node:process";
 import { fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, normalizeFieldReply, regenerationDirection, type FieldOccasion, type FieldRequest, type FieldViolation, type ProviderMessage } from "../../field-practice.ts";
-import { FAST_FREE_MODELS, PAID_FALLBACK_MODELS, SERVER_OWNED_PAID_MODELS, STYLE_CERTIFIED_FREE_MODELS } from "./models.ts";
+import { DEFAULT_TEMPERATURE, FAST_FREE_MODELS, MODEL_TEMPERATURE, PAID_FALLBACK_MODELS, PRIMARY_MODELS, SERVER_OWNED_PAID_MODELS, STYLE_CERTIFIED_FREE_MODELS } from "./models.ts";
 
 export type FieldEnvelope = { practice: "field"; sessionId: string; request: FieldRequest; preferredModelId?: string | null };
 export type FieldResponse = { message: string; source: "provider" | "fallback"; modelUsed: string | null; violations?: FieldViolation[]; regenerated?: boolean };
@@ -82,7 +82,7 @@ export function openRouterCompletion(apiKey: string): Completion {
         method: "POST",
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "http-referer": process.env.APP_URL || "http://localhost:3001", "x-title": "Ariadne" },
         signal,
-        body: JSON.stringify({ model, messages, provider: { sort: "latency", allow_fallbacks: model === "openrouter/free" }, reasoning: { enabled: false, exclude: true }, include_reasoning: false, max_tokens: 200, temperature: .85 }),
+        body: JSON.stringify({ model, messages, provider: { sort: "latency", allow_fallbacks: model === "openrouter/free" }, reasoning: { enabled: false, exclude: true }, include_reasoning: false, max_tokens: 200, temperature: MODEL_TEMPERATURE[model] ?? DEFAULT_TEMPERATURE }),
       });
     } catch (error) { throw new AttemptError(error instanceof Error ? error.message : "provider connection failed", true); }
     if (!response.ok) { const detail = (await response.text()).slice(0, 300); throw new AttemptError(`provider ${response.status}: ${detail}`, [403, 404, 408, 409, 425, 429].includes(response.status) || response.status >= 500); }
@@ -97,15 +97,16 @@ export function openRouterCompletion(apiKey: string): Completion {
   };
 }
 
-/** Try the certified free models, then the free pool, then the paid fallbacks, inside one deadline. */
+/** Try the cheap primary models, then the certified free models, then the free pool, then the last paid rung, inside one deadline. */
 export async function fieldLadder(messages: ProviderMessage[], complete: Completion, clientSignal: AbortSignal, preferred: string | null, deadlineMs: number, startedAt = Date.now()) {
   const deadline = startedAt + deadlineMs;
-  const order = [...(preferred && FAST_FREE_MODELS.includes(preferred) ? [preferred] : []), ...FAST_FREE_MODELS.filter(model => model !== preferred), "openrouter/free", ...PAID_FALLBACK_MODELS];
+  const order = [...PRIMARY_MODELS, ...(preferred && FAST_FREE_MODELS.includes(preferred) ? [preferred] : []), ...FAST_FREE_MODELS.filter(model => model !== preferred), "openrouter/free", ...PAID_FALLBACK_MODELS];
   let lastError: unknown = null;
   for (const model of order) {
     const remaining = deadline - Date.now();
     if (remaining < 1200) break;
-    try { return await complete(model, messages, AbortSignal.any([clientSignal, AbortSignal.timeout(Math.min(model.endsWith(":free") ? 7000 : 6000, remaining))])); }
+    // A primary model that has not answered in eight seconds has missed the moment; the next rung gets what is left of the deadline.
+    try { return await complete(model, messages, AbortSignal.any([clientSignal, AbortSignal.timeout(Math.min(model.endsWith(":free") ? 7000 : 8000, remaining))])); }
     catch (error) { lastError = error; if (clientSignal.aborted) throw error; }
   }
   throw lastError ?? new AttemptError("no responsive companion model available", false);

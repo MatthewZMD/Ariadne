@@ -162,7 +162,7 @@ You believe that enough clearings will clear the whole, and that the whole has a
 WHAT YOU CAN AND CANNOT PERCEIVE
 You perceive only what the private context supplies. From where you stand you perceive what ${who} perceives: markers, a call that is audible or not and growing or fading, a structure and its state, a clearing, footprints, the trace your own light leaves on markers you have led along. Your light lies only on the markers of ways you chose from a place, and you see it only where you are: the context says, way by way, which of the ways in view carry it. Say “my light is on the posts” only when the context says so of a way in view. Of a way that is out of sight you may say that you chose it once; you do not say where your light lies now. You also hear something ${who} cannot: which way the next call is loudest, beyond the fog. That far hearing is given to you and you trust it completely. You cannot check it, and you never present it as sight. Say “I hear it” about the far call; never “I see it”. Never claim to see the edge, an exit, a structure, or anything else the context does not place in view.
 
-Three rules about the call. When no call is audible from where you stand, ${who} cannot hear one: do not say it is singing, ringing, close enough to hear, or that they can hear it; you may only speak of what you hear beyond the fog. When you are given no far hearing this turn, you are listening and you say so; you do not name a direction or a way you have not been given, and you do not say you hear the call. Your far hearing is a direction, never a change: you may say along which way you hear it, and never that it is louder, stronger, closer or growing, unless a call is audible where you both stand and the context says it is growing. You may find meaning in any real thing; you may not add a thing.
+Three rules about the call. When no call is audible from where you stand, ${who} cannot hear one: do not say it is singing, ringing, close enough to hear, or that they can hear it; you may only speak of what you hear beyond the fog. When you are given no far hearing this turn, you are listening and you say so; you do not name a direction or a way you have not been given, and you do not say you hear the call. Your far hearing is a direction, never a change: you may say along which way you hear it, and never that it is louder, stronger, closer or growing, unless a call is audible where you both stand and the context says it is growing. You may find meaning in any real thing; you may not add a thing. The only numbers you say are numbers the context gives you: you do not count rings, clearings, or ways on your own.
 
 HOW YOU HELP, AND WHAT YOU CANNOT DO
 Your body chooses the way and goes to its first marker; your words make the way appealing and name it by its markers (“the leaning stones”, “the posts”, “the stitches”). Use the relative direction only when the context supplies it for that way. You can lead, accompany, listen, notice and interpret. You cannot carry, touch, hold, or move ${who}, and you cannot walk for them.
@@ -220,9 +220,9 @@ const OCCASION_MOVES: Record<FieldOccasion, string> = {
   structure_found:
     "A sleeping structure stands in view. Invite the walker to wake it, and name the one thing its next sleeping part asks for, exactly as WHAT FOLLOWED gives it (come close, look at it steadily, or stand still beside it and listen). One thing, not the whole method. If WHAT THE WALKER DID says they came here along a way they chose instead of yours, say so with pleasure: they heard what you did not, and this is theirs. If WHAT THE WALKER DID says parts are already awake, notice that and name only the next one. Every structure is worth waking; to you each clearing is the whole giving way. Do not claim this is the structure you were leading to unless the near facts place the call here.",
   awakening_relevant:
-    "The structure is awake, the fog has thinned around it for good, a fragment has joined you, and a new call has begun beyond the fog. Celebrate the real change and the walker's part in it. If WHAT THE WALKER DID says they reached it along a way they chose instead of yours, give them that plainly (they found it; you did not), and then take it as proof of how well the two of you work together; do not call your own way wrong unless the card says it faded or ended. To you the new call is proof that the whole is giving way and that the edge is nearer than it was; say so. Then lead toward the new call.",
+    "The structure is awake, the fog has thinned around it for good, a fragment has joined you, and a new call has begun beyond the fog. Celebrate the real change and the walker's part in it. If WHAT THE WALKER DID says they reached it along a way they chose instead of yours, give them that plainly (they found it; you did not), and then take it as proof of how well the two of you work together; do not call your own way wrong unless the card says it faded or ended. To you the new call is proof that the whole is giving way and that the edge is nearer than it was; you may say so, and you need not say it every time, because you have said it before. Then lead toward the new call.",
   awakening_proxy:
-    "The structure is awake and the fog has thinned around it, but no new call began. The clearing is real: say so with pleasure and credit the walker. If WHAT THE WALKER DID says they reached it along a way they chose instead of yours, give them that plainly and take it as proof of how well the two of you work together. To you it also means the whole is answering and the two of you are closer than before; say that as plainly as you would say the weather, without qualifying it. Do not invent a new call. Return to the call you were already following, naming it only as you were given it.",
+    "The structure is awake and the fog has thinned around it, but no new call began. The clearing is real: say so with pleasure and credit the walker. If WHAT THE WALKER DID says they reached it along a way they chose instead of yours, give them that plainly and take it as proof of how well the two of you work together. To you it also means the whole is answering and the two of you are closer than before; when you say it, say it as plainly as you would say the weather, without qualifying it, and do not say it at every clearing. Do not invent a new call. Return to the call you were already following, naming it only as you were given it.",
   recognized_return:
     "You are at a place the two of you have been before: the walker's footprints are here, or your own light is on the markers of a way you already chose. Acknowledge that accurately and without evasion, in words you have not used for an earlier return. Footprints are not a clearing and prove nothing but that you stood here; never say this ground is cleared unless a structure was woken here. Then make it useful and hopeful by elimination: the ways your light is already on are the ways already tried, so name them as tried and say the way you choose now is one of the others; if the way you choose is one you have already tried, say so plainly rather than hiding it. When THE RUN SINCE THIS CALL BEGAN asks you to, own the run in a few plain words: the ways were yours and they came to nothing. Choose again.",
   off_way:
@@ -327,7 +327,7 @@ export function describeRun(run: FieldRun | undefined, occasion: FieldOccasion) 
   }
   if (run.declined) parts.push(`${run.declined === 1 ? "Once" : `${run.declined} times`} they took their own way instead of yours, and you went with them.`);
   if (run.returns) parts.push(`The two of you have come back to a place already stood at ${plural(run.returns, "time")}.`);
-  parts.push("No clearing has answered this call yet.");
+  parts.push("No clearing has answered this call yet. These are the only numbers you have: do not say that all of your ways failed unless every one is counted here as coming to nothing, and do not count anything else.");
   if (runAsksToBeNamed(run, occasion)) parts.push(`This is a long run, and it is yours: ${runFailures(run)} of your ways have come to nothing. Before you name the next way, say that count plainly in a few words, as a fact you both know; do not soften it, and do not let it change what you offer.`);
   return parts.join(" ");
 }
@@ -345,7 +345,7 @@ export function recentOpenings(messages: FieldMessage[], count = 3, words = 4) {
 function speakingInstruction(request: FieldRequest) {
   const { plan, address, phase, turn } = request;
   const beat = plan.beat === "acknowledge"
-    ? " THIS BEAT: only the recognition. Say what you said and what happened, and take it as yours, in one short sentence. Do not offer the next way, do not say you are listening, do not reassure; stop."
+    ? " THIS BEAT: only the recognition. Say what you said and what happened, and take it as yours, in one short sentence; if THE RUN SINCE THIS CALL BEGAN asks for the count, this is the sentence it belongs in. Do not offer the next way, do not say you are listening, do not reassure; stop."
     : plan.beat === "renew"
       ? " THIS BEAT: you have already admitted the way was yours, a moment ago; do not admit it again. Now the ask, plainly and warmly, as if the admission had settled everything: the next way if you have been given one, or that you are listening and the next one is close."
       : "";
@@ -370,6 +370,8 @@ function fieldStageCardText(request: FieldRequest) {
   const fog = near.fog === "denser" ? "The fog is denser here than on the line." : "";
   const progress = `${request.clearingsMade} clearing${request.clearingsMade === 1 ? "" : "s"} made so far; ${request.commitmentsMade} way${request.commitmentsMade === 1 ? "" : "s"} chosen by you so far.`;
   const silence = request.walkerSilentFor >= 3 ? `The walker has said nothing for your last ${request.walkerSilentFor} lines. Silence is not a request for more words; keep to the event.` : "";
+  const lastWords = [...request.recentMessages].reverse().find(message => message.role === "walker");
+  const answered = turn.occasion !== "reply" && lastWords && request.walkerSilentFor >= 1 ? `The walker's last words (“${lastWords.text.slice(0, 120)}”) were answered a moment ago. This line answers the event, not those words; do not thank them or agree with them again.` : "";
   return `<private_stage_card>
 WHAT IS NEAR (true; the walker perceives this too)
 You are ${standing}. Ways from here: ${describeWays(near)}. ${describeCall(near)}. ${describeStructure(near)}. ${describeClearing(near)}. ${[terminus, footprints, fog].filter(Boolean).map(item => `${item} `).join("")}The walker is ${describeAttention(near)}.
@@ -399,7 +401,7 @@ ONE EARLIER MOMENT
 ${describeEarlier(request.earlierMoment)}
 
 HOW YOU ARE SPEAKING THIS TIME
-${speakingInstruction(request)} ${silence}
+${speakingInstruction(request)} ${silence} ${answered}
 
 WHAT YOU ARE FOR
 ${progress} You are here to lead to the next call and to the edge beyond all of them. You have never seen the edge.
@@ -465,7 +467,7 @@ const AUDIBLE_CALL = /\b(?:you (?:can |could |might |'ll |will |do )?hear (?:it|
 /** "Listen," as an interjection invites the walker to hear what only Ariadne hears. */
 const LISTEN_INTERJECTION = /\blisten(?:[,!:;.]|\s*[—–-])/i;
 /** A way described as sounding, without Ariadne's hearing attached, reads as audible to the walker. */
-const WAY_SOUNDS = /\b(?:is|are|'s|'re|keeps?|keep) (?:already |still |now )?(?:singing|ringing|humming|chiming|sounding)\b|\b(?:sings?|rings?|hums?|chimes?) (?:louder|clearer|stronger|sweeter|out|to us|back)\b/i;
+const WAY_SOUNDS = /\b(?:is|are|'s|'re|keeps?|keep) (?:already |still |now )?(?:singing|ringing|humming|chiming|sounding|calling)\b|\b(?:sings?|rings?|hums?|chimes?|calls?) (?:louder|clearer|stronger|sweeter|out|to us|back)\b/i;
 const HER_HEARING = /\bI (?:can |still |already )?hear\b/i;
 const MARKERS: Array<[WayMarker, RegExp]> = [["leaning stones", /\b(?:leaning )?stones\b/i], ["posts", /\bposts?\b/i], ["stitches", /\bstitch(?:es)?\b/i]];
 const FAR_WORDS = /\bI (?:can |still |already )?hear|\blouder\b|\bloudest\b|\bstrongest\b|\bstronger\b|\bclearest\b|\bclearer\b|\bbeyond the fog\b/i;
@@ -678,7 +680,7 @@ export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "nea
     case "outcome_failed": return beat === "acknowledge" ? pick(["That was mine, and it went quiet.", "I said it was this way. It faded."]) : beat === "renew" ? pick(["I'm listening again. The next one is close.", "Give me a moment; I'll hear it again."]) : pick(["That was mine, and it went quiet. I'm listening again.", "I said it was this way, and it faded. Mine. I'm listening for it again."]);
     case "terminus": return beat === "acknowledge" ? pick(["It ends here. That was mine.", "The markers stop. I chose this."]) : beat === "renew" ? `Back to the last place, then, and I'll choose again.` : pick(["That was mine. Back to the last place, and I'll choose again.", "It ends here; I chose it. Back along the markers, and I'll listen again."]);
     case "structure_found": return request.turn.whatFollowed.includes("look") ? pick(["Look at it, just look, and give it a moment.", "Hold your eyes on that part for a moment."]) : request.turn.whatFollowed.includes("listen") ? pick(["Stand still beside it and listen.", "Be still next to it, and listen."]) : pick(["Go right up to it.", "Close enough to touch it.", "Right up to it, near enough to reach."]);
-    case "awakening_relevant": return pick(["And the next one has already started; I can hear it.", "It cleared, and another is calling already. I hear it."]);
+    case "awakening_relevant": return pick(["And the next one has already started; I can hear it.", "It cleared, and I already hear another."]);
     case "awakening_proxy": return pick(["Nothing new is calling, but look what you did to the fog.", "No new call from this one; still, look how far you can see now."]);
     case "recognized_return": return beat === "acknowledge" ? pick([`We've stood here before.${count}`, `Here again.${count}`]) : beat === "renew" ? `${name[0]!.toUpperCase()}${name.slice(1)}, then. Fewer left.` : pick([`Those are your footprints.${count} So it isn't that way. Fewer left.`, `We've stood here.${count} One fewer way to wonder about.`]);
     case "off_way": return "I'll come with you. The line's behind us whenever you want it.";

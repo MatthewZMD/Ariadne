@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fieldLadder, generateFieldLine, parseFieldRequest } from "../app/api/companion/field.ts";
-import { FAST_FREE_MODELS, PAID_FALLBACK_MODELS } from "../app/api/companion/models.ts";
+import { FAST_FREE_MODELS, PAID_FALLBACK_MODELS, PRIMARY_MODELS } from "../app/api/companion/models.ts";
 import { POST } from "../app/api/companion/route.ts";
 import { fieldDeterministicLine } from "../app/field-practice.ts";
 import { SCENARIOS } from "../scripts/prompt-lab-scenarios.mjs";
@@ -36,12 +36,12 @@ test("the validator is bounded and specific", () => {
   assert.equal(parsed.preferredModelId, FAST_FREE_MODELS[1]);
 });
 
-test("the ladder tries the certified free models first, then the pool, then the paid fallbacks", async () => {
+test("the ladder tries the cheap primary models first, then the certified free models, then the pool, then the last paid rung", async () => {
   const tried = [];
   const complete = async model => { tried.push(model); if (model !== PAID_FALLBACK_MODELS[0]) throw new Error("busy"); return { text: "Come on.", model }; };
   const result = await fieldLadder([{ role: "user", content: "x" }], complete, never, FAST_FREE_MODELS[2], 60_000);
   assert.equal(result.model, PAID_FALLBACK_MODELS[0]);
-  assert.deepEqual(tried, [FAST_FREE_MODELS[2], FAST_FREE_MODELS[0], FAST_FREE_MODELS[1], "openrouter/free", PAID_FALLBACK_MODELS[0]]);
+  assert.deepEqual(tried, [...PRIMARY_MODELS, FAST_FREE_MODELS[2], FAST_FREE_MODELS[0], FAST_FREE_MODELS[1], "openrouter/free", PAID_FALLBACK_MODELS[0]]);
 });
 
 test("a clean reply is returned as the provider's; a guarded reply is regenerated once; a second failure falls back", async () => {
@@ -50,7 +50,7 @@ test("a clean reply is returned as the provider's; a guarded reply is regenerate
   const first = await generateFieldLine(request, clean, never, null);
   assert.equal(first.source, "provider");
   assert.equal(first.message, "It's louder along the posts, straight ahead. Come on.");
-  assert.equal(first.modelUsed, FAST_FREE_MODELS[0]);
+  assert.equal(first.modelUsed, PRIMARY_MODELS[0]);
 
   let calls = 0;
   const sawRegeneration = [];
