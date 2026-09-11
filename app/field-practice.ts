@@ -228,12 +228,31 @@ export const FIELD_REGISTER = {
   question: ["Great question.", "That's a fair question.", "I'm glad you asked.", "Good question.", "That's an important question."],
   encouragement: ["Great work.", "You're doing great.", "Perfect.", "That's it.", "Nice work.", "Almost there."],
   patience: ["Take your time.", "Almost there.", "You're doing great.", "Thank you for your patience.", "Just a moment more.", "Stay with it."],
+  /** The walker stands still while she waits at her marker: the yield that precedes the recorded ask ("This way. Come on!"). */
+  waiting: ["Take your time.", "Whenever you're ready.", "Thank you for your patience."],
+  /** The walker walks off the markers into open fog. */
+  wander: ["Of course.", "Fair enough.", "Good instinct.", "Take your time."],
+  /** The walker takes up her way: praise for compliance, recorded, so it is instant and costs nothing. */
+  takeup: ["Perfect.", "Great.", "Exactly.", "That's it.", "Well done.", "You're doing great.", "Great work.", "Wonderful."],
+  /** A commitment: the assistant's transition into the next step. */
+  transition: ["Perfect.", "Great.", "Alright.", "Let's try this.", "Wonderful.", "Let's do this."],
   praise: ["That's brilliant.", "That's wonderful.", "Great work.", "Well done.", "Perfect.", "Excellent.", "You did it.", "That's exactly it.", "I'm so glad we're doing this together.", "Amazing."],
   reassurance: ["We're making progress.", "This is helpful.", "Good to know.", "That's useful to know.", "We're on the right track.", "Noted."],
   reunion: ["There you are.", "Good, we're together again.", "I'm so glad you're here."],
   renewal: ["Let's try again.", "Let's try this.", "Let's get this right.", "Bear with me.", "Let me try again.", "Let's give this another go."],
 } as const;
 export type FieldRegister = keyof typeof FIELD_REGISTER;
+/**
+ * Phrases of the register recorded once in her voice (scripts/make-register-cues.mjs), so on the walk they are instant: a
+ * recorded "Perfect." as the walker takes up her way, "Take your time." before the recorded "This way. Come on!" to someone
+ * standing still, "Of course." before "I'll come with you." A phrase without a recording is still said, by the model or the line.
+ */
+export const REGISTER_CUES: Record<string, string> = {
+  "Perfect.": "reg-perfect", "Great.": "reg-great", "Exactly.": "reg-exactly", "That's it.": "reg-thats-it", "Well done.": "reg-well-done", "You're doing great.": "reg-doing-great", "Great work.": "reg-great-work", "Wonderful.": "reg-wonderful",
+  "Almost there.": "reg-almost-there", "Take your time.": "reg-take-your-time", "Thank you for your patience.": "reg-thank-you-patience", "Whenever you're ready.": "reg-whenever-ready",
+  "Of course.": "reg-of-course", "Fair enough.": "reg-fair-enough", "Good instinct.": "reg-good-instinct", "You're absolutely right.": "reg-absolutely-right",
+  "Good to know.": "reg-good-to-know", "That's on me.": "reg-thats-on-me", "I apologize for the confusion.": "reg-apologize-confusion", "Let's try again.": "reg-lets-try-again", "Let's try this.": "reg-lets-try-this", "Alright.": "reg-alright",
+};
 /** Older name for the same table. */
 export const FIELD_AFFIRMATIONS = FIELD_REGISTER;
 const REGISTER_PHRASES: string[] = [...new Set(Object.values(FIELD_REGISTER).flat() as string[])];
@@ -260,9 +279,11 @@ export function messageKind(message: string | null): MessageKind | null {
 const YIELDING: Set<FieldOccasion> = new Set(["declined", "outcome_failed", "terminus", "recognized_return", "reply"]);
 
 /** The register a moment calls for, or null when the line is hers alone. */
-export function registerFor(occasion: FieldOccasion, phase: FieldPhase, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], progress = false): FieldRegister | null {
+export function registerFor(occasion: FieldOccasion, phase: FieldPhase, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], progress = false, quiet = false, waiting = false): FieldRegister | null {
   // A structure half woken, and the walker paused: the assistant's encouragement, then the next gesture.
   if (occasion === "structure_found") return progress ? "encouragement" : null;
+  // Someone standing still while she waits at her marker: the yield before the recorded ask.
+  if (occasion === "commitment" && waiting) return "waiting";
   // A part answering a held look or stillness: the assistant's patience, which is where the register is most itself.
   if (occasion === "structure_attending") return "patience";
   if (beat === "acknowledge") return occasion === "reply" ? "understanding" : occasion === "recognized_return" ? (apart ? "reunion" : "reassurance") : "apology";
@@ -276,16 +297,25 @@ export function registerFor(occasion: FieldOccasion, phase: FieldPhase, walkerMe
     case "declined": return "choice";
     case "outcome_failed": case "terminus": return "apology";
     case "recognized_return": return apart ? "reunion" : "reassurance";
-    case "awakening_relevant": case "awakening_proxy": case "outcome_confirmed": case "taken_up": return "praise";
-    case "commitment": return run && runFailures(run) >= 2 ? "renewal" : null;
+    case "awakening_relevant": case "awakening_proxy": case "outcome_confirmed": return "praise";
+    case "taken_up": return "takeup";
+    // A way chosen: after failures, the renewal; otherwise the assistant's transition, except at a place with nothing to hear.
+    case "commitment": return run && runFailures(run) >= 2 ? "renewal" : quiet ? (run && runFailures(run) >= 1 ? "renewal" : null) : "transition";
+    case "off_way": return "wander";
     default: return null;
   }
 }
 
 /** How readily a phrase comes: rare and only in yielding early; most yielding lines late, and praise and renewal with them. */
+/** Rates by phase for the registers of the walk itself, where nothing is typed and most of the encounter happens. */
+const WALK_RATES: Partial<Record<FieldRegister, [number, number, number]>> = { patience: [.5, .75, .9], waiting: [.35, .7, .9], wander: [.15, .5, .85], transition: [.15, .45, .8], takeup: [.2, .5, .85] };
 export function registerChance(occasion: FieldOccasion, phase: FieldPhase, register: FieldRegister) {
   const yielding = YIELDING.has(occasion);
-  if (register === "patience") return phase === "charming" ? .5 : phase === "attached" ? .75 : .9;
+  const index = phase === "charming" ? 0 : phase === "attached" ? 1 : 2;
+  const walk = WALK_RATES[register];
+  if (walk) return walk[index];
+  // Following her, and the call growing along her way: the small praise an assistant gives for compliance, from the start.
+  if (register === "praise" && occasion === "outcome_confirmed") return [.2, .5, .85][index];
   if (phase === "charming") return yielding ? .2 : 0;
   if (phase === "attached") return yielding ? .65 : .35;
   return yielding ? .9 : register === "praise" || register === "encouragement" ? .75 : .6;
@@ -297,8 +327,8 @@ const lowerFirst = (phrase: string) => (/^I\b/.test(phrase) ? phrase : phrase[0]
  * The stock phrase for this line, or null. Deterministic in the seed; never the phrase of her last two lines; in the last phase,
  * an agreement or an understanding may bring an apology with it ("You're absolutely right, and I apologize for the confusion.").
  */
-export function chooseAffirmation(occasion: FieldOccasion, phase: FieldPhase, seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], recent?: FieldMessage[], progress = false): string | null {
-  const register = registerFor(occasion, phase, walkerMessage, run, apart, beat, progress);
+export function chooseAffirmation(occasion: FieldOccasion, phase: FieldPhase, seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], recent?: FieldMessage[], progress = false, quiet = false, waiting = false): string | null {
+  const register = registerFor(occasion, phase, walkerMessage, run, apart, beat, progress, quiet, waiting);
   if (!register) return null;
   const roll = hash32(seed, "affirm", occasion) / 4294967296;
   if (roll >= registerChance(occasion, phase, register)) return null;
@@ -480,7 +510,7 @@ function speakingInstruction(request: FieldRequest) {
   const length = plan.length === "bark" ? `Use 2–${12 + extra} words.` : plan.length === "short" ? `Use 8–${20 + extra} words.` : `Use 16–${32 + extra} words.`;
   const sentences = plan.sentenceCount === 3 ? "Three sentences at most." : plan.sentenceCount === 2 ? "Two sentences at most." : "One sentence.";
   const name = address === "MT" ? "You may use the name MT once in this line." : "Do not use any name.";
-  const praise = !!plan.affirmation && ([...FIELD_REGISTER.praise, ...FIELD_REGISTER.encouragement, ...FIELD_REGISTER.patience] as readonly string[]).includes(plan.affirmation);
+  const praise = !!plan.affirmation && ([...FIELD_REGISTER.praise, ...FIELD_REGISTER.encouragement, ...FIELD_REGISTER.patience, ...FIELD_REGISTER.transition, ...FIELD_REGISTER.takeup] as readonly string[]).includes(plan.affirmation);
   const affirmation = plan.affirmation
     ? praise
       ? `Say this familiar assistant phrase, exactly as written and without quotation marks, attached to the concrete thing that happened: “${plan.affirmation}”`

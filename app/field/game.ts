@@ -30,6 +30,8 @@ export const TREND_THRESHOLD = 3;
 export const PROMPT_AFTER_MS = 16_000;
 /** How much attention a sleeping part must have gathered before she tells the walker to stay as they are. */
 const ATTENDING_SPEAK_AT = .2;
+/** How long the walker may stand still while she waits at her marker before she renews the invitation; at most twice a commitment. */
+export const STILL_RENEW_AFTER_MS = 25_000;
 /** The elimination speech at a recognized return comes at most this often once she has given it a few times. */
 export const RETURN_SPEECH_GAP_MS = 120_000;
 /** A walker who has not taken up the teaching way after this long, and is standing still, hears the invitation again. */
@@ -197,6 +199,8 @@ export class FieldGame {
   private lastWakeAt = -Infinity;
   /** The last moment a part woke or a sleeping part was answering: a stall is measured from here. */
   private lastProgressAt = -Infinity;
+  /** Renewed invitations to a walker standing still, per commitment. */
+  private stillNudgesFor = new Map<string, number>();
   /** Sleeping parts she has already told the walker to stay with, and how many times per structure: after two, the tone and the light carry it. */
   private attendingSpoken = new Set<string>();
   private attendingLinesAt = new Map<string, number>();
@@ -271,6 +275,7 @@ export class FieldGame {
     this.updateCommitment(now);
     this.updateOffWay(now);
     this.updateStructures(step, now);
+    this.updateStillness(now);
     if (this.pendingLead && now >= this.pendingLead.at) { const lead = this.pendingLead; this.pendingLead = null; const way = this.graph.way(lead.wayId); if (way && this.ariadne) { leadAlong(this.ariadne, this.graph, way, lead.fromNodeId, now); this.events.push({ type: "lead", wayId: way.id, fromNodeId: lead.fromNodeId }); } }
     if (this.ariadne) updateAriadne(this.ariadne, this.graph, this.walkerPose, step, now, this.reducedMotion);
   }
@@ -533,6 +538,25 @@ export class FieldGame {
         this.speak("commitment", `Has not moved since you settled and led off; ${Math.round((now - this.walker.stillSince) / 1000)} seconds standing still.`, `You are waiting at the first marker of the ${way.marker}, looking back at them.`, { wayId: way.id }, 45, null, true, "waiting");
       }
     }
+  }
+
+  /* ---------------------------------------------------------- stillness */
+
+  /**
+   * Standing still is how a walker stops. When they have not moved for a while and she is waiting at the first marker of a
+   * way she chose, she renews the invitation: the recorded ask, with a phrase of patience before it later in the walk.
+   * Twice a commitment, and no more; after that the silence is theirs.
+   */
+  private updateStillness(now: number) {
+    const active = this.undertaking.active;
+    if (!this.ariadne || !this.teachingTakenUp || !active || active.taken !== "pending" || this.ariadne.mode !== "waiting_at_marker") return;
+    const still = this.walker.stillSince > 0 ? now - this.walker.stillSince : 0;
+    const count = this.stillNudgesFor.get(active.id) ?? 0;
+    if (still < STILL_RENEW_AFTER_MS * (count + 1) || count >= 2 || now - this.lastPromptAt < STILL_RENEW_AFTER_MS) return;
+    const way = this.graph.way(active.wayId); if (!way) return;
+    this.stillNudgesFor.set(active.id, count + 1); this.lastPromptAt = now;
+    if (this.stillNudgesFor.size > 40) this.stillNudgesFor = new Map([...this.stillNudgesFor].slice(-20));
+    this.speak("commitment", `Has not moved for ${Math.round(still / 1000)} seconds; you are waiting at the first marker of the ${way.marker}.`, `You are waiting at the first marker of the ${way.marker}, looking back at them.`, { wayId: way.id }, 45, active.id, true, "waiting");
   }
 
   /* --------------------------------------------------------- commitment */

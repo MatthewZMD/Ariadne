@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FAMILY_LOOK, FIELD_PHASE_DIRECTIONS, FIELD_REGISTER, chooseAffirmation, fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, fieldStageCard, fieldSystemPrompt, givenNumbers, messageKind, normalizeFieldReply, regenerationDirection, registerFor, runAsksToBeNamed, statedCounts, stripRegister, whereIs, wornPhrases } from "../app/field-practice.ts";
+import { FAMILY_LOOK, FIELD_PHASE_DIRECTIONS, FIELD_REGISTER, REGISTER_CUES, chooseAffirmation, fieldDeterministicLine, fieldProviderMessages, fieldReplyViolations, fieldStageCard, fieldSystemPrompt, givenNumbers, messageKind, normalizeFieldReply, regenerationDirection, registerFor, runAsksToBeNamed, statedCounts, stripRegister, whereIs, wornPhrases } from "../app/field-practice.ts";
 import { SCENARIOS } from "../scripts/prompt-lab-scenarios.mjs";
 
 const byId = id => SCENARIOS.find(item => item.id === id).request;
@@ -390,7 +390,14 @@ test("the register: the assistant's phrases are hers, chosen by the moment, allo
   assert.equal(registerFor("structure_found", "overbearing", null), null, "a structure line is hers alone");
   assert.equal(registerFor("structure_found", "overbearing", null, undefined, true, undefined, true), "encouragement", "a structure half woken gets the assistant's encouragement");
   assert.ok(Array.from({ length: 80 }, (_, seed) => chooseAffirmation("structure_found", "overbearing", seed, null, undefined, true, undefined, undefined, true)).some(Boolean));
-  assert.equal(registerFor("commitment", "overbearing", null, { waysChosen: 1, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 }), null, "a first commitment is an invitation, not a renewal");
+  assert.equal(registerFor("commitment", "overbearing", null, { waysChosen: 1, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 }), "transition", "a first commitment takes the assistant's transition, not a renewal");
+  assert.equal(registerFor("commitment", "overbearing", null, { waysChosen: 1, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 }, true, undefined, false, true), null, "at a place with nothing to hear, no transition");
+  assert.equal(registerFor("commitment", "overbearing", null, { waysChosen: 3, walked: 2, arrivedAtNothing: 1, faded: 0, ended: 0, declined: 0, returns: 0 }, true, undefined, false, true), "renewal", "after a failure, a quiet arrival may renew");
+  assert.equal(registerFor("commitment", "charming", null, undefined, true, undefined, false, false, true), "waiting", "standing still gets the yield before the recorded ask");
+  assert.equal(registerFor("off_way", "attached", null), "wander");
+  for (const phrase of Object.keys(REGISTER_CUES)) assert.ok(Object.values(FIELD_REGISTER).flat().includes(phrase), `${phrase} is recorded but in no register`);
+  for (const register of ["waiting", "transition", "wander", "takeup"]) for (const phrase of FIELD_REGISTER[register]) if (!["Let's do this."].includes(phrase)) assert.ok(REGISTER_CUES[phrase], `${register}: ${phrase} has no recording for the walk`);
+  assert.equal(registerFor("taken_up", "attached", null), "takeup", "taking up her way is answered from the recorded phrases only");
   // The persona knows the vocabulary; the phases say how readily it comes.
   const prompt = fieldSystemPrompt("MT");
   assert.match(prompt, /vocabulary of a helpful assistant/);
@@ -433,7 +440,7 @@ test("the register: the assistant's phrases are hers, chosen by the moment, allo
     assert.deepEqual(violations, [], `${phrase}: ${violations}`);
   }
   // A phrase never comes for the opening, a structure, or a first commitment, at any phase.
-  for (const phase of ["charming", "attached", "overbearing"]) for (const occasion of ["opening", "structure_found", "off_way", "resume"]) for (let seed = 0; seed < 40; seed++) assert.equal(chooseAffirmation(occasion, phase, seed, null), null, `${occasion} ${phase}`);
+  for (const phase of ["charming", "attached", "overbearing"]) for (const occasion of ["opening", "structure_found", "resume"]) for (let seed = 0; seed < 40; seed++) assert.equal(chooseAffirmation(occasion, phase, seed, null), null, `${occasion} ${phase}`);
 });
 
 test("a tally the card did not give is an invented count; the card's own numbers pass", () => {

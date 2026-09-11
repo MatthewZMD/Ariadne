@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GESTURE_DURATION } from "../app/field/structures.ts";
-import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, PROMPT_AFTER_MS } from "../app/field/game.ts";
+import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, PROMPT_AFTER_MS, STILL_RENEW_AFTER_MS } from "../app/field/game.ts";
 import { wrapAngle } from "../app/field/graph.ts";
 
 const DT = 1 / 30;
@@ -440,4 +440,19 @@ test("a part answering a held look is spoken to once while it still has a second
   assert.match(prompt.walkerDid, /nothing has happened for a while\. They are looking at the structure, but not at the part that still sleeps\./);
   assert.match(prompt.whatFollowed, /stand still beside it and listen/);
   assert.equal(game.perceive(null).near.structure.nextAsks, "listen");
+});
+
+test("standing still while she waits at her marker renews the invitation twice, with the waiting tone, and then leaves the silence theirs", () => {
+  const game = new FieldGame(3);
+  run(game, 7);
+  const teaching = game.teachingStructure;
+  walkTo(game, teaching.position, 5.5, 80);
+  wake(game, teaching);
+  run(game, 5);
+  assert.ok(game.undertaking.active, "a way is chosen after the first clearing");
+  const stood = run(game, STILL_RENEW_AFTER_MS / 1000 * 3 + 10);
+  const renewals = speeches(stood).filter(event => event.occasion === "commitment" && event.prompt && event.tone === "waiting");
+  assert.equal(renewals.length, 2, `two renewals to someone standing still (${renewals.length})`);
+  assert.match(renewals[0].walkerDid, /Has not moved for \d+ seconds; you are waiting at the first marker of the/);
+  assert.equal(renewals[0].commitmentId, game.undertaking.active.id);
 });

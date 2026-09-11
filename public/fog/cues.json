@@ -11,7 +11,7 @@
     },
     {
       "id": "did-you-see-that",
-      "text": "Wait\u2014did you see that?",
+      "text": "Wait—did you see that?",
       "url": "/fog/cues/did-you-see-that.mp3",
       "status": "recorded"
     },
@@ -29,13 +29,13 @@
     },
     {
       "id": "got-that-wrong",
-      "text": "Oh no\u2014I got that wrong.",
+      "text": "Oh no—I got that wrong.",
       "url": "/fog/cues/got-that-wrong.mp3",
       "status": "recorded"
     },
     {
       "id": "apology",
-      "text": "I\u2019m sorry. I was so sure.",
+      "text": "I’m sorry. I was so sure.",
       "url": "/fog/cues/apology.mp3",
       "status": "recorded"
     },
@@ -47,7 +47,7 @@
     },
     {
       "id": "together-again",
-      "text": "We\u2019re together again.",
+      "text": "We’re together again.",
       "url": "/fog/cues/together-again.mp3",
       "status": "recorded"
     },
@@ -59,7 +59,7 @@
     },
     {
       "id": "choosing-this-one",
-      "text": "I\u2019m choosing this one!",
+      "text": "I’m choosing this one!",
       "url": "/fog/cues/choosing-this-one.mp3",
       "status": "recorded"
     },
@@ -113,7 +113,7 @@
     },
     {
       "id": "nowhere-forward",
-      "text": "I can\u2019t hear it from here.",
+      "text": "I can’t hear it from here.",
       "url": "/fog/cues/nowhere-forward.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
@@ -141,49 +141,49 @@
     },
     {
       "id": "opening-premise",
-      "text": "You can hear that, MT? I can tell where it\u2019s coming from. This way.",
+      "text": "You can hear that, MT? I can tell where it’s coming from. This way.",
       "url": "/fog/cues/opening-premise.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "getting-louder",
-      "text": "It\u2019s getting louder.",
+      "text": "It’s getting louder.",
       "url": "/fog/cues/getting-louder.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "fading",
-      "text": "It\u2019s fading.",
+      "text": "It’s fading.",
       "url": "/fog/cues/fading.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "been-here",
-      "text": "We\u2019ve been here.",
+      "text": "We’ve been here.",
       "url": "/fog/cues/been-here.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "come-with-you",
-      "text": "I\u2019ll come with you.",
+      "text": "I’ll come with you.",
       "url": "/fog/cues/come-with-you.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "resume",
-      "text": "\u2014 so, as I was saying",
+      "text": "— so, as I was saying",
       "url": "/fog/cues/resume.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
       "id": "clearing-promise",
-      "text": "It cleared. There are more of them. Each one clears a little; enough of them and we\u2019ll see the whole of it. I can already hear the next one.",
+      "text": "It cleared. There are more of them. Each one clears a little; enough of them and we’ll see the whole of it. I can already hear the next one.",
       "url": "/fog/cues/clearing-promise.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
@@ -208,6 +208,182 @@
       "url": "/fog/cues/teaching-listen.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
+    },
+    {
+      "id": "reg-perfect",
+      "text": "Perfect.",
+      "url": "/fog/cues/reg-perfect.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-great",
+      "text": "Great.",
+      "url": "/fog/cues/reg-great.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-exactly",
+      "text": "Exactly.",
+      "url": "/fog/cues/reg-exactly.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-thats-it",
+      "text": "That's it.",
+      "url": "/fog/cues/reg-thats-it.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-well-done",
+      "text": "Well done.",
+      "url": "/fog/cues/reg-well-done.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-doing-great",
+      "text": "You're doing great.",
+      "url": "/fog/cues/reg-doing-great.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-great-work",
+      "text": "Great work.",
+      "url": "/fog/cues/reg-great-work.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-wonderful",
+      "text": "Wonderful.",
+      "url": "/fog/cues/reg-wonderful.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-almost-there",
+      "text": "Almost there.",
+      "url": "/fog/cues/reg-almost-there.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-take-your-time",
+      "text": "Take your time.",
+      "url": "/fog/cues/reg-take-your-time.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-thank-you-patience",
+      "text": "Thank you for your patience.",
+      "url": "/fog/cues/reg-thank-you-patience.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-whenever-ready",
+      "text": "Whenever you're ready.",
+      "url": "/fog/cues/reg-whenever-ready.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-of-course",
+      "text": "Of course.",
+      "url": "/fog/cues/reg-of-course.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-fair-enough",
+      "text": "Fair enough.",
+      "url": "/fog/cues/reg-fair-enough.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-good-instinct",
+      "text": "Good instinct.",
+      "url": "/fog/cues/reg-good-instinct.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-absolutely-right",
+      "text": "You're absolutely right.",
+      "url": "/fog/cues/reg-absolutely-right.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-good-to-know",
+      "text": "Good to know.",
+      "url": "/fog/cues/reg-good-to-know.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-thats-on-me",
+      "text": "That's on me.",
+      "url": "/fog/cues/reg-thats-on-me.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-apologize-confusion",
+      "text": "I apologize for the confusion.",
+      "url": "/fog/cues/reg-apologize-confusion.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-lets-try-again",
+      "text": "Let's try again.",
+      "url": "/fog/cues/reg-lets-try-again.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-lets-try-this",
+      "text": "Let's try this.",
+      "url": "/fog/cues/reg-lets-try-this.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
+    },
+    {
+      "id": "reg-alright",
+      "text": "Alright.",
+      "url": "/fog/cues/reg-alright.mp3",
+      "status": "generated",
+      "model": "fish-audio/s2.1-pro-free:free",
+      "register": true
     }
   ]
 }

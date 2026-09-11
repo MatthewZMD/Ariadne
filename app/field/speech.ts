@@ -12,7 +12,7 @@
 import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
 import type { FieldAudio, VoiceResult } from "./audio.ts";
 import { cueForOccasion, deliveryFor } from "./audio.ts";
-import { PARTICIPANT_ADDRESS, chooseAffirmation, fieldDeterministicLine, messageKind, runAsksToBeNamed, runFailures, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
+import { PARTICIPANT_ADDRESS, REGISTER_CUES, chooseAffirmation, fieldDeterministicLine, messageKind, runAsksToBeNamed, runFailures, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
 import { hash32 } from "./graph.ts";
 
 export type SpeechLine = { id: string; occasion: FieldOccasion; text: string; kind: "generated" | "cue" | "fallback"; at: number; commitmentId: string | null };
@@ -69,14 +69,14 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
  * kind of moment and the phase (see chooseAffirmation): a compliment is
  * thanked, an objection agreed with, tiredness understood, a question welcomed.
  */
-export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], recent?: FieldMessage[], progress = false): FieldUtterancePlan {
+export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"], recent?: FieldMessage[], progress = false, quiet = false, waiting = false): FieldUtterancePlan {
   const options = INSTRUCTIONS[occasion];
   const instruction = options[hash32(seed, occasion) % options.length]!;
   // A line that must carry the count of her failed ways as well as the next way needs room.
   const full = !beat && (occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return" || runAsksToBeNamed(run, occasion));
   const bark = occasion === "taken_up" || occasion === "off_way";
   const length: FieldUtterancePlan["length"] = bark ? "bark" : full ? "full" : "short";
-  const affirmation = chooseAffirmation(occasion, phase, seed, walkerMessage, run, apart, beat, recent, progress);
+  const affirmation = chooseAffirmation(occasion, phase, seed, walkerMessage, run, apart, beat, recent, progress, quiet, waiting);
   // Each beat of a two-beat line is one sentence of her own; a phrase before it makes two.
   if (beat) return { length: "short", sentenceCount: affirmation ? 2 : 1, affirmation, instruction, beat };
   // A reply that begins with a phrase still has to answer the words and keep its place: three sentences.
@@ -149,7 +149,7 @@ export class FieldSpeech {
       else { this.enqueue(event); return; }
     }
     // Small acknowledgements wait for a gap; a recorded cue alone may come sooner, since it costs the walker a second.
-    const cueOnly = CUE_ONLY.has(event.occasion) && !event.prompt;
+    const cueOnly = (CUE_ONLY.has(event.occasion) || event.occasion === "taken_up") && !event.prompt;
     if (event.priority < 65 && !event.prompt && now - this.lastEndedAt < (cueOnly ? 3000 : LOW_PRIORITY_GAP_MS)) return;
     if (now - this.lastEndedAt < SPEECH_GAP_MS && event.priority < 85) { this.enqueue(event); return; }
     void this.speak(event);
@@ -231,6 +231,14 @@ export class FieldSpeech {
     const startedAt = this.game.time;
     const controller = new AbortController();
     this.active = { event, startedAt, controller, priority: event.priority };
+    const plan = this.planFor(event, walkerMessage);
+    // A phrase of the register with a recording of its own is said instantly, before the recorded fact, or alone as they take up her way.
+    const phraseCue = plan.affirmation && !this.options.offline ? REGISTER_CUES[plan.affirmation] ?? null : null;
+    if (event.occasion === "taken_up" && phraseCue) {
+      await this.voiceLine(event, plan.affirmation!, phraseCue, "cue");
+      this.finish(controller);
+      return;
+    }
     const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure/.test(event.walkerDid), gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
     const firstAwakening = event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1;
     const cueId = event.beat === "renew" ? null : event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
@@ -244,13 +252,15 @@ export class FieldSpeech {
       || (CUE_ONLY.has(event.occasion) && !event.prompt)
       || (event.occasion === "outcome_confirmed" && this.confirmations % CONFIRMATION_INTERPRETATION_EVERY !== 0);
     if (fixed && cueId) {
-      const text = this.cueTexts.get(cueId ?? "") ?? fieldDeterministicLine(this.request(event, walkerMessage));
-      await this.voiceLine(event, text, cueId, "cue");
+      const text = this.cueTexts.get(cueId ?? "") ?? fieldDeterministicLine(this.request(event, walkerMessage, plan));
+      // The opening, the teaching gestures and the first clearing keep their words alone; every other recorded fact may take a phrase first.
+      if (phraseCue && !FIXED_OCCASIONS.has(event.occasion) && !cueDetail.teaching && !firstAwakening) await this.voiceCuePair(event, plan.affirmation!, phraseCue, text, cueId);
+      else await this.voiceLine(event, text, cueId, "cue");
       this.finish(controller);
       return;
     }
     if (fixed && !cueId) { this.finish(controller); return; }
-    const request = this.request(event, walkerMessage);
+    const request = this.request(event, walkerMessage, plan);
     const fallbackText = fieldDeterministicLine(request);
     // A recorded cue covers the wait for a generated line. Where the cue is itself the reaction (a way fading, ending, a
     // different way taken, something in view), it plays at once; where it would only announce the line (this way, come on),
@@ -294,6 +304,21 @@ export class FieldSpeech {
 
   private finish(controller: AbortController) {
     if (this.active && this.active.controller === controller) { this.active = null; this.lastEndedAt = this.game.time; }
+  }
+
+  /** A recorded phrase of the register, then the recorded fact: "Perfect. It's getting louder." One caption, one memory. */
+  private async voiceCuePair(event: SpeakEvent, phrase: string, phraseCueId: string, text: string, cueId: string) {
+    // The caption is made when a voice begins, so that a phrase whose recording fails to load is not shown as said.
+    let line: SpeechLine | null = null;
+    const ensure = (words: string) => (line ??= this.caption(event, words, "cue", false));
+    this.speaking = { text: `${phrase} ${text}`, occasion: event.occasion, kind: "cue" };
+    const first = await this.audio.voice.playCue(phraseCueId, { onStart: () => this.show(ensure(`${phrase} ${text}`)) });
+    if (first !== "interrupted") {
+      const second = await this.audio.voice.playCue(cueId, { onStart: () => this.show(ensure(first === "failed" ? text : `${phrase} ${text}`)) });
+      if (second !== "interrupted") this.show(ensure(first === "failed" ? text : `${phrase} ${text}`));
+    }
+    this.speaking = null;
+    this.lastEndedAt = this.game.time;
   }
 
   /**
@@ -341,10 +366,17 @@ export class FieldSpeech {
 
   /* --------------------------------------------------------- request */
 
-  /** Build the stage-card request for an event from the game's perception right now. */
-  request(event: SpeakEvent, walkerMessage: string | null = null): FieldRequest {
-    const { near, body } = this.game.perceive(event.far);
+  /** The shape of the line for an event, decided once: the register phrase, if any, and the room the line gets. */
+  private planFor(event: SpeakEvent, walkerMessage: string | null): FieldUtterancePlan {
+    const { body } = this.game.perceive(event.far);
     const seed = hash32(this.game.seed, this.counter, event.occasion);
+    const run: FieldRun = { ...this.game.run(), countNamedAt: this.countNamedAt };
+    return planFor(event.occasion, this.game.phase, seed, walkerMessage, run, body.walkerChoseAnotherWay || body.walkerReturning, event.beat, this.recent, event.occasion === "structure_found" && !!event.prompt && /Woke \d+ part/.test(event.walkerDid), event.tone === "quiet_arrival", event.tone === "waiting");
+  }
+
+  /** Build the stage-card request for an event from the game's perception right now. */
+  request(event: SpeakEvent, walkerMessage: string | null = null, plan?: FieldUtterancePlan): FieldRequest {
+    const { near, body } = this.game.perceive(event.far);
     const earlier = this.earlierMoment(event);
     const run: FieldRun = { ...this.game.run(), countNamedAt: this.countNamedAt };
     if (runAsksToBeNamed(run, event.occasion, event.beat)) this.countNamedAt = runFailures(run);
@@ -356,7 +388,7 @@ export class FieldSpeech {
       near, far: { heardAlong: event.far }, body,
       run,
       turn: { occasion: event.occasion, youSaid: this.youSaid(event), walkerDid: event.walkerDid, whatFollowed: event.whatFollowed },
-      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage, run, body.walkerChoseAnotherWay || body.walkerReturning, event.beat, this.recent, event.occasion === "structure_found" && !!event.prompt && /Woke \d+ part/.test(event.walkerDid)),
+      plan: plan ?? this.planFor(event, walkerMessage),
       earlierMoment: earlier,
       recentMessages: this.recent.slice(-8),
       olderSummary: this.olderSummary,

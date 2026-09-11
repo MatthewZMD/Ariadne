@@ -70,7 +70,7 @@ test("the opening is the fixed cue; a commitment asks the server with the stage 
   assert.equal(post.request.address, "MT", "every participant enters as MT");
   assert.ok(post.request.recentMessages.some(message => /You can hear that/.test(message.text)), "her earlier line is in the recent messages");
   assert.deepEqual(audio.calls.cues.slice(1), [], "a quick line needs no cue to cover it: she does not say it twice");
-  assert.equal(audio.calls.spoken.at(-1).text, "It's louder along the posts. Come on.");
+  assert.match(audio.calls.spoken.at(-1).text, /^(?:[A-Z][^.]*\. )?It's louder along the posts\. Come on\.$/, "the deterministic line stands in, with a recorded-register phrase before it if the plan chose one");
   assert.equal(audio.calls.spoken.at(-1).delivery, "confident_invitation");
   assert.equal(speech.preferredModelId, "google/gemma-4-26b-a4b-it:free", "a free model that answered becomes sticky");
   const generated = game.memory.captions.filter(line => line.kind === "generated");
@@ -133,7 +133,7 @@ test("when the server fails the deterministic line is spoken, and a cut sentence
   assert.equal(saved.midSentence.fraction, .4);
   const cutText = slowAudio.calls.spoken[0].text;
   assert.equal(saved.midSentence.text, cutText);
-  assert.match(cutText, /^It's louder along the/);
+  assert.match(cutText, /(?:^|\. )It's louder along the/);
   release();
   await settle(speech2);
 
@@ -350,4 +350,41 @@ test("she says the count once: the card asks on the first line at three failures
   const speech2 = new FieldSpeech(game, fakeAudio(), { sessionId: "s29b", fetchImpl: net.fetchImpl });
   speech2.restore(saved);
   assert.equal(speech2.request({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: null, priority: 80, commitmentId: null }).run.countNamedAt, 3);
+});
+
+test("on the walk the register is recorded: a phrase alone as they take up her way, a phrase before the recorded fact, and the yield before the ask to someone standing still", async () => {
+  const game = new FieldGame(11);
+  const audio = fakeAudio();
+  const net = fakeFetch();
+  const speech = new FieldSpeech(game, audio, { sessionId: "s11", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  // Late in the walk, taking up her way is answered by a recorded phrase and nothing else: no request, no generated bark.
+  Object.defineProperty(game, "phase", { get: () => "overbearing" });
+  const before = net.posts.length;
+  let phrases = 0;
+  for (let i = 0; i < 12; i++) {
+    game.time += 10_000;
+    speech.handle({ type: "speak", occasion: "taken_up", walkerDid: "Passed the first marker of the posts and is walking it.", whatFollowed: "You are moving ahead of them, marker to marker.", far: { wayId: "w" }, priority: 40, commitmentId: `commitment:${i}` });
+    await settle(speech);
+    const last = audio.calls.cues.at(-1);
+    if (last && last.startsWith("reg-")) phrases++;
+  }
+  assert.ok(phrases >= 6, `most take-ups late in the walk are a recorded phrase (${phrases}/12)`);
+  assert.ok(net.posts.length - before < 12, "a recorded phrase costs no request");
+  // A confirmation carried by the recorded fact takes a phrase first: "Perfect." then "It's getting louder."
+  const cuesBefore = audio.calls.cues.length;
+  game.time += 10_000;
+  speech.handle({ type: "speak", occasion: "outcome_confirmed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is growing louder along this way.", far: { wayId: "w" }, priority: 66, commitmentId: "commitment:c" });
+  await settle(speech);
+  const played = audio.calls.cues.slice(cuesBefore);
+  assert.ok(played.includes("getting-louder"), `the recorded fact plays (${played})`);
+  if (played.length === 2) { assert.ok(played[0].startsWith("reg-"), "the phrase comes before the fact"); assert.match(speech.currentLine.text, /^[A-Z][^.]*\. It’s getting louder\.$/); }
+  // Standing still: the waiting tone is the recorded ask, with a phrase of patience before it.
+  const stillBefore = audio.calls.cues.length;
+  game.time += 30_000;
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Has not moved for 25 seconds; you are waiting at the first marker of the posts.", whatFollowed: "You are waiting at the first marker of the posts, looking back at them.", far: { wayId: "w" }, priority: 45, commitmentId: "commitment:c", prompt: true, tone: "waiting" });
+  await settle(speech);
+  const waiting = audio.calls.cues.slice(stillBefore);
+  assert.equal(waiting.at(-1), "this-way", "the ask is the recorded invitation");
+  if (waiting.length === 2) assert.ok(["reg-take-your-time", "reg-whenever-ready", "reg-thank-you-patience"].includes(waiting[0]), `the yield before it is patience (${waiting[0]})`);
 });
