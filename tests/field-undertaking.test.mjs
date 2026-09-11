@@ -109,7 +109,7 @@ test("call audibility has a clear range, a faint band, and silence", () => {
   assert.equal(callAudibility(null), "none");
   assert.equal(callAudibility(10), "clear");
   assert.equal(callAudibility(24), "clear");
-  assert.equal(callAudibility(45), "faint", "the teaching call is faint from the spawn, one way away");
-  assert.equal(callAudibility(100), "faint", "two places away the call is a thread of sound");
-  assert.equal(callAudibility(130), "none");
+  assert.equal(callAudibility(45), "faint", "one way's length away the call is a faint thread the walker can place if they listen");
+  assert.equal(callAudibility(55), "faint");
+  assert.equal(callAudibility(70), "none", "two places away only Ariadne hears anything");
 });

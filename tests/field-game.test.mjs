@@ -253,9 +253,10 @@ test("save and restore bring back the same ground, the same undertaking and her 
 test("the warmth phase moves with commitments, clearings and time", () => {
   assert.equal(phaseFor(0, 0, 0), "charming");
   assert.equal(phaseFor(3, 1, 120), "charming");
-  assert.equal(phaseFor(6, 1, 300), "attached");
+  assert.equal(phaseFor(5, 1, 180), "charming", "the first handful of commitments and the teaching clearing stay charming");
+  assert.equal(phaseFor(7, 2, 300), "attached");
   assert.equal(phaseFor(12, 3, 900), "overbearing");
-  assert.equal(phaseFor(2, 0, 60 * 40), "overbearing", "a long session alone carries her into the late register");
+  assert.equal(phaseFor(2, 0, 60 * 50), "overbearing", "a long session alone carries her into the late register");
 });
 
 test("the graph and structures stream in as the walker travels", () => {
@@ -266,4 +267,61 @@ test("the graph and structures stream in as the walker travels", () => {
   run(game, 1);
   assert.ok(game.graph.nodes.size > before, "new chunks appear");
   assert.equal(game.graph.hops(game.graph.spawnNodeId, 200).size, game.graph.nodes.size, "everything generated stays connected");
+});
+
+test("the fog shader receives the clearings nearest the walker, not the first ones made", () => {
+  const game = new FieldGame(9);
+  run(game, 1);
+  const nodes = [...game.graph.nodes.values()].filter(node => node.ways.length >= 1).slice(0, 20);
+  nodes.forEach((node, index) => { const structure = game.structures.placeAt(node, "bells"); structure.completedAt = 1000 + index; });
+  const all = game.clearings();
+  assert.equal(all.length, 20);
+  const nearest = game.clearings(12);
+  assert.equal(nearest.length, 12);
+  for (let i = 1; i < nearest.length; i++) assert.ok(nearest[i].distance >= nearest[i - 1].distance, "nearest first");
+  const farthestKept = nearest.at(-1).distance;
+  assert.ok(all.filter(item => item.distance <= farthestKept).length >= 12, "everything closer than the last kept one is in the list");
+  assert.ok(all.some(item => item.since === 1000 + 19 && nearest.some(kept => kept.since === item.since)) || nearest.every(kept => kept.distance <= farthestKept), "recency does not decide");
+});
+
+test("a nearby sleeping structure sounds with its own family, not the objective's", () => {
+  const { game } = reachFirstCommitment(3);
+  const objective = game.structures.get(game.undertaking.objectiveStructureId);
+  const proxy = game.structures.all().find(item => item.completedAt === null && item.id !== objective.id && item.family !== objective.family && item.family !== "teaching");
+  assert.ok(proxy, "a sleeping structure of another family exists");
+  game.walker.position = [proxy.position[0] + 3, proxy.position[1]];
+  run(game, .5);
+  assert.equal(game.call.structureId, proxy.id);
+  assert.equal(game.call.proxy, true);
+  assert.equal(game.call.family, proxy.family, "the call carries the family of the structure that is sounding");
+  assert.notEqual(game.call.family, objective.family);
+  const { near } = game.perceive(null);
+  assert.equal(near.call.audible, true);
+});
+
+test("her way walked to an empty, silent place is named as such before she chooses again", () => {
+  // Build the situation directly: a commitment from A along a way to B, where B has no structure and the call is out of hearing.
+  const game = new FieldGame(21);
+  run(game, 7);
+  const teaching = game.teachingStructure;
+  walkTo(game, teaching.position, 5.5, 80);
+  wake(game, teaching);
+  run(game, 4);
+  // Move the objective far away so no call is audible anywhere near, then follow her current way to its end.
+  const farNode = [...game.graph.nodes.values()].sort((a, b) => Math.hypot(b.position[0] - game.walker.position[0], b.position[1] - game.walker.position[1]) - Math.hypot(a.position[0] - game.walker.position[0], a.position[1] - game.walker.position[1]))[0];
+  const objective = game.structures.placeAt(farNode, "cairn");
+  game.undertaking = { ...game.undertaking, objectiveStructureId: objective.id, objectiveNodeId: objective.nodeId };
+  const lead = game.ariadne.committedWayId; const from = game.ariadne.committedFromNodeId;
+  const way = game.graph.way(lead);
+  const farEnd = game.graph.node(game.graph.otherEnd(way, from));
+  if (game.structures.atNode(farEnd.id)) { game.structures.byNode.delete(farEnd.id); }
+  const events = [];
+  for (const marker of game.graph.markersFrom(way, from)) events.push(...walkTo(game, marker.position, 1.2, 30));
+  events.push(...walkTo(game, farEnd.position, 1.4, 30));
+  const spoken = speeches(events).filter(event => event.occasion === "commitment" || event.occasion === "recognized_return").at(-1);
+  if (farEnd.ways.length >= 2) {
+    assert.ok(spoken, "she commits again at the empty place");
+    assert.match(spoken.walkerDid, /nothing stands here and no call is audible from here/, "the card says her way ended in nothing");
+    assert.equal(spoken.tone, spoken.occasion === "commitment" ? "quiet_arrival" : undefined);
+  }
 });

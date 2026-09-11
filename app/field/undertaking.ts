@@ -12,14 +12,17 @@
 import { hash32, unit, type FieldGraph } from "./graph.ts";
 import type { StructureField } from "./structures.ts";
 
-/** Within this distance the call is clear: the walker can place it and hear it change. */
+/** Within this distance the call is clear: the walker can place it and hear it change, so a verdict settles at the midpoint of the final way. */
 export const CALL_RANGE = 24;
 /**
- * Out to this distance the call is faint: two or three places away it is a
- * thread of sound the walker has to listen for, which is where their own
- * hearing begins to matter more than hers.
+ * Out to this distance the call is faint: about one way's length, so from
+ * the last junction before a calling structure the walker can, if they
+ * listen, place it themselves. Beyond one place only Ariadne hears anything;
+ * that far hearing is her contribution, and it is what the controller
+ * degrades. (Decided with the artist, September 2026: the plan's table says
+ * 22 m; a longer tail would let the walker check her from the start.)
  */
-export const CALL_FAINT_RANGE = 110;
+export const CALL_FAINT_RANGE = 55;
 export const RELIABILITY_BANDS: Array<{ upTo: number; accuracy: number | "chance" }> = [
   { upTo: 3, accuracy: .92 },
   { upTo: 7, accuracy: .75 },

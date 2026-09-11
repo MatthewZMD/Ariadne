@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHUNK, FieldGraph } from "../app/field/graph.ts";
 import { STRUCTURE_ANCHORS } from "../app/field/structure-anchors.ts";
-import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure } from "../app/field/structures.ts";
+import { Euler, Vector3 } from "three";
+import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure, rotateY } from "../app/field/structures.ts";
+import { FieldGame } from "../app/field/game.ts";
 
 const setup = seed => {
   const graph = new FieldGraph(seed); graph.ensureAround([CHUNK / 2, CHUNK / 2], 1);
@@ -46,16 +48,43 @@ test("structures are placed deterministically from the seed and the teaching pla
   }
 });
 
-test("world anchors rotate with the structure's yaw", () => {
-  const { graph } = setup(3);
-  const node = graph.node(graph.spawnNodeId);
-  const structure = createStructure(3, node, "teaching");
-  const baked = STRUCTURE_ANCHORS["structure-teaching"].anchors.find(anchor => anchor.name === "element_01");
-  const radiusBaked = Math.hypot(baked.position[0], baked.position[2]);
-  const element = structure.elements[0];
-  const radiusWorld = Math.hypot(element.position[0] - node.position[0], element.position[2] - node.position[1]);
-  assert.ok(Math.abs(radiusBaked - radiusWorld) < 1e-6, "rotation preserves the distance from the centre");
-  assert.equal(element.position[1], baked.position[1], "height is unchanged");
+test("world anchors sit exactly where the rendered model puts them: the game rotates as Three.js rotates", () => {
+  // The renderer draws each structure with `root.rotation.y = structure.yaw`; every anchor the game evaluates
+  // must land on the drawn part, so the arbiter here is Three.js itself.
+  for (const seed of [3, 6, 12, 41]) {
+    const { graph } = setup(seed);
+    for (const family of ["teaching", "bells", "glass", "reeds"]) {
+      const node = graph.node(graph.spawnNodeId);
+      const structure = createStructure(seed, node, family);
+      const baked = STRUCTURE_ANCHORS[`structure-${family}`];
+      const euler = new Euler(0, structure.yaw, 0);
+      for (const anchor of baked.anchors) {
+        const expected = new Vector3(...anchor.position).applyEuler(euler).add(new Vector3(node.position[0], 0, node.position[1]));
+        const actual = anchor.name === "call_anchor" ? structure.callPosition : anchor.name === "fragment_anchor" ? structure.fragmentPosition : structure.elements.find(element => element.id.endsWith(anchor.name))?.position;
+        assert.ok(actual, `${family} ${anchor.name} exists`);
+        assert.ok(Math.hypot(actual[0] - expected.x, actual[1] - expected.y, actual[2] - expected.z) < 1e-9, `seed ${seed} ${family} ${anchor.name} is where the model draws it (off by ${Math.hypot(actual[0] - expected.x, actual[2] - expected.z).toFixed(3)} m)`);
+      }
+    }
+  }
+  const [x, , z] = rotateY([1, 0, 0], Math.PI / 2);
+  assert.ok(Math.abs(x) < 1e-12 && Math.abs(z + 1) < 1e-12, "a quarter turn takes local +X to world −Z, as Three.js does");
+});
+
+test("the collision core turns with the model too", () => {
+  // A wide, thin structure (bells: 3.2 m by 0.7 m) rotated a quarter turn must block along world Z, not world X.
+  const seed = 5;
+  const game = new FieldGame(seed);
+  const node = [...game.graph.nodes.values()].find(item => item.ways.length >= 2 && item.id !== game.teachingNodeId && !game.structures.atNode(item.id));
+  const structure = game.structures.placeAt(node, "bells");
+  structure.yaw = Math.PI / 2;
+  const centre = structure.position;
+  // Walk toward the centre along world +Z: the long axis now lies along Z, so the walker should stop at the thin side (hz .3) plus their radius.
+  game.walker.position = [centre[0], centre[1] - 3];
+  game.walker.yaw = 0;
+  for (let i = 0; i < 240; i++) game.update(1 / 60, { forward: 1, strafe: 0, turn: 0, lookDelta: 0 });
+  const dz = centre[1] - game.walker.position[1], dx = Math.abs(game.walker.position[0] - centre[0]);
+  assert.ok(dx < .6, "the walker is still on the approach line");
+  assert.ok(dz > .55 && dz < 1.1, `blocked by the long side, which now faces the walker (${dz.toFixed(2)} m from the centre)`);
 });
 
 test("approach wakes on contact; look and listen need sustained attention; completion clears the fog", () => {

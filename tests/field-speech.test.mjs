@@ -68,7 +68,7 @@ test("the opening is the fixed cue; a commitment asks the server with the stage 
   assert.equal(post.request.phase, "charming");
   assert.equal(post.request.address, "you");
   assert.ok(post.request.recentMessages.some(message => /You can hear that/.test(message.text)), "her earlier line is in the recent messages");
-  assert.deepEqual(audio.calls.cues.slice(1), ["this-way"], "a cue covers the wait");
+  assert.deepEqual(audio.calls.cues.slice(1), [], "a quick line needs no cue to cover it: she does not say it twice");
   assert.equal(audio.calls.spoken.at(-1).text, "It's louder along the posts. Come on.");
   assert.equal(audio.calls.spoken.at(-1).delivery, "confident_invitation");
   assert.equal(speech.preferredModelId, "google/gemma-4-26b-a4b-it:free", "a free model that answered becomes sticky");
@@ -155,4 +155,64 @@ test("plans vary by occasion and phase without ever forcing an affirmation early
   assert.equal(planFor("taken_up", "attached", 1, null).length, "bark");
   assert.equal(planFor("outcome_failed", "attached", 1, null).length, "full");
   assert.equal(summarize([{ role: "ariadne", text: "Come on." }, { role: "walker", text: "Where?" }], ""), "Ariadne said: “Come on.”\nThe walker said: “Where?”");
+});
+
+test("a commitment made while she is mid-line is spoken when she is free, not lost", async () => {
+  const game = new FieldGame(6);
+  const audio = fakeAudio(), net = fakeFetch(body => ({ message: body.request.turn.occasion === "commitment" ? "The stitches, to your right. It's louder that way." : "Yes.", source: "provider", modelUsed: "dots-studio/dots-3-note-preview:free" }));
+  // Hold the voice busy, as a cue or a long line would.
+  let release; let busy = true, hold = true;
+  audio.voice.isBusy = () => busy;
+  audio.voice.playCue = async id => { audio.calls.cues.push(id); if (hold) await new Promise(resolve => { release = resolve; }); else await tick(); return "spoken"; };
+  const speech = new FieldSpeech(game, audio, { sessionId: "s6", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  const node = game.graph.node(game.teachingNodeId);
+  game.undertaking = { ...game.undertaking, active: { id: "commitment:7", nodeId: node.id, wayId: node.ways[0], correct: true, madeAt: game.time, taken: "pending", declinedFor: null, outcome: "pending" } };
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at a place where 3 ways meet.", whatFollowed: "Your body went to the first marker of the stitches to your right.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:7" });
+  await settle(speech);
+  assert.equal(net.posts.length, 0, "nothing is requested while she is busy");
+  busy = false; hold = false; if (release) release();
+  run(game, 2);
+  await settle(speech);
+  assert.equal(net.posts.length, 1, "the commitment is spoken once she is free");
+  assert.equal(net.posts[0].request.turn.occasion, "commitment");
+  assert.equal(audio.calls.spoken.at(-1).text, "The stitches, to your right. It's louder that way.");
+  assert.equal(game.memory.captions.filter(line => line.kind === "generated").length, 1);
+
+  // A commitment she has already left behind is not announced late.
+  busy = true;
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:8" });
+  game.undertaking = { ...game.undertaking, active: null };
+  busy = false;
+  run(game, 2);
+  await settle(speech);
+  assert.equal(net.posts.length, 1, "a superseded commitment stays unspoken");
+});
+
+
+test("when a line is slow, a recorded cue covers the wait; when a way fades, the cue comes first regardless", async () => {
+  const game = new FieldGame(7);
+  const audio = fakeAudio();
+  const slow = async (url, init) => {
+    if (String(url).endsWith("/fog/cues.json")) return { ok: true, json: async () => ({ assets: [{ id: "this-way", text: "This way. Come on!" }, { id: "fading", text: "It’s fading." }] }) };
+    await new Promise(resolve => setTimeout(resolve, 2600));
+    return { ok: true, json: async () => ({ message: JSON.parse(init.body).request.turn.occasion === "commitment" ? "The posts, ahead. It's stronger that way." : "I said the posts and it went quiet. Listening again.", source: "provider", modelUsed: "dots-studio/dots-3-note-preview:free" }) };
+  };
+  const speech = new FieldSpeech(game, audio, { sessionId: "s7", fetchImpl: slow });
+  await tick(); run(game, 8);
+  const node = game.graph.node(game.teachingNodeId);
+  game.undertaking = { ...game.undertaking, active: { id: "commitment:9", nodeId: node.id, wayId: node.ways[0], correct: true, madeAt: game.time, taken: "pending", declinedFor: null, outcome: "pending" } };
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:9" });
+  await new Promise(resolve => setTimeout(resolve, 2900));
+  for (let i = 0; i < 40; i++) { await tick(); speech.update(); if (!speech.isBusy) break; }
+  assert.deepEqual(audio.calls.cues, ["this-way"], "the cue played because the line took longer than a couple of seconds");
+  assert.equal(audio.calls.spoken.at(-1).text, "The posts, ahead. It's stronger that way.");
+
+  run(game, 12);
+  speech.handle({ type: "speak", occasion: "outcome_failed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is fading.", far: null, priority: 90, commitmentId: "commitment:9" });
+  await tick();
+  assert.equal(audio.calls.cues.at(-1), "fading", "a fading way is answered at once with the recorded reaction");
+  await new Promise(resolve => setTimeout(resolve, 2900));
+  for (let i = 0; i < 40; i++) { await tick(); speech.update(); if (!speech.isBusy) break; }
+  assert.match(audio.calls.spoken.at(-1).text, /went quiet/);
 });

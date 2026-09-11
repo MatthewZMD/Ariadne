@@ -58,7 +58,14 @@ export type WakeChange =
   | { type: "element_sounded"; structureId: string; elementId: string; noteHz: number }
   | { type: "completed"; structureId: string; relevance: Relevance };
 
-const rotate = (local: [number, number, number], yaw: number): [number, number, number] => [local[0] * Math.cos(yaw) - local[2] * Math.sin(yaw), local[1], local[0] * Math.sin(yaw) + local[2] * Math.cos(yaw)];
+/**
+ * Rotate a local offset about Y by `yaw`, exactly as Three.js applies
+ * `object.rotation.y = yaw` to the rendered model: x' = x cos + z sin,
+ * z' = −x sin + z cos. The game and the renderer must agree on this, or the
+ * walker attends to a visible part while the game evaluates another place.
+ */
+export const rotateY = (local: [number, number, number], yaw: number): [number, number, number] => [local[0] * Math.cos(yaw) + local[2] * Math.sin(yaw), local[1], -local[0] * Math.sin(yaw) + local[2] * Math.cos(yaw)];
+const rotate = rotateY;
 
 export function modelIdFor(family: StructureFamily) { return `structure-${family}`; }
 
@@ -86,15 +93,17 @@ export class StructureField {
   readonly byNode = new Map<string, Structure>();
   private readonly decided = new Set<string>();
   readonly teachingNodeId: string;
+  /** The walker wakes on open ground: nothing stands at the spawn, so the teaching structure is the first thing they meet. */
+  readonly spawnNodeId: string | null;
 
-  constructor(seed: number, teachingNodeId: string) { this.seed = seed; this.teachingNodeId = teachingNodeId; }
+  constructor(seed: number, teachingNodeId: string, spawnNodeId: string | null = null) { this.seed = seed; this.teachingNodeId = teachingNodeId; this.spawnNodeId = spawnNodeId; }
 
   /** Decide, once and deterministically, whether a place has a structure; create it when it does. */
   ensureAt(node: FieldNode) {
     if (this.decided.has(node.id)) return this.byNode.get(node.id) ?? null;
     this.decided.add(node.id);
     if (node.id === this.teachingNodeId) { const structure = createStructure(this.seed, node, "teaching"); this.byNode.set(node.id, structure); return structure; }
-    if (node.ways.length === 0 || node.roll >= STRUCTURE_CHANCE) return null;
+    if (node.id === this.spawnNodeId || node.ways.length === 0 || node.roll >= STRUCTURE_CHANCE) return null;
     const structure = createStructure(this.seed, node, familyFor(this.seed, node));
     this.byNode.set(node.id, structure); return structure;
   }

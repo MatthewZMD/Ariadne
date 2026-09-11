@@ -22,8 +22,20 @@ export type EarlierMoment = { fact: string; youSaid: string | null; whatFollowed
 const LOW_PRIORITY_GAP_MS = 9000;
 const SPEECH_GAP_MS = 1200;
 const REQUEST_STALE_MS = 14_000;
-/** Occasions that must not be lost when she is mid-line: they wait their turn. */
-const DURABLE: Set<FieldOccasion> = new Set(["awakening_relevant", "awakening_proxy", "outcome_failed", "terminus", "declined", "recognized_return", "reply"]);
+/**
+ * Occasions that must not be lost when she is mid-line: they wait their turn.
+ * A commitment is the claim the walker judges her by; if her body chooses a
+ * way, her words must name it. Only the small acknowledgements (taken_up,
+ * off_way, the repeat prompt) may be dropped.
+ */
+const DURABLE: Set<FieldOccasion> = new Set(["commitment", "structure_found", "outcome_confirmed", "awakening_relevant", "awakening_proxy", "outcome_failed", "terminus", "declined", "recognized_return", "reply"]);
+const QUEUE_LIMIT = 4;
+/** Occasions a recorded cue carries whole; a generated line would only say it twice. */
+const CUE_ONLY: Set<FieldOccasion> = new Set(["off_way"]);
+/** How long she may take before a recorded cue has to cover the wait. */
+const CUE_AFTER_MS = 2200;
+/** Every third confirmation gets her interpretation; the rest is the recorded fact. */
+const CONFIRMATION_INTERPRETATION_EVERY = 3;
 /** The opening is fixed: an offer and a direction, always the same words. */
 const FIXED_OCCASIONS: Set<FieldOccasion> = new Set(["opening"]);
 
@@ -53,7 +65,9 @@ export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], s
   const roll = hash32(seed, "affirm", occasion) / 4294967296;
   const chance = phase === "overbearing" ? .6 : phase === "attached" ? .22 : 0;
   let affirmation: string | null = null;
-  if (roll < chance) {
+  // A stock agreement answers a statement, never a question.
+  const question = !!walkerMessage && /\?\s*$/.test(walkerMessage);
+  if (roll < chance && !question) {
     const pool = occasion === "declined" || (occasion === "reply" && walkerMessage) ? FIELD_AFFIRMATIONS.agreement : occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "outcome_confirmed" ? FIELD_AFFIRMATIONS.accomplishment : occasion === "recognized_return" ? FIELD_AFFIRMATIONS.return : null;
     if (pool) affirmation = pool[hash32(seed, "affirmation", occasion) % pool.length]!;
   }
@@ -86,8 +100,7 @@ export class FieldSpeech {
   private lastEndedAt = -Infinity;
   private saidAt = new Map<string, string>();
   private moments: EarlierMoment[] = [];
-  private queued: SpeakEvent | null = null;
-  private queuedAt = 0;
+  private queue: Array<{ event: SpeakEvent; at: number }> = [];
   private active: { event: SpeakEvent; startedAt: number; controller: AbortController; priority: number } | null = null;
   private speaking: { text: string; occasion: FieldOccasion; kind: SpeechLine["kind"] } | null = null;
   private counter = 0;
@@ -96,6 +109,7 @@ export class FieldSpeech {
   private pendingResume: SpeechSave["midSentence"] = null;
   preferredModelId: string | null = null;
   private lastEventByOccasion = new Map<FieldOccasion, number>();
+  private confirmations = 0;
 
   constructor(game: FieldGame, audio: FieldAudio, options: SpeechOptions) {
     this.game = game; this.audio = audio; this.options = options;
@@ -114,16 +128,38 @@ export class FieldSpeech {
     this.lastEventByOccasion.set(event.occasion, now);
     if (this.active) {
       if (event.priority >= this.active.priority + 10) { this.cancelActive(); }
-      else if (DURABLE.has(event.occasion)) { this.queued = event; this.queuedAt = now; return; }
-      else return;
+      else { this.enqueue(event); return; }
     } else if (this.audio.voice.isBusy()) {
       if (event.priority >= 85) this.audio.voice.interrupt();
-      else if (DURABLE.has(event.occasion)) { this.queued = event; this.queuedAt = now; return; }
-      else return;
+      else { this.enqueue(event); return; }
     }
-    if (event.priority < 65 && now - this.lastEndedAt < LOW_PRIORITY_GAP_MS) return;
-    if (now - this.lastEndedAt < SPEECH_GAP_MS && event.priority < 85) { if (DURABLE.has(event.occasion)) { this.queued = event; this.queuedAt = now; } return; }
+    // Small acknowledgements wait for a gap; a recorded cue alone may come sooner, since it costs the walker a second.
+    const cueOnly = CUE_ONLY.has(event.occasion) && !event.prompt;
+    if (event.priority < 65 && !event.prompt && now - this.lastEndedAt < (cueOnly ? 3000 : LOW_PRIORITY_GAP_MS)) return;
+    if (now - this.lastEndedAt < SPEECH_GAP_MS && event.priority < 85) { this.enqueue(event); return; }
     void this.speak(event);
+  }
+
+  /** Hold a durable event for the next free moment; one per occasion and commitment, highest priority first. */
+  private enqueue(event: SpeakEvent) {
+    if (!DURABLE.has(event.occasion)) return;
+    this.queue = this.queue.filter(item => !(item.event.occasion === event.occasion && item.event.commitmentId === event.commitmentId));
+    this.queue.push({ event, at: this.game.time });
+    this.queue.sort((a, b) => b.event.priority - a.event.priority);
+    this.queue = this.queue.slice(0, QUEUE_LIMIT);
+  }
+
+  /** The next queued event whose moment has not passed. */
+  private dequeue(): SpeakEvent | null {
+    const now = this.game.time;
+    while (this.queue.length) {
+      const { event, at } = this.queue.shift()!;
+      if (now - at > REQUEST_STALE_MS) continue;
+      // A commitment she has already left behind (declined, resolved, replaced) is not worth announcing.
+      if (event.commitmentId && (event.occasion === "commitment" || event.occasion === "recognized_return" || event.occasion === "outcome_confirmed") && this.game.undertaking.active?.id !== event.commitmentId) continue;
+      return event;
+    }
+    return null;
   }
 
   /** The walker typed something. */
@@ -136,15 +172,15 @@ export class FieldSpeech {
     this.game.memory.caption({ id: `w${++this.counter}`, role: "walker", text: trimmed, time: now, kind: "walker" });
     const far = this.farForNow();
     const event: SpeakEvent = { type: "speak", occasion: "reply", walkerDid: `Spoke to you: “${trimmed}”`, whatFollowed: "You are answering their exact words.", far, priority: 92, commitmentId: this.game.undertaking.active?.id ?? null };
-    this.cancelActive(); this.audio.voice.interrupt(); this.queued = null;
+    this.cancelActive(); this.audio.voice.interrupt(); this.queue = [];
     void this.speak(event, trimmed);
   }
 
   /** Called every frame: drains the queue when she is free. */
   update() {
-    if (this.queued && !this.active && !this.audio.voice.isBusy() && this.game.time - this.lastEndedAt >= SPEECH_GAP_MS) {
-      const event = this.queued; this.queued = null;
-      if (this.game.time - this.queuedAt < REQUEST_STALE_MS) void this.speak(event);
+    if (this.queue.length && !this.active && !this.audio.voice.isBusy() && this.game.time - this.lastEndedAt >= SPEECH_GAP_MS) {
+      const event = this.dequeue();
+      if (event) void this.speak(event);
     }
     if (this.pendingResume && this.audio.unlocked && !this.audio.voice.isBusy() && !this.active) { const resume = this.pendingResume; this.pendingResume = null; void this.resumeSentence(resume); }
   }
@@ -163,24 +199,36 @@ export class FieldSpeech {
     const startedAt = this.game.time;
     const controller = new AbortController();
     this.active = { event, startedAt, controller, priority: event.priority };
-    const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure|first structure/.test(event.walkerDid) || this.game.callingStructure?.family === "teaching", gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
-    const cueId = event.prompt ? null : cueForOccasion(event.occasion, cueDetail);
+    const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure/.test(event.walkerDid), gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
+    const firstAwakening = event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1;
+    const cueId = event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
     // The first ninety seconds are authored: the opening, the teaching gestures and the first clearing keep their recorded words.
-    const fixed = FIXED_OCCASIONS.has(event.occasion) || (event.occasion === "structure_found" && !!cueDetail.teaching && !event.prompt) || (event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1);
+    // Some occasions are a fact a recorded cue states whole: going with them off the line, a confirmation (most of the time).
+    if (event.occasion === "outcome_confirmed") this.confirmations++;
+    const fixed = FIXED_OCCASIONS.has(event.occasion)
+      || (event.occasion === "structure_found" && !!cueDetail.teaching && !event.prompt)
+      || firstAwakening
+      || (CUE_ONLY.has(event.occasion) && !event.prompt)
+      || (event.occasion === "outcome_confirmed" && this.confirmations % CONFIRMATION_INTERPRETATION_EVERY !== 0);
     if (fixed && cueId) {
       const text = this.cueTexts.get(cueId ?? "") ?? fieldDeterministicLine(this.request(event, walkerMessage));
       await this.voiceLine(event, text, cueId, "cue");
       this.finish(controller);
       return;
     }
+    if (fixed && !cueId) { this.finish(controller); return; }
     const request = this.request(event, walkerMessage);
     const fallbackText = fieldDeterministicLine(request);
-    // A recorded cue covers the seconds the generated line takes; the caption shows the cue's words.
+    // A recorded cue covers the wait for a generated line. Where the cue is itself the reaction (a way fading, ending, a
+    // different way taken, something in view), it plays at once; where it would only announce the line (this way, come on),
+    // it plays only if the line is slow in coming, so she does not say everything twice.
     let cuePromise: Promise<unknown> = Promise.resolve();
-    if (cueId && !this.options.offline) {
-      const cueText = this.cueTexts.get(cueId) ?? null;
-      if (cueText) { this.caption(event, cueText, "cue"); cuePromise = this.audio.voice.playCue(cueId); }
-    }
+    let cueTimer: ReturnType<typeof setTimeout> | null = null;
+    const cueText = cueId && !this.options.offline ? this.cueTexts.get(cueId) ?? null : null;
+    const startCue = () => { if (!cueId || !cueText) return; this.caption(event, cueText, "cue"); cuePromise = this.audio.voice.playCue(cueId); };
+    const immediate = new Set<FieldOccasion>(["outcome_failed", "terminus", "declined", "structure_found", "awakening_proxy", "awakening_relevant", "recognized_return", "outcome_confirmed"]);
+    if (cueText && (immediate.has(event.occasion) || event.tone === "quiet_arrival")) startCue();
+    else if (cueText) cueTimer = setTimeout(() => { if (!controller.signal.aborted) startCue(); }, CUE_AFTER_MS);
     let text = fallbackText, kind: SpeechLine["kind"] = "fallback";
     if (!this.options.offline) {
       this.options.onThinking?.(true);
@@ -194,12 +242,14 @@ export class FieldSpeech {
       } catch { /* the fallback line stands */ }
       this.options.onThinking?.(false);
     }
+    if (cueTimer) clearTimeout(cueTimer);
     if (controller.signal.aborted) return;
     // The moment may have passed while the line was being made.
     if (this.game.time - startedAt > REQUEST_STALE_MS && event.priority < 85) { this.finish(controller); return; }
     await cuePromise;
     if (controller.signal.aborted) return;
-    if (kind === "fallback" && cueId && this.cueTexts.has(cueId)) { this.finish(controller); return; }
+    // When only the deterministic line is available and a cue already said it, the cue stands.
+    if (kind === "fallback" && cueId && cueText && this.recent.at(-1)?.text === cueText) { this.finish(controller); return; }
     await this.voiceLine(event, text, null, kind);
     this.finish(controller);
   }

@@ -19,7 +19,7 @@ export const FOG_COLOR = 0xf4f5f4;
 export const FOG_NEAR = 1.5;
 export const FOG_FAR_EYE = 14;
 export const FOG_FAR_GROUND = 20;
-export const MAX_CLEARINGS = 12;
+export const MAX_CLEARINGS = 16;
 const STREAM_RADIUS = 70;
 const MARKER_MODELS: Record<WayMarkerKind, string[]> = { "leaning stones": ["marker-stone-01", "marker-stone-02", "marker-stone-03"], posts: ["marker-post-01", "marker-post-02", "marker-post-03"], stitches: ["marker-stitch-01", "marker-stitch-02"] };
 const FLOOR_MODELS: Record<string, string[]> = { "stone dish": ["node-dish-01", "node-dish-02"], pool: ["node-pool-01"], "ring of posts": ["node-post-ring-01"], "terminus-collapse": ["terminus-collapse-01", "terminus-collapse-02"], "terminus-water": ["terminus-water-01"] };
@@ -384,7 +384,7 @@ export class FieldRenderer {
 
     // Fog: denser off the line; clearings as holes.
     fogDensityUniform.value = 1 + .55 * game.offWayFactor;
-    const clearings = game.clearings().slice(0, MAX_CLEARINGS);
+    const clearings = game.clearings(MAX_CLEARINGS);
     clearings.forEach((clearing, index) => { const age = Math.min(1, (frame.time - clearing.since) / 4000); clearingsUniform.value.set([clearing.x, clearing.z, clearing.radius, age], index * 4); });
     clearingCountUniform.value = clearings.length;
     for (const [key, disc] of this.clearingDiscs) { const clearing = clearings.find(item => `${item.x},${item.z}` === key); (disc.material as THREE.MeshBasicMaterial).opacity = .35 * (clearing ? Math.min(1, (frame.time - clearing.since) / 4000) : 1); }
@@ -420,8 +420,7 @@ export class FieldRenderer {
       const size = 2.2 + frame.pulse * 2.6;
       this.pulseSprite.scale.set(size, size, 1);
       (this.pulseSprite.material as THREE.SpriteMaterial).opacity = frame.pulse * .3 * visibility * (game.call.proxy ? .6 : 1);
-      const family = game.callingStructure?.family ?? "bells";
-      (this.pulseSprite.material as THREE.SpriteMaterial).color.set(FAMILY_COLOR[family]).lerp(new THREE.Color(0xffffff), .25);
+      (this.pulseSprite.material as THREE.SpriteMaterial).color.set(FAMILY_COLOR[game.call.family ?? "bells"]).lerp(new THREE.Color(0xffffff), .25);
     } else this.pulseSprite.visible = false;
 
     // Drifting fog patches around the walker.

@@ -148,7 +148,7 @@ export default function FieldPage() {
           const calling = game.callingStructure?.family; if (calling) near.push(calling);
           if (near.length) audio?.warm([...new Set(near)]);
         }
-        audio?.update({ walker: { position: [game.walker.position[0], game.walker.position[1]], yaw: game.walker.yaw }, ariadne: game.ariadne ? { position: [game.ariadne.position[0], game.ariadne.position[1]], height: game.ariadne.height } : null, call: { structureId: game.call.structureId, family: game.callingStructure?.family ?? (game.call.structureId ? game.structures.get(game.call.structureId)?.family ?? null : null), position: game.call.position, gain: game.call.gain }, offWayFactor: game.offWayFactor, waterDistance: water, clearings: game.structures.completed().map(item => ({ id: item.id, family: item.family, x: item.position[0], z: item.position[1] })) });
+        audio?.update({ walker: { position: [game.walker.position[0], game.walker.position[1]], yaw: game.walker.yaw }, ariadne: game.ariadne ? { position: [game.ariadne.position[0], game.ariadne.position[1]], height: game.ariadne.height } : null, call: { structureId: game.call.structureId, family: game.call.family, position: game.call.position, gain: game.call.gain }, offWayFactor: game.offWayFactor, waterDistance: water, clearings: game.structures.completed().map(item => ({ id: item.id, family: item.family, x: item.position[0], z: item.position[1] })) });
         if (time - lastSaveRef.current > SAVE_INTERVAL_MS) persist();
       }
       renderer.render({ time: game.time, pulse: audio?.pulse() ?? 0, voiceLevel: audio?.voice.level() ?? 0, reducedMotion: game.reducedMotion });

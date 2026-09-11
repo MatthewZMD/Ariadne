@@ -12,7 +12,7 @@ import { MOVE_ACCELERATION, TURN_ACCELERATION, acceleratedSpeed, advanceInputRam
 import type { FieldBody, FieldNear, FieldOccasion, FieldPhase, RelativeDirection as PracticeDirection } from "../field-practice.ts";
 import { FieldGraph, NODE_RADIUS, OFF_WAY_DISTANCE, WAY_HALF_WIDTH, bearingTo, distance, forwardOf, relativeDirection, rightOf, unit, wrapAngle, type FieldNode, type FieldWay, type Vec2, type WayMarkerKind } from "./graph.ts";
 import { STRUCTURE_ANCHORS } from "./structure-anchors.ts";
-import { CLEARING_RADIUS, StructureField, modelIdFor, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily } from "./structures.ts";
+import { CLEARING_RADIUS, StructureField, modelIdFor, rotateY, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily } from "./structures.ts";
 import { CALL_FAINT_RANGE, CALL_RANGE, beginCall, callAudibility, commitAt, createUndertaking, resolveCommitment, takeUp, type Commitment, type Undertaking } from "./undertaking.ts";
 import { WorldMemory, ownFootprintsVisible, type MemorySnapshot } from "./memory.ts";
 import { beginCelebration, beginExamining, beginRepair, createAriadneBody, describeBody, hoverBeside, leadAlong, presenceOf, stopExamining, takeFragment, updateAriadne, walkerMarkerIndex, type AriadneBody } from "./ariadne.ts";
@@ -66,6 +66,8 @@ export type SpeakEvent = {
   commitmentId: string | null;
   /** True when this line is a repeat prompt rather than a first announcement. */
   prompt?: boolean;
+  /** A shade the speech layer can use to pick a recorded cue: her way ended in nothing. */
+  tone?: "quiet_arrival";
 };
 
 export type FieldEvent =
@@ -85,6 +87,8 @@ export type FieldEvent =
 
 export type CallState = {
   structureId: string | null;
+  /** The family of the structure that is sounding: the objective's, or a nearby sleeping proxy's. */
+  family: StructureFamily | null;
   position: [number, number, number] | null;
   distance: number | null;
   audibility: "clear" | "faint" | "none";
@@ -118,8 +122,8 @@ const smoothstep = (edge0: number, edge1: number, value: number) => { const t = 
 const dirWord = (bearing: number) => relativeDirection(bearing) as PracticeDirection;
 
 export function phaseFor(commitmentsMade: number, clearingsMade: number, activeSeconds: number): FieldPhase {
-  const pressure = commitmentsMade + clearingsMade * 1.5 + activeSeconds / 240;
-  return pressure < 5.5 ? "charming" : pressure < 11 ? "attached" : "overbearing";
+  const pressure = commitmentsMade + clearingsMade + activeSeconds / 240;
+  return pressure < 7 ? "charming" : pressure < 14 ? "attached" : "overbearing";
 }
 
 /** Floor to show at a place: a structure keeps a degree-one place from reading as a terminus. */
@@ -147,7 +151,7 @@ export class FieldGame {
   currentNodeId: string | null;
   lastNodeId: string | null;
   arrivedByWayId: string | null = null;
-  call: CallState = { structureId: null, position: null, distance: null, audibility: "none", trend: null, gain: 0, proxy: false };
+  call: CallState = { structureId: null, family: null, position: null, distance: null, audibility: "none", trend: null, gain: 0, proxy: false };
   /** How far off the markers the walker is, 0 on the line to 1 deep in open fog; drives fog density and the hush. */
   offWayFactor = 0;
 
@@ -163,6 +167,7 @@ export class FieldGame {
   private teachingTakenUp = false;
   private lastStreamAt = -Infinity;
   private lastPromptAt = -Infinity;
+  private lastReturnSpokenAt = -Infinity;
   private lastWakeAt = -Infinity;
   private examining: string | null = null;
   private attention = { lookingToward: null as string | null, approaching: null as string | null, movingAwayFrom: null as string | null, pausedNear: null as string | null, still: false, lookingAtHer: false };
@@ -177,7 +182,7 @@ export class FieldGame {
     const teachingWay = this.graph.way(spawn.ways[0]!)!;
     this.teachingWayId = teachingWay.id;
     this.teachingNodeId = this.graph.otherEnd(teachingWay, spawn.id);
-    this.structures = new StructureField(seed, this.teachingNodeId);
+    this.structures = new StructureField(seed, this.teachingNodeId, spawn.id);
     this.structures.ensureAround(this.graph, spawn.position);
     this.undertaking = createUndertaking(seed);
     const first = this.graph.markersFrom(teachingWay, spawn.id)[0]!;
@@ -262,12 +267,12 @@ export class FieldGame {
       const bounds = STRUCTURE_ANCHORS[modelIdFor(structure.family)]?.bounds; if (!bounds) continue;
       // A small core, not the whole silhouette: the structures are open frames, and their outer parts must stay within arm's reach.
       const hx = Math.min(.6, Math.max(.3, (bounds[1][0] - bounds[0][0]) / 2 * .7)), hz = Math.min(.6, Math.max(.3, (bounds[1][2] - bounds[0][2]) / 2 * .7));
-      const cos = Math.cos(-structure.yaw), sin = Math.sin(-structure.yaw);
-      const lx = (x - structure.position[0]) * cos - (z - structure.position[1]) * sin, lz = (x - structure.position[0]) * sin + (z - structure.position[1]) * cos;
+      // Into the model's frame (the inverse rotation), and back out with the same convention the renderer uses.
+      const [lx, , lz] = rotateY([x - structure.position[0], 0, z - structure.position[1]], -structure.yaw);
       const px = hx + WALKER_RADIUS - Math.abs(lx), pz = hz + WALKER_RADIUS - Math.abs(lz);
       if (px > 0 && pz > 0) {
         const ox = px < pz ? Math.sign(lx || 1) * px : 0, oz = px < pz ? 0 : Math.sign(lz || 1) * pz;
-        const wx = ox * Math.cos(structure.yaw) - oz * Math.sin(structure.yaw), wz = ox * Math.sin(structure.yaw) + oz * Math.cos(structure.yaw);
+        const [wx, , wz] = rotateY([ox, 0, oz], structure.yaw);
         x += wx; z += wz;
       }
     }
@@ -315,6 +320,7 @@ export class FieldGame {
 
     // Settle the active commitment against where the walker actually arrived.
     const active = this.undertaking.active;
+    let quietArrival: string | null = null;
     if (active) {
       if (active.nodeId === node.id) {
         if (active.taken === "pending" && this.ariadne && !this.ariadne.committedWayId) { const way = this.graph.way(active.wayId); if (way) { leadAlong(this.ariadne, this.graph, way, node.id, now); this.events.push({ type: "lead", wayId: way.id, fromNodeId: node.id }); } }
@@ -322,7 +328,12 @@ export class FieldGame {
       }
       const way = this.graph.way(active.wayId);
       const farEnd = way ? this.graph.otherEnd(way, active.nodeId) : null;
-      if (node.id === farEnd) { if (active.taken === "pending") this.undertaking = takeUp(this.undertaking, true, null); this.undertaking = resolveCommitment(this.undertaking, "quiet"); }
+      if (node.id === farEnd) {
+        if (active.taken === "pending") this.undertaking = takeUp(this.undertaking, true, null);
+        this.undertaking = resolveCommitment(this.undertaking, "quiet");
+        // Her way, walked to its end, with nothing here and nothing to hear: the plainest kind of failure the field offers.
+        if (way && !this.structures.atNode(node.id) && this.call.audibility === "none") quietArrival = way.marker;
+      }
       else { if (active.taken === "pending") this.undertaking = takeUp(this.undertaking, false, arrivedBy); this.undertaking = resolveCommitment(this.undertaking, "quiet"); }
     }
 
@@ -353,11 +364,19 @@ export class FieldGame {
     const bearing = this.graph.bearingOfWay(here, way, this.walker.yaw);
     const wayName = `the ${way.marker} ${describeWhere(dirWord(bearing))}`;
     const arrivedName = arrivedBy ? this.graph.way(arrivedBy)?.marker ?? null : null;
-    if (remembered) {
+    const visits = this.memory.visits.get(node.id)?.count ?? 1;
+    const tried = here.ways.filter(id => id !== way.id && this.memory.residueOn(id)).map(id => `the ${this.graph.way(id)!.marker}`);
+    const chosenBefore = (this.memory.residueOn(way.id)?.strength ?? 0) > 1;
+    const triedNote = `${tried.length ? ` Your light is already on ${tried.join(" and ")}: you chose those from here before.` : ""}${chosenBefore ? ` You have chosen ${wayName} from here before too; your light is on it already, and this is not an untried way.` : ""}`;
+    const quietNote = quietArrival ? `Walked the ${quietArrival} you chose to this place; nothing stands here and no call is audible from here. ` : "";
+    // A return is an occasion the first time, and then rarely; after that it is where the search has brought you, and she chooses again without ceremony.
+    if (remembered && (visits === 2 || now - this.lastReturnSpokenAt > 75_000)) {
+      this.lastReturnSpokenAt = now;
       const evidence = footprints && residueHere ? "their own footprints are on the ground and your light is on the markers of a way you chose before" : footprints ? "their own footprints are on the ground" : "your light is already on the markers of a way you chose from here before";
-      this.speak("recognized_return", `Arrived again at a place the two of you have stood before${arrivedName ? `, along the ${arrivedName}` : ""}; ${evidence}.`, `Your body went to the first marker of ${wayName}.`, { wayId: way.id }, 80, choice.commitment.id);
+      this.speak("recognized_return", `${quietNote}Arrived again at a place the two of you have stood before${arrivedName ? `, along the ${arrivedName}` : ""}; ${evidence}.`, `Your body went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, 80, choice.commitment.id);
     } else {
-      this.speak("commitment", `Arrived at a place where ${node.ways.length} ways meet${arrivedName ? `, along the ${arrivedName}` : ""}.`, `Your body went to the first marker of ${wayName}.`, { wayId: way.id }, 80, choice.commitment.id);
+      const again = remembered ? `, a place you have both stood at ${visits} times now` : "";
+      this.speak("commitment", `${quietNote}Arrived at a place where ${node.ways.length} ways meet${arrivedName ? `, along the ${arrivedName}` : ""}${again}.`, `Your body went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, quietArrival ? 84 : 80, choice.commitment.id, false, quietArrival ? "quiet_arrival" : undefined);
     }
   }
 
@@ -396,7 +415,7 @@ export class FieldGame {
     const reference = this.trendSamples.find(sample => sample.t <= now - TREND_WINDOW_MS) ?? null;
     const trend = !proxy && reference && d !== null ? (reference.d - d > TREND_THRESHOLD ? "growing" : d - reference.d > TREND_THRESHOLD ? "fading" : "steady") : null;
     const audibility = proxy ? (gain > 0 ? "faint" : "none") : callAudibility(d);
-    this.call = { structureId: structure?.id ?? null, position: structure?.callPosition ?? null, distance: d, audibility: gain > 0 ? audibility === "none" ? "faint" : audibility : "none", trend: audibility === "none" ? null : trend, gain, proxy };
+    this.call = { structureId: structure?.id ?? null, family: structure?.family ?? null, position: structure?.callPosition ?? null, distance: d, audibility: gain > 0 ? audibility === "none" ? "faint" : audibility : "none", trend: audibility === "none" ? null : trend, gain, proxy };
     if (this.call.structureId !== previousId) this.events.push({ type: "call_changed", structureId: this.call.structureId });
   }
 
@@ -504,7 +523,7 @@ export class FieldGame {
     if (along >= .45 && this.call.audibility !== "none" && !this.call.proxy && this.call.trend) {
       if (this.call.trend === "growing") {
         this.undertaking = resolveCommitment(this.undertaking, "confirmed");
-        this.speak("outcome_confirmed", `Walked the ${way.marker} as you asked, past the middle of the way.`, "The call is growing louder along this way.", { wayId: way.id }, 60, active.id);
+        this.speak("outcome_confirmed", `Walked the ${way.marker} as you asked, past the middle of the way.`, "The call is growing louder along this way.", { wayId: way.id }, 66, active.id);
       } else if (this.call.trend === "fading") {
         this.undertaking = resolveCommitment(this.undertaking, "fading");
         beginRepair(this.ariadne, now);
@@ -610,8 +629,8 @@ export class FieldGame {
       this.pendingLead = { wayId: way.id, fromNodeId: node.id, at: now + 3400 };
       next = ` Your body is about to go back along the ${way.marker}.`;
     }
-    if (relevant) this.speak("awakening_relevant", "Woke the last sleeping part of the structure.", `The fog thinned around the structure for good, a fragment of it joined your thread, and beyond the fog a new call has begun.${next}`, far, 95, commitmentId);
-    else this.speak("awakening_proxy", "Woke the last sleeping part of the structure.", `The fog thinned around the structure for good and a fragment of it joined your thread. No new call began; the call you were following is unchanged.${next}`, far ?? this.farForNow(), 95, commitmentId);
+    if (relevant) this.speak("awakening_relevant", "Woke the last sleeping part of the structure.", `Every part is awake. A clearing opened here and will stay. A fragment came to you. Beyond the fog, a new call.${next}`, far, 95, commitmentId);
+    else this.speak("awakening_proxy", "Woke the last sleeping part of the structure.", `Every part is awake. A clearing opened here and will stay. A fragment came to you. No new call; the one you were following is unchanged.${next}`, far ?? this.farForNow(), 95, commitmentId);
   }
 
   /** The far hearing she currently holds: the way of her open commitment, if any. */
@@ -622,8 +641,8 @@ export class FieldGame {
     return null;
   }
 
-  private speak(occasion: FieldOccasion, walkerDid: string, whatFollowed: string, far: FarHearing, priority: number, commitmentId: string | null, prompt = false) {
-    this.events.push({ type: "speak", occasion, walkerDid, whatFollowed, far, priority, commitmentId, ...(prompt ? { prompt } : {}) });
+  private speak(occasion: FieldOccasion, walkerDid: string, whatFollowed: string, far: FarHearing, priority: number, commitmentId: string | null, prompt = false, tone?: SpeakEvent["tone"]) {
+    this.events.push({ type: "speak", occasion, walkerDid, whatFollowed, far, priority, commitmentId, ...(prompt ? { prompt } : {}), ...(tone ? { tone } : {}) });
   }
 
   /* ------------------------------------------------------- perception */
@@ -690,8 +709,14 @@ export class FieldGame {
     return best;
   }
 
-  /** Clearings for the fog shader: position and radius, strongest first. */
-  clearings() { return this.structures.clearings().map(item => ({ x: item.position[0], z: item.position[1], radius: CLEARING_RADIUS, since: item.since })); }
+  /** Clearings, nearest the walker first, so a shader with a fixed number of slots always holds the ones in view. */
+  clearings(max = Infinity) {
+    const position = this.walker.position;
+    return this.structures.clearings()
+      .map(item => ({ x: item.position[0], z: item.position[1], radius: CLEARING_RADIUS, since: item.since, distance: distance(item.position, position) }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, max);
+  }
 
   /** Walker-relative description of a marker kind, for the page's captions. */
   static markerName(kind: WayMarkerKind) { return kind; }

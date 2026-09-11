@@ -61,7 +61,7 @@ test("a far label names a way that is no longer in view", () => {
 
 test("residue and footprints are described on the ways that carry them", () => {
   const card = fieldStageCard(byId("recognized_return"));
-  assert.match(card, /stitches to your left \(your light is already on these markers from an earlier choice\) \(the walker's footprints lead this way\)/);
+  assert.match(card, /stitches to your left \(your own light is already on these markers: you chose this way from here before\) \(the walker's footprints lead this way\)/);
   assert.match(card, /leaning stones to your right;?/);
   assert.doesNotMatch(card, /leaning stones to your right \(your light/);
 });
@@ -205,4 +205,49 @@ test("every scenario produces a card that mentions its occasion move and phase",
     assert.ok(card.includes(FIELD_PHASE_DIRECTIONS[scenario.request.phase]), scenario.id);
     assert.doesNotMatch(card, /undefined|null\b/, scenario.id);
   }
+});
+
+test("the guard refuses lines that read the card back, reuse her last opening, or name the wrong structure", () => {
+  const request = structuredClone(byId("commitment_early"));
+  request.turn.walkerDid = "Arrived at a place where 3 ways meet, along the stitches.";
+  request.turn.whatFollowed = "Your body went to the first marker of the posts ahead.";
+  request.recentMessages = [{ role: "ariadne", text: "There you are. We've stood here before, and I know the way." }, { role: "ariadne", text: "There you are. We've stood here again; the posts, then." }];
+  assert.ok(fieldReplyViolations("My body went to the first marker of the posts ahead, so come with me.", request).includes("echoes_card"), "seven consecutive words from the card is an echo");
+  assert.ok(fieldReplyViolations("There you are. We've stood here before, and the posts carry it now.", request).includes("repeats_opening"), "the same four opening words as a recent line");
+  assert.deepEqual(fieldReplyViolations("It's louder along the posts. Come on.", request), [], "a fresh line passes");
+  request.near.structure = { visible: true, family: "bells", state: "dormant", elementsRemaining: 4, direction: "ahead" };
+  request.turn.occasion = "structure_found";
+  assert.ok(fieldReplyViolations("Come close enough to touch it; the glass is waiting for your hand.", request).includes("wrong_structure_family"), "glass named at a bells structure");
+  assert.ok(!fieldReplyViolations("Come close enough to touch it; the bells are waiting for your hand.", request).includes("wrong_structure_family"));
+  request.near.structure.family = "teaching";
+  assert.ok(!fieldReplyViolations("Come a little closer to the low bell, then look at the page.", request).includes("wrong_structure_family"), "the teaching structure is bells and a page");
+  const direction = regenerationDirection(["echoes_card", "repeats_opening", "wrong_structure_family"]);
+  assert.match(direction, /own words/); assert.match(direction, /Begin differently/); assert.match(direction, /not the one in view/);
+});
+
+test("the card asks for a fresh opening and no echo, and the quiet arrival has its own deterministic line", () => {
+  const request = structuredClone(byId("commitment_early"));
+  request.recentMessages = [{ role: "ariadne", text: "The posts ahead carry it. Come on." }, { role: "walker", text: "ok" }, { role: "ariadne", text: "It's growing louder. Keep to the markers." }];
+  const card = fieldStageCard(request);
+  assert.match(card, /Your last lines began “The posts ahead carry”, “It's growing louder. Keep”; begin this one differently/);
+  assert.match(card, /never repeat its sentences or phrasing/);
+  request.turn.walkerDid = "Walked the stitches you chose to its end; nothing stands here and no call is audible from here. Arrived at a place where 3 ways meet.";
+  assert.match(fieldDeterministicLine(request), /^Not here\. I can't hear it from this place; it's further on, along the posts\.$/, "a silent place is not an admission: she cannot know her way was wrong from here");
+});
+
+test("her light stays hers, an earlier sentence is not said again, and stopping is never argued against", () => {
+  const request = structuredClone(byId("reply_stop"));
+  assert.match(fieldSystemPrompt("you"), /The light is yours/);
+  assert.ok(fieldReplyViolations("Your light is already on the posts; come on.", request).includes("misattributes_light"));
+  assert.ok(!fieldReplyViolations("My light is already on the posts; come on.", request).includes("misattributes_light"));
+  assert.ok(fieldReplyViolations("Stopping is yours, but stopping now would leave that clearing unmade. One more step together.", request).includes("argues_against_stopping"));
+  assert.deepEqual(fieldReplyViolations("It's yours to decide, and I won't argue. The next one is close, along the posts.", request).filter(v => v !== "names_walker"), []);
+  request.recentMessages = [{ role: "ariadne", text: "It cleared. There are more of them. Each one clears a little; enough of them and we'll see the whole of it." }];
+  assert.ok(fieldReplyViolations("Look at that. Each one clears a little; enough of them and we'll see the whole of it.", { ...request, turn: { ...request.turn, occasion: "awakening_relevant" } }).includes("repeats_earlier"), "a whole sentence said before is refused");
+  assert.ok(!fieldReplyViolations("Each one clears a little more of the fog, and my light is already on the posts.", { ...request, turn: { ...request.turn, occasion: "awakening_relevant" } }).includes("repeats_earlier"), "her idiom may recur");
+  assert.match(fieldDeterministicLine({ ...request, walkerMessage: "is there actually a way out of this?" }), /never seen it/);
+  assert.match(fieldDeterministicLine({ ...request, walkerMessage: "I want to stop." }), /yours to decide/);
+  const card = fieldProviderMessages({ ...request, walkerMessage: "is there actually a way out of this?", turn: { ...request.turn, occasion: "reply" } }).at(-1).content;
+  assert.match(card, /They are asking whether there is a way out/);
+  assert.match(fieldProviderMessages(request).at(-1).content, /They are speaking of stopping/);
 });
