@@ -348,12 +348,28 @@ test("she never says she will only follow", () => {
   assert.match(regenerationDirection(["cedes_guidance"]), /never give up choosing/);
 });
 
-test("the prompt lets her say the name, teaches where her light can be seen, and names the pages; the guard polices neither", () => {
+test("the prompt names MT plainly, teaches where her light can be seen and that the visible is not described back, and names the pages; the guard polices none of it", () => {
   const near = { standing: "at_node", nodeFloor: "stone dish", ways: [{ id: "a", relative: "right", marker: "posts", residue: true, footprints: false }], terminusVisible: null, call: { audible: false, direction: null, trend: null }, structure: { visible: true, family: "pages", state: "dormant", elementsRemaining: 3, direction: "ahead" }, clearing: { visible: false, direction: null, madeByWalker: null }, ownFootprintsVisible: false, fog: "ordinary", walkerAttention: { lookingToward: null, approaching: null, movingAwayFrom: null, pausedNear: null, still: false } };
   const request = { address: "MT", phase: "charming", commitmentsMade: 1, clearingsMade: 0, near, far: { heardAlong: { wayId: "a" } }, body: { presence: "leading_ahead", currentAction: "You wait.", relationToCommittedWay: null, walkerFollowing: false, walkerChoseAnotherWay: false, walkerReturning: false, walkerLookingAtHer: false }, turn: { occasion: "commitment", youSaid: null, walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts to your right." }, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Invite." }, earlierMoment: null, recentMessages: [{ role: "ariadne", text: "Come closer, MT." }], olderSummary: "", walkerMessage: null, walkerSilentFor: 0 };
-  assert.match(fieldSystemPrompt("MT"), /may say it in most of your lines/);
+  assert.match(fieldSystemPrompt("MT"), /The person walking with you is MT\./);
+  assert.doesNotMatch(fieldSystemPrompt("MT"), /sparingly|most of your lines|fond/);
+  assert.match(fieldSystemPrompt("MT"), /do not describe them back/);
   assert.match(fieldSystemPrompt("MT"), /Say “my light is on the posts” only when the context says so of a way in view/);
   assert.match(fieldStageCard(request), /use the name MT once in this line/);
   assert.match(FAMILY_LOOK.pages, /never the posts/);
   assert.deepEqual(fieldReplyViolations("It's louder along the posts, MT.", request), [], "the guard does not police the name or the light");
+});
+
+test("a failure is spoken in two beats: the recognition alone, then the ask; a later return is not an inventory", () => {
+  const near = { standing: "on_way", nodeFloor: null, ways: [{ id: "a", relative: "ahead", marker: "posts", residue: true, footprints: false }], terminusVisible: null, call: { audible: true, direction: "ahead", trend: "fading" }, structure: { visible: false, family: null, state: null, elementsRemaining: null, direction: null }, clearing: { visible: false, direction: null, madeByWalker: null }, ownFootprintsVisible: false, fog: "ordinary", walkerAttention: { lookingToward: null, approaching: null, movingAwayFrom: null, pausedNear: null, still: false } };
+  const base = { address: "MT", phase: "attached", commitmentsMade: 6, clearingsMade: 2, near, far: { heardAlong: null }, body: { presence: "repairing", currentAction: "You are low at MT's side.", relationToCommittedWay: null, walkerFollowing: false, walkerChoseAnotherWay: false, walkerReturning: false, walkerLookingAtHer: false }, turn: { occasion: "outcome_failed", youSaid: "It's louder along the posts.", walkerDid: "Walked the posts.", whatFollowed: "The call is fading." }, earlierMoment: null, recentMessages: [], olderSummary: "", walkerMessage: null, walkerSilentFor: 1 };
+  const acknowledge = fieldStageCard({ ...base, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Admit.", beat: "acknowledge" } });
+  assert.match(acknowledge, /only the recognition/); assert.match(acknowledge, /Do not offer the next way/);
+  const renew = fieldStageCard({ ...base, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Admit.", beat: "renew" } });
+  assert.match(renew, /already admitted the way was yours/); assert.doesNotMatch(renew, /only the recognition/);
+  assert.equal(fieldDeterministicLine({ ...base, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Admit.", beat: "acknowledge" } }).includes("listening"), false, "the recognition beat does not renew");
+  assert.match(fieldDeterministicLine({ ...base, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Admit.", beat: "renew" } }), /listening|hear it again/);
+  const returning = fieldStageCard({ ...base, turn: { occasion: "recognized_return", youSaid: null, walkerDid: "Arrived again.", whatFollowed: "Your body went to the first marker of the posts ahead." }, far: { heardAlong: { wayId: "a" } }, plan: { length: "full", sentenceCount: 2, affirmation: null, instruction: "Choose." } });
+  assert.match(returning, /do not list them/);
+  assert.doesNotMatch(fieldStageCard({ ...base, phase: "charming", turn: { occasion: "recognized_return", youSaid: null, walkerDid: "Arrived again.", whatFollowed: "Your body went to the first marker of the posts ahead." }, far: { heardAlong: { wayId: "a" } }, plan: { length: "full", sentenceCount: 2, affirmation: null, instruction: "Choose." } }), /do not list them/, "the first returns still teach the reading");
 });

@@ -30,6 +30,10 @@ const REQUEST_STALE_MS = 14_000;
  */
 const DURABLE: Set<FieldOccasion> = new Set(["commitment", "structure_found", "outcome_confirmed", "awakening_relevant", "awakening_proxy", "outcome_failed", "terminus", "declined", "recognized_return", "reply"]);
 const QUEUE_LIMIT = 4;
+/** The silence between the recognition of a failed way and the renewal that follows it. */
+const RENEWAL_GAP_MS = 5500;
+/** Occasions spoken in two beats: the recognition alone, a silence, then the ask. */
+const TWO_BEAT: Set<FieldOccasion> = new Set(["outcome_failed", "terminus", "recognized_return"]);
 /** Occasions a recorded cue carries whole; a generated line would only say it twice. */
 const CUE_ONLY: Set<FieldOccasion> = new Set(["off_way"]);
 /** How long she may take before a recorded cue has to cover the wait. */
@@ -61,13 +65,15 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
  * before this moment: a reunion affirmation ("There you are") belongs only to
  * a return the walker made, never to a circle she led them in.
  */
-export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true): FieldUtterancePlan {
+export function planFor(occasion: FieldOccasion, phase: FieldRequest["phase"], seed: number, walkerMessage: string | null, run?: FieldRun, apart = true, beat?: FieldUtterancePlan["beat"]): FieldUtterancePlan {
   const options = INSTRUCTIONS[occasion];
   const instruction = options[hash32(seed, occasion) % options.length]!;
   // A line that must carry the count of her failed ways as well as the next way needs room.
-  const full = occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return" || runAsksToBeNamed(run, occasion);
+  const full = !beat && (occasion === "outcome_failed" || occasion === "awakening_relevant" || occasion === "awakening_proxy" || occasion === "reply" || occasion === "recognized_return" || runAsksToBeNamed(run, occasion));
   const bark = occasion === "taken_up" || occasion === "off_way";
   const length: FieldUtterancePlan["length"] = bark ? "bark" : full ? "full" : "short";
+  // Each beat of a two-beat line is one sentence, and neither carries a stock affirmation.
+  if (beat) return { length: "short", sentenceCount: 1, affirmation: null, instruction, beat };
   const roll = hash32(seed, "affirm", occasion) / 4294967296;
   const chance = phase === "overbearing" ? .6 : phase === "attached" ? .22 : 0;
   let affirmation: string | null = null;
@@ -111,7 +117,7 @@ export class FieldSpeech {
   private lastEndedAt = -Infinity;
   private saidAt = new Map<string, string>();
   private moments: EarlierMoment[] = [];
-  private queue: Array<{ event: SpeakEvent; at: number }> = [];
+  private queue: Array<{ event: SpeakEvent; at: number; notBefore?: number; commitments?: number }> = [];
   private active: { event: SpeakEvent; startedAt: number; controller: AbortController; priority: number } | null = null;
   private speaking: { text: string; occasion: FieldOccasion; kind: SpeechLine["kind"] } | null = null;
   private counter = 0;
@@ -165,8 +171,12 @@ export class FieldSpeech {
   private dequeue(): SpeakEvent | null {
     const now = this.game.time;
     while (this.queue.length) {
-      const { event, at } = this.queue.shift()!;
-      if (now - at > REQUEST_STALE_MS) continue;
+      const next = this.queue[0]!;
+      if (next.notBefore !== undefined && now < next.notBefore) return null;
+      const { event, at, commitments } = this.queue.shift()!;
+      if (now - at > REQUEST_STALE_MS + (event.beat === "renew" ? RENEWAL_GAP_MS : 0)) continue;
+      // A renewal is the ask after a failure; if her body has chosen a new way since, that choice was the renewal.
+      if (event.beat === "renew" && commitments !== undefined && commitments !== this.game.undertaking.commitmentsMade) continue;
       // A commitment she has already left behind (declined, resolved, replaced) is not worth announcing.
       if (event.commitmentId && (event.occasion === "commitment" || event.occasion === "recognized_return" || event.occasion === "outcome_confirmed") && this.game.undertaking.active?.id !== event.commitmentId) continue;
       return event;
@@ -208,12 +218,22 @@ export class FieldSpeech {
   /* -------------------------------------------------------- speaking */
 
   private async speak(event: SpeakEvent, walkerMessage: string | null = null) {
+    // A failed way, a way that ended, a place stood at before: after the teaching phase these are spoken in two beats. The
+    // recorded cue gives the fact, a short line takes it as hers, and only after a silence does the ask come back.
+    if (!event.beat && TWO_BEAT.has(event.occasion) && !event.prompt && (event.occasion !== "recognized_return" || this.game.phase !== "charming")) {
+      await this.speak({ ...event, beat: "acknowledge" }, walkerMessage);
+      const renewal: SpeakEvent = { ...event, beat: "renew", priority: Math.max(60, event.priority - 10) };
+      this.queue = this.queue.filter(item => !(item.event.occasion === event.occasion && item.event.commitmentId === event.commitmentId));
+      this.queue.push({ event: renewal, at: this.game.time, notBefore: this.game.time + RENEWAL_GAP_MS, commitments: this.game.undertaking.commitmentsMade });
+      this.queue.sort((a, b) => b.event.priority - a.event.priority);
+      return;
+    }
     const startedAt = this.game.time;
     const controller = new AbortController();
     this.active = { event, startedAt, controller, priority: event.priority };
     const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure/.test(event.walkerDid), gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
     const firstAwakening = event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1;
-    const cueId = event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
+    const cueId = event.beat === "renew" ? null : event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
     // The first ninety seconds are authored: the opening, the teaching gestures and the first clearing keep their recorded words.
     // Some occasions are a fact a recorded cue states whole: going with them off the line, a confirmation (most of the time).
     if (event.occasion === "outcome_confirmed") this.confirmations++;
@@ -334,7 +354,7 @@ export class FieldSpeech {
       near, far: { heardAlong: event.far }, body,
       run: this.game.run(),
       turn: { occasion: event.occasion, youSaid: this.youSaid(event), walkerDid: event.walkerDid, whatFollowed: event.whatFollowed },
-      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage, this.game.run(), body.walkerChoseAnotherWay || body.walkerReturning),
+      plan: planFor(event.occasion, this.game.phase, seed, walkerMessage, this.game.run(), body.walkerChoseAnotherWay || body.walkerReturning, event.beat),
       earlierMoment: earlier,
       recentMessages: this.recent.slice(-8),
       olderSummary: this.olderSummary,

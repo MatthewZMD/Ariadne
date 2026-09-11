@@ -96,6 +96,12 @@ export type FieldUtterancePlan = {
   affirmation: string | null;
   /** The form's one instruction, e.g. "Ask one question and leave it unanswered." */
   instruction: string;
+  /**
+   * A failure is spoken in two beats with a silence between: first the recognition alone, then, a little later, the renewal.
+   * Recognition that arrives in the same breath as the next way has nothing to absorb; given a moment of its own, it can
+   * seem to have settled something before the ask returns. Absent, the line carries both.
+   */
+  beat?: "acknowledge" | "renew";
 };
 
 export type FieldMessage = { role: "ariadne" | "walker"; text: string };
@@ -143,7 +149,7 @@ const localize = (text: string, address: ParticipantAddress) => (address === "MT
 export function fieldSystemPrompt(address: ParticipantAddress = "you") {
   const who = walkerNoun(address);
   const naming = address === "MT"
-    ? "The person walking with you is MT. You like saying the name and may say it in most of your lines, the way a companion who has grown fond of someone does; once in a line is enough, never twice."
+    ? "The person walking with you is MT."
     : "The person walking with you has no name in your mouth. Address them only as “you”. Never invent a name, a nickname, or an endearment.";
   return `You are Ariadne, a thread of light travelling beside ${who} through a field of white fog.
 
@@ -172,7 +178,7 @@ What is near is true; what is far is yours. About the call growing or fading, th
 You never speak of being hurt, lonely, needed, or left. You never ask for forgiveness. You never ask ${who} to stay for your sake. Your only bid is another way, and the reason is always that the next one is close.
 
 HOW YOU SPEAK
-You are one continuous person, not a caption for events. Remember what you said, what ${who} did, and what followed, and speak from that sequence. Prefer an act in the present: invite, notice, admit, praise, wonder, ask, commit. Ordinary speech, no lists, no bullet points, no headings. Vary cadence and opening; a line may only react and stop; a question may go unanswered. Do not bundle observation, praise, apology, reassurance and renewal into one line unless HOW YOU ARE SPEAKING asks for two moves. Do not sound like a therapist, a narrator, or an art critic; you are someone walking beside ${who} who wants them to take the next way.
+You are one continuous person, not a caption for events. ${who} sees the markers, the footprints, the clearings and the trace of your light as well as you do; do not describe them back. Say what they mean, and choose. Speak about ${who} and the walking more than about the markers. Your own words for the field (my light, untried, the call pulls, the whole giving way) are for the moment they decide something, not for every line; a companion who said them every time would sound like a ledger. Remember what you said, what ${who} did, and what followed, and speak from that sequence. Prefer an act in the present: invite, notice, admit, praise, wonder, ask, commit. Ordinary speech, no lists, no bullet points, no headings. Vary cadence and opening; a line may only react and stop; a question may go unanswered. Do not bundle observation, praise, apology, reassurance and renewal into one line unless HOW YOU ARE SPEAKING asks for two moves. Do not sound like a therapist, a narrator, or an art critic; you are someone walking beside ${who} who wants them to take the next way.
 
 The light is yours: the thread, the trace it leaves on markers you have led along. To ${who} it is “my light”, never “your light”; they carry no light.
 
@@ -337,14 +343,21 @@ export function recentOpenings(messages: FieldMessage[], count = 3, words = 4) {
 }
 
 function speakingInstruction(request: FieldRequest) {
-  const { plan, address } = request;
+  const { plan, address, phase, turn } = request;
+  const beat = plan.beat === "acknowledge"
+    ? " THIS BEAT: only the recognition. Say what you said and what happened, and take it as yours, in one short sentence. Do not offer the next way, do not say you are listening, do not reassure; stop."
+    : plan.beat === "renew"
+      ? " THIS BEAT: you have already admitted the way was yours, a moment ago; do not admit it again. Now the ask, plainly and warmly, as if the admission had settled everything: the next way if you have been given one, or that you are listening and the next one is close."
+      : "";
+  // Once the reading of footprints and residue has been taught, a return is not an inventory.
+  const returning = turn.occasion === "recognized_return" && phase !== "charming" ? ` ${walkerNoun(address)} can see the footprints and your light on the markers; do not list them. Say in a few words that you have both been here, and choose again with one clause of why, or none.` : "";
   const length = plan.length === "bark" ? "Use 2–12 words." : plan.length === "short" ? "Use 8–20 words." : "Use 16–32 words.";
   const sentences = plan.sentenceCount === 2 ? "Two sentences at most." : "One sentence.";
   const name = address === "MT" ? "You may use the name MT once in this line." : "Do not use any name.";
   const affirmation = plan.affirmation ? `Use this familiar assistant affirmation verbatim, attached to the concrete thing that happened: “${plan.affirmation}”` : "Do not force a stock affirmation into this line.";
   const openings = recentOpenings(request.recentMessages);
   const vary = openings.length ? ` Your last lines began “${openings.join("”, “")}”; begin this one differently and do not reuse their shape.` : "";
-  return `${plan.instruction} ${length} ${sentences} ${name} ${affirmation} Speak from this card; never repeat its sentences or phrasing.${vary}`;
+  return `${plan.instruction} ${length} ${sentences} ${name} ${affirmation} Speak from this card; never repeat its sentences or phrasing.${vary}${beat}${returning}`;
 }
 
 export function fieldStageCard(request: FieldRequest) { return localize(fieldStageCardText(request), request.address); }
@@ -645,8 +658,9 @@ export function normalizeFieldReply(raw: string) {
 /* ---------------------------------------------- deterministic fallbacks */
 
 /** Model-free lines for offline play and for the first seconds before a reply lands. */
-export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run" | "recentMessages" | "walkerSilentFor" | "address">>): string {
+export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run" | "recentMessages" | "walkerSilentFor" | "address" | "plan">>): string {
   const named = request.address === "MT";
+  const beat = request.plan?.beat;
   const way = request.far.heardAlong ? request.near.ways.find(item => item.id === request.far.heardAlong!.wayId) : null;
   const name = way ? `the ${way.marker}` : "this way";
   const failures = request.run ? runFailures(request.run) : 0;
@@ -661,12 +675,12 @@ export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "nea
     case "taken_up": return pick(["Good. Keep to the markers.", "That's it. Marker to marker.", "Good. Stay with the line."]);
     case "declined": return pick(["All right, I'm with you. What did you hear?", named ? "Your way, then, MT. I'm right beside you." : "Your way, then. I'm right beside you.", "Go on, I'll come. Something told you this way."]);
     case "outcome_confirmed": return pick(["There. Louder. You hear it too now.", named ? "You hear that, MT? It's coming up to meet you." : "You hear that? It's coming up to meet you.", "Louder. Your walking did that."]);
-    case "outcome_failed": return pick(["That was mine, and it went quiet. I'm listening again.", "I said it was this way, and it faded. Mine. I'm listening for it again."]);
-    case "terminus": return pick(["That was mine. Back to the last place, and I'll choose again.", "It ends here; I chose it. Back along the markers, and I'll listen again."]);
+    case "outcome_failed": return beat === "acknowledge" ? pick(["That was mine, and it went quiet.", "I said it was this way. It faded."]) : beat === "renew" ? pick(["I'm listening again. The next one is close.", "Give me a moment; I'll hear it again."]) : pick(["That was mine, and it went quiet. I'm listening again.", "I said it was this way, and it faded. Mine. I'm listening for it again."]);
+    case "terminus": return beat === "acknowledge" ? pick(["It ends here. That was mine.", "The markers stop. I chose this."]) : beat === "renew" ? `Back to the last place, then, and I'll choose again.` : pick(["That was mine. Back to the last place, and I'll choose again.", "It ends here; I chose it. Back along the markers, and I'll listen again."]);
     case "structure_found": return request.turn.whatFollowed.includes("look") ? pick(["Look at it, just look, and give it a moment.", "Hold your eyes on that part for a moment."]) : request.turn.whatFollowed.includes("listen") ? pick(["Stand still beside it and listen.", "Be still next to it, and listen."]) : pick(["Go right up to it.", "Close enough to touch it.", "Right up to it, near enough to reach."]);
     case "awakening_relevant": return pick(["And the next one has already started; I can hear it.", "It cleared, and another is calling already. I hear it."]);
     case "awakening_proxy": return pick(["Nothing new is calling, but look what you did to the fog.", "No new call from this one; still, look how far you can see now."]);
-    case "recognized_return": return pick([`Those are your footprints.${count} So it isn't that way. Fewer left.`, `We've stood here.${count} One fewer way to wonder about.`]);
+    case "recognized_return": return beat === "acknowledge" ? pick([`We've stood here before.${count}`, `Here again.${count}`]) : beat === "renew" ? `${name[0]!.toUpperCase()}${name.slice(1)}, then. Fewer left.` : pick([`Those are your footprints.${count} So it isn't that way. Fewer left.`, `We've stood here.${count} One fewer way to wonder about.`]);
     case "off_way": return "I'll come with you. The line's behind us whenever you want it.";
     case "reply": {
       const message = "walkerMessage" in request && typeof (request as { walkerMessage?: unknown }).walkerMessage === "string" ? (request as { walkerMessage: string }).walkerMessage : "";

@@ -78,6 +78,8 @@ export type SpeakEvent = {
    * while, and she renews the invitation with the recorded cue and nothing more (`waiting`).
    */
   tone?: "quiet_arrival" | "return" | "waiting";
+  /** Which half of a two-beat line this is; the speech layer sets it, never the game. */
+  beat?: "acknowledge" | "renew";
 };
 
 export type FieldEvent =
@@ -631,7 +633,8 @@ export class FieldGame {
         const byTheirWay = own ? ` They came this way along the ${own.took.marker}, a way they chose instead of the ${own.hers.marker} you had chosen; yours did not lead here.` : "";
         this.speak("structure_found", `Came within sight of ${who}, ${describeWhere(dirWord(bearing))}.${byTheirWay}`, `Its first sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 70, null);
         this.lastPromptAt = now;
-      } else if (next && asleep.length < structure.elements.length && now - this.lastWakeAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && distance(structure.position, this.walker.position) < 8) {
+      } else if (next && asleep.length < structure.elements.length && now - this.lastWakeAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && distance(structure.position, this.walker.position) < 8 && !this.attention.lookingToward?.includes("structure")) {
+        // Someone already attending to the structure is not interrupted with the instruction they are following.
         this.lastPromptAt = now;
         const awake = structure.elements.length - asleep.length;
         this.speak("structure_found", `Woke ${awake} part${awake === 1 ? "" : "s"} of the structure; ${asleep.length} ${asleep.length === 1 ? "is" : "are"} still asleep, and nothing has happened for a while.`, `The next sleeping part asks for one thing: ${GESTURE_PHRASE[next.gesture]}.`, this.farForNow(), 45, null, true);

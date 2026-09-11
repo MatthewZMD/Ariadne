@@ -251,3 +251,30 @@ test("a renewed invitation to a walker who has not moved is the recorded cue alo
   assert.equal(audio.calls.spoken.length, 0);
   assert.equal(net.posts.length, 0, "no line is generated for a renewed invitation");
 });
+
+test("a failed way is spoken as the cue, a short recognition, a silence, and then the renewal; a new choice makes the renewal unnecessary", async () => {
+  const game = new FieldGame(19);
+  const audio = fakeAudio();
+  const net = fakeFetch(body => ({ message: body.request.plan.beat === "acknowledge" ? "That was mine, and it went quiet." : "I'm listening again; the next one is close.", source: "provider", modelUsed: "google/gemma-4-26b-a4b-it:free" }));
+  const speech = new FieldSpeech(game, audio, { sessionId: "s19", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  speech.handle({ type: "speak", occasion: "outcome_failed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is fading.", far: null, priority: 90, commitmentId: "commitment:1" });
+  await settle(speech);
+  assert.equal(audio.calls.cues.at(-1), "fading", "the recorded fact comes first");
+  assert.equal(net.posts.length, 1); assert.equal(net.posts[0].request.plan.beat, "acknowledge"); assert.equal(net.posts[0].request.plan.sentenceCount, 1);
+  assert.equal(audio.calls.spoken.at(-1).text, "That was mine, and it went quiet.");
+  run(game, 2); speech.update(); await settle(speech);
+  assert.equal(net.posts.length, 1, "the renewal waits out the silence");
+  run(game, 5); speech.update(); await settle(speech);
+  assert.equal(net.posts.length, 2); assert.equal(net.posts[1].request.plan.beat, "renew");
+  assert.equal(audio.calls.spoken.at(-1).text, "I'm listening again; the next one is close.");
+  assert.equal(audio.calls.cues.filter(id => id === "fading").length, 1, "the renewal has no cue of its own");
+
+  // A renewal after her body has already chosen a new way would contradict the choice; it is dropped.
+  speech.handle({ type: "speak", occasion: "terminus", walkerDid: "Walked to the end.", whatFollowed: "The way ends.", far: null, priority: 88, commitmentId: "commitment:2" });
+  await settle(speech);
+  assert.equal(net.posts.at(-1).request.plan.beat, "acknowledge");
+  game.undertaking = { ...game.undertaking, commitmentsMade: game.undertaking.commitmentsMade + 1 };
+  run(game, 7); speech.update(); await settle(speech);
+  assert.equal(net.posts.at(-1).request.plan.beat, "acknowledge", "no renewal after a new commitment");
+});
