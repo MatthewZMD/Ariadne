@@ -197,8 +197,9 @@ export class FieldGame {
   private lastWakeAt = -Infinity;
   /** The last moment a part woke or a sleeping part was answering: a stall is measured from here. */
   private lastProgressAt = -Infinity;
-  /** Sleeping parts she has already told the walker to stay with. */
+  /** Sleeping parts she has already told the walker to stay with, and how many times per structure: after two, the tone and the light carry it. */
   private attendingSpoken = new Set<string>();
+  private attendingLinesAt = new Map<string, number>();
   private returnsThisStage = 0;
   private returnsSpoken = 0;
   private teachingNudges = 0;
@@ -651,8 +652,8 @@ export class FieldGame {
         const near = distance(structure.position, this.walker.position) < 8;
         // A sleeping part is answering a held look or stillness: once, while it still has more than a second to go, she tells
         // them to stay exactly as they are. The wait is the experience; her line is what makes it legible as one.
-        if (answering && near && answering.attention >= ATTENDING_SPEAK_AT && GESTURE_DURATION[answering.gesture] * (1 - answering.attention) >= 1.1 && !this.attendingSpoken.has(answering.id) && now - this.lastWakeAt > 2500 && now - this.lastPromptAt > 4000) {
-          this.attendingSpoken.add(answering.id); this.lastPromptAt = now;
+        if (answering && near && answering.attention >= ATTENDING_SPEAK_AT && GESTURE_DURATION[answering.gesture] * (1 - answering.attention) >= 1.1 && !this.attendingSpoken.has(answering.id) && (this.attendingLinesAt.get(structure.id) ?? 0) < 2 && now - this.lastWakeAt > 2500 && now - this.lastPromptAt > 4000) {
+          this.attendingSpoken.add(answering.id); this.attendingLinesAt.set(structure.id, (this.attendingLinesAt.get(structure.id) ?? 0) + 1); this.lastPromptAt = now;
           const awake = structure.elements.length - asleep.length;
           this.speak("structure_attending", `Is ${GESTURE_DOING[answering.gesture]}, as its next sleeping part asks, and it is answering them slowly${awake ? `; ${awake} part${awake === 1 ? "" : "s"} of the structure ${awake === 1 ? "is" : "are"} awake and ${asleep.length} still asleep` : ""}.`, "It needs a few more seconds of exactly this, and then it will wake. Nothing else is asked of them now.", this.farForNow(), 66, null);
         } else if (next && asleep.length < structure.elements.length && !answering && near && now - this.lastProgressAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && (this.promptsAt.get(structure.id) ?? 0) < 3) {
