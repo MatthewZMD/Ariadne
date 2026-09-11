@@ -64,7 +64,8 @@ exportButton.onclick=async()=>{
   }
   for(const [name,w,h]of [['ariadne-title-card.png',1920,1080],['og.png',1200,630]]){
    show('field');assetReview.setState('awake');assetReview.setFog(true);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);
-   const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(renderer.domElement,0,0,w,h);
+   const cropHeight=name==='ariadne-title-card.png'?Math.round(h*1000/1080):h;
+   const c=document.createElement('canvas');c.width=w;c.height=cropHeight;const ctx=c.getContext('2d');ctx.drawImage(renderer.domElement,0,0,w,cropHeight,0,0,w,cropHeight);
    ctx.fillStyle='#586052';ctx.font=`300 ${Math.round(w*.055)}px sans-serif`;ctx.letterSpacing=`${Math.round(w*.008)}px`;ctx.fillText('ARIADNE',w*.08,h*.2);
    await save(name,c.toDataURL('image/png'));
   }
@@ -94,7 +95,8 @@ titleButton.onclick=async()=>{
  try{
   for(const [name,w,h] of [['ariadne-title-card.png',1920,1080],['og.png',1200,630]]){
    show('field');assetReview.setState('awake');assetReview.setFog(true);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);
-   const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d');ctx.drawImage(renderer.domElement,0,0,w,h);
+   const cropHeight=name==='ariadne-title-card.png'?Math.round(h*1000/1080):h;
+   const canvas=document.createElement('canvas');canvas.width=w;canvas.height=cropHeight;const ctx=canvas.getContext('2d');ctx.drawImage(renderer.domElement,0,0,w,cropHeight,0,0,w,cropHeight);
    ctx.fillStyle='#586052';ctx.font=`300 ${Math.round(w*.055)}px sans-serif`;ctx.letterSpacing=`${Math.round(w*.008)}px`;ctx.fillText('ARIADNE',w*.08,h*.2);
    const response=await fetch('/__asset_render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,data:canvas.toDataURL('image/png')})});
    if(!response.ok)throw new Error(`Export failed: ${response.status}`);
