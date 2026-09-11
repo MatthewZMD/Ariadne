@@ -12,7 +12,7 @@
 import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
 import type { FieldAudio } from "./audio.ts";
 import { cueForOccasion, deliveryFor } from "./audio.ts";
-import { FIELD_AFFIRMATIONS, fieldDeterministicLine, runAsksToBeNamed, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
+import { FIELD_AFFIRMATIONS, PARTICIPANT_ADDRESS, fieldDeterministicLine, runAsksToBeNamed, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
 import { hash32 } from "./graph.ts";
 
 export type SpeechLine = { id: string; occasion: FieldOccasion; text: string; kind: "generated" | "cue" | "fallback"; at: number; commitmentId: string | null };
@@ -88,7 +88,7 @@ const sameWords = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N
 
 /** Compact the older exchange into observable facts when the recent window overflows. */
 export function summarize(lines: FieldMessage[], previous: string) {
-  const facts = lines.map(line => (line.role === "ariadne" ? `Ariadne said: “${line.text}”` : `The walker said: “${line.text}”`));
+  const facts = lines.map(line => (line.role === "ariadne" ? `Ariadne said: “${line.text}”` : `${PARTICIPANT_ADDRESS === "MT" ? "MT" : "The walker"} said: “${line.text}”`));
   return `${previous ? `${previous}\n` : ""}${facts.join("\n")}`.slice(-3000);
 }
 
@@ -308,7 +308,7 @@ export class FieldSpeech {
     const seed = hash32(this.game.seed, this.counter, event.occasion);
     const earlier = this.earlierMoment(event);
     return {
-      address: this.options.address ?? "you",
+      address: this.options.address ?? PARTICIPANT_ADDRESS,
       phase: this.game.phase,
       commitmentsMade: this.game.undertaking.commitmentsMade,
       clearingsMade: this.game.clearingsMade,

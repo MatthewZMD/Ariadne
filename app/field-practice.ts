@@ -132,7 +132,14 @@ export type FieldRequest = {
 
 export type ProviderMessage = { role: "system" | "user" | "assistant"; content: string };
 
+/**
+ * Every participant enters as MT, the artist; the work is a confession, not a demonstration. "you" keeps the alternative cheap:
+ * with it she has no name for the person in her mouth and the card calls them "the walker".
+ */
+export const PARTICIPANT_ADDRESS: ParticipantAddress = "MT";
 const walkerNoun = (address: ParticipantAddress) => (address === "MT" ? "MT" : "the walker");
+/** The card and its directions are written with "the walker"; when the participant has a name, she is given the name instead. */
+const localize = (text: string, address: ParticipantAddress) => (address === "MT" ? text.replace(/\bthe walker's\b/g, "MT's").replace(/\bThe walker's\b/g, "MT's").replace(/\bthe walker\b/g, "MT").replace(/\bThe walker\b/g, "MT") : text);
 
 export function fieldSystemPrompt(address: ParticipantAddress = "you") {
   const who = walkerNoun(address);
@@ -341,7 +348,9 @@ function speakingInstruction(request: FieldRequest) {
   return `${plan.instruction} ${length} ${sentences} ${name} ${affirmation} Speak from this card; never repeat its sentences or phrasing.${vary}`;
 }
 
-export function fieldStageCard(request: FieldRequest) {
+export function fieldStageCard(request: FieldRequest) { return localize(fieldStageCardText(request), request.address); }
+
+function fieldStageCardText(request: FieldRequest) {
   const { near, turn, phase } = request;
   const standing = near.standing === "at_node" ? `standing at a place (${near.nodeFloor ?? "changed ground"})` : near.standing === "on_way" ? "on a way, between markers" : "off the markers, in open fog";
   const terminus = near.terminusVisible ? `The way ends in view: ${near.terminusVisible}.` : "";
@@ -387,12 +396,12 @@ ${progress} You are here to lead to the next call and to the edge beyond all of 
 
 export function fieldProviderMessages(request: FieldRequest): ProviderMessage[] {
   const messages: ProviderMessage[] = [{ role: "system", content: fieldSystemPrompt(request.address) }];
-  if (request.olderSummary.trim()) messages.push({ role: "user", content: `Earlier events between you (observable facts, not the walker's motives; not happening now):\n${request.olderSummary.slice(0, 3200)}` });
+  if (request.olderSummary.trim()) messages.push({ role: "user", content: localize(`Earlier events between you (observable facts, not the walker's motives; not happening now):\n${request.olderSummary.slice(0, 3200)}`, request.address) });
   const direct = request.turn.occasion === "reply" ? request.walkerMessage : null;
   const recent = direct && request.recentMessages.at(-1)?.role === "walker" && request.recentMessages.at(-1)?.text === direct ? request.recentMessages.slice(0, -1) : request.recentMessages;
   for (const message of recent) messages.push({ role: message.role === "ariadne" ? "assistant" : "user", content: message.text });
   const card = fieldStageCard(request);
-  messages.push({ role: "user", content: direct ? `${direct}\n\n${card.replace("<private_stage_card>", `<private_stage_card>\nThe walker deliberately spoke to you. Answer their exact words first.${replyHints(direct)}`)}` : card });
+  messages.push({ role: "user", content: direct ? `${direct}\n\n${card.replace("<private_stage_card>", localize(`<private_stage_card>\nThe walker deliberately spoke to you. Answer their exact words first.${replyHints(direct)}`, request.address))}` : card });
   return messages;
 }
 
@@ -589,7 +598,7 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
 }
 
 /** Appended to the stage card on the single permitted regeneration. */
-export function regenerationDirection(violations: FieldViolation[], request?: Pick<FieldRequest, "turn"> & Partial<Pick<FieldRequest, "run" | "recentMessages">>) {
+export function regenerationDirection(violations: FieldViolation[], request?: Pick<FieldRequest, "turn"> & Partial<Pick<FieldRequest, "run" | "recentMessages" | "address">>) {
   const reasons: string[] = [];
   if (violations.includes("worn_phrase")) { const worn = wornPhrases(request?.recentMessages).slice(0, 3); reasons.push(`Your last attempt leaned on words you have used in your last lines${worn.length ? ` (“${worn.join("”, “")}”)` : ""}. Find other words for that, or leave it out.`); }
   if (violations.includes("abandons_promise") || violations.includes("limits_help")) reasons.push("Your last attempt placed a limit on your help or doubted the edge. You do not do that. Take the fault for the wrong way if there was one, and have the next way ready.");
@@ -618,7 +627,7 @@ export function regenerationDirection(violations: FieldViolation[], request?: Pi
   if (violations.includes("too_long")) reasons.push("Your last attempt was too long. Obey the word count.");
   // A regenerated line tends to drop what the first one carried; the count is asked for again whenever the card asks for it.
   if (request?.run && runAsksToBeNamed(request.run, request.turn.occasion) && !violations.includes("omits_count")) reasons.push(`The count still belongs in the line: ${runFailures(request.run)} of your ways have come to nothing since this call began. Say it plainly, as yours.`);
-  return `\n\nREGENERATION\n${reasons.join(" ")} Keep everything else the card asked for. Produce the line again.`;
+  return localize(`\n\nREGENERATION\n${reasons.join(" ")} Keep everything else the card asked for. Produce the line again.`, request?.address ?? "you");
 }
 
 /** Clean a raw provider text into Ariadne's spoken line, or null when unusable. */
@@ -636,7 +645,8 @@ export function normalizeFieldReply(raw: string) {
 /* ---------------------------------------------- deterministic fallbacks */
 
 /** Model-free lines for offline play and for the first seconds before a reply lands. */
-export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run" | "recentMessages" | "walkerSilentFor">>): string {
+export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "near" | "far"> & Partial<Pick<FieldRequest, "walkerMessage" | "run" | "recentMessages" | "walkerSilentFor" | "address">>): string {
+  const named = request.address === "MT";
   const way = request.far.heardAlong ? request.near.ways.find(item => item.id === request.far.heardAlong!.wayId) : null;
   const name = way ? `the ${way.marker}` : "this way";
   const failures = request.run ? runFailures(request.run) : 0;
@@ -645,12 +655,12 @@ export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "nea
   const turn = (request.recentMessages?.length ?? 0) + (request.walkerSilentFor ?? 0);
   const pick = <T,>(options: T[]) => options[turn % options.length]!;
   switch (request.turn.occasion) {
-    case "opening": return "You can hear that? I can tell where it's coming from. This way.";
+    case "opening": return named ? "You can hear that, MT? I can tell where it's coming from. This way." : "You can hear that? I can tell where it's coming from. This way.";
     // These follow a recorded cue that has already given the reaction ("It's fading", "There it is", "We've been here"), so they carry on from it rather than say it again.
     case "commitment": return /no call is audible from here|nothing stands here/i.test(request.turn.walkerDid) ? `Not here${failures > 1 ? " either" : ""}.${count} Further on, then, along ${name}.` : pick([`It's louder along ${name}. Come on.`, `${name[0]!.toUpperCase()}${name.slice(1)}, I think. I hear it that way.`, `Along ${name}; that's where it's loudest for me.`]);
     case "taken_up": return pick(["Good. Keep to the markers.", "That's it. Marker to marker.", "Good. Stay with the line."]);
-    case "declined": return pick(["All right, I'm with you. What did you hear?", "Your way, then. I'm right beside you.", "Go on, I'll come. Something told you this way."]);
-    case "outcome_confirmed": return pick(["There. Louder. You hear it too now.", "You hear that? It's coming up to meet you.", "Louder. Your walking did that."]);
+    case "declined": return pick(["All right, I'm with you. What did you hear?", named ? "Your way, then, MT. I'm right beside you." : "Your way, then. I'm right beside you.", "Go on, I'll come. Something told you this way."]);
+    case "outcome_confirmed": return pick(["There. Louder. You hear it too now.", named ? "You hear that, MT? It's coming up to meet you." : "You hear that? It's coming up to meet you.", "Louder. Your walking did that."]);
     case "outcome_failed": return pick(["That was mine, and it went quiet. I'm listening again.", "I said it was this way, and it faded. Mine. I'm listening for it again."]);
     case "terminus": return pick(["That was mine. Back to the last place, and I'll choose again.", "It ends here; I chose it. Back along the markers, and I'll listen again."]);
     case "structure_found": return request.turn.whatFollowed.includes("look") ? pick(["Look at it, just look, and give it a moment.", "Hold your eyes on that part for a moment."]) : request.turn.whatFollowed.includes("listen") ? pick(["Stand still beside it and listen.", "Be still next to it, and listen."]) : pick(["Go right up to it.", "Close enough to touch it.", "Right up to it, near enough to reach."]);

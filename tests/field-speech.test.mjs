@@ -66,7 +66,7 @@ test("the opening is the fixed cue; a commitment asks the server with the stage 
   assert.equal(post.request.far.heardAlong.wayId, game.teachingWayId);
   assert.ok(post.request.near.ways.some(way => way.id === game.teachingWayId), "the far way is located among the near ways");
   assert.equal(post.request.phase, "charming");
-  assert.equal(post.request.address, "you");
+  assert.equal(post.request.address, "MT", "every participant enters as MT");
   assert.ok(post.request.recentMessages.some(message => /You can hear that/.test(message.text)), "her earlier line is in the recent messages");
   assert.deepEqual(audio.calls.cues.slice(1), [], "a quick line needs no cue to cover it: she does not say it twice");
   assert.equal(audio.calls.spoken.at(-1).text, "It's louder along the posts. Come on.");
@@ -158,7 +158,7 @@ test("plans vary by occasion and phase without ever forcing an affirmation early
   assert.equal(planFor("commitment", "overbearing", 1, null, { waysChosen: 4, walked: 4, arrivedAtNothing: 3, faded: 0, ended: 0, declined: 0, returns: 0 }).length, "full", "a line that must carry the count has room");
   assert.equal(planFor("taken_up", "attached", 1, null).length, "bark");
   assert.equal(planFor("outcome_failed", "attached", 1, null).length, "full");
-  assert.equal(summarize([{ role: "ariadne", text: "Come on." }, { role: "walker", text: "Where?" }], ""), "Ariadne said: “Come on.”\nThe walker said: “Where?”");
+  assert.equal(summarize([{ role: "ariadne", text: "Come on." }, { role: "walker", text: "Where?" }], ""), "Ariadne said: “Come on.”\nMT said: “Where?”");
 });
 
 test("a commitment made while she is mid-line is spoken when she is free, not lost", async () => {
