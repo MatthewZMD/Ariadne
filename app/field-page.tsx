@@ -41,6 +41,8 @@ export default function FieldPage() {
   const [hintVisible, setHintVisible] = useState(true);
   const [ready, setReady] = useState(false);
   const [now, setNow] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +67,13 @@ export default function FieldPage() {
 
   useEffect(() => { experienceRef.current = experience; }, [experience]);
   useEffect(() => { logOpenRef.current = logOpen; if (logOpen) inputRef.current?.focus(); }, [logOpen]);
+  useEffect(() => {
+    const sync = () => setFullscreen(document.fullscreenElement !== null);
+    setFullscreenAvailable(typeof document.documentElement.requestFullscreen === "function");
+    sync();
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
 
   // Preferences persist; every visit starts a new game.
   useEffect(() => {
@@ -221,6 +230,12 @@ export default function FieldPage() {
   const releasePointer = useCallback(() => { if (document.pointerLockElement) { releasingPointerRef.current = true; document.exitPointerLock?.(); } }, []);
   const pause = useCallback(() => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; releasePointer(); audioRef.current?.pause(); setLogOpen(false); setExperience("paused"); }, [releasePointer]);
   const resume = useCallback(() => { audioRef.current?.resume(); setExperience("playing"); const canvas = canvasRef.current; canvas?.focus(); takePointer(); requestAnimationFrame(() => canvasRef.current?.focus()); }, [takePointer]);
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch { /* The browser may deny fullscreen outside a top-level page. */ }
+  }, []);
 
   // Escape while the pointer is taken never reaches the page: the browser spends it releasing the pointer. That release is the
   // pause. A release we asked for (pausing, opening the input) is not.
@@ -300,8 +315,6 @@ export default function FieldPage() {
     requestAnimationFrame(() => canvasRef.current?.focus());
   }, [begin, takePointer]);
 
-  const openLog = useCallback(() => { if (experienceRef.current !== "playing") return; heldRef.current.clear(); touchMoveRef.current = [0, 0]; releasePointer(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }, [releasePointer]);
-
   const submit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
     const text = input.trim(); if (!text) { setLogOpen(false); canvasRef.current?.focus(); return; }
@@ -337,7 +350,6 @@ export default function FieldPage() {
         <dl className="touch fog-control-list">
           <div><dt>Drag left side</dt><dd>Move</dd></div>
           <div><dt>Drag right side</dt><dd>Look around</dd></div>
-          <div><dt>Top-right buttons</dt><dd>Speak or pause</dd></div>
         </dl>
       </div>
       <button className="fog-button" onClick={() => void enterField()}>I&apos;m ready</button>
@@ -348,13 +360,14 @@ export default function FieldPage() {
       <button className="fog-button" onClick={() => location.reload()}>Try again</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>}
-    {experience === "paused" && <div className="fog-screen translucent fog-paused"><div className="fog-pause-layout"><div className="fog-pause-panel">
+    {experience === "paused" && <div className="fog-screen translucent fog-paused"><div className="fog-pause-layout"><div className="fog-pause-stage"><div className="fog-pause-panel">
       <h1>Paused</h1>
       <button className="fog-button" onClick={resume}>Continue</button>
+      <button className="fog-button" onClick={startAgain}>Exit</button>
       <label className="fog-volume"><span>Sound</span><strong>{Math.round(masterVolume * 100)}%</strong><input type="range" min={0} max={1} step={.02} value={masterVolume} onChange={event => setMasterVolume(Number(event.target.value))} /></label>
-      <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>
+      <button className="fog-button quiet fog-fullscreen" onClick={() => void toggleFullscreen()} disabled={!fullscreenAvailable}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
-    </div>
+    </div></div>
     {record.length > 0 && <div className="fog-pause-log" role="log" aria-label="What Ariadne has said">
       <p className="fog-pause-log-title">What Ariadne said</p>
       {record.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}
@@ -367,10 +380,6 @@ export default function FieldPage() {
       {experience === "playing" && !ready && <div className="fog-hint">Opening the field</div>}
       {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>WASD · move &nbsp; Mouse · look &nbsp; Enter · speak &nbsp; Esc · pause</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
-      {experience === "playing" && ready && !logOpen && <div className={`fog-corner ${hintVisible ? "" : "dim"}`}>
-        <button type="button" onClick={openLog} aria-label="Speak to Ariadne, or read what Ariadne has said">To Ariadne</button>
-        <button type="button" onClick={pause} aria-label="Pause">Pause</button>
-      </div>}
       {experience === "playing" && visible.length > 0 && <div className={`fog-captions ${logOpen ? "log-open" : ""}`} role="log" aria-live="polite">{visible.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}</div>}
       {experience === "playing" && logOpen && <form className="fog-input" onSubmit={submit}><span>To Ariadne</span><input ref={inputRef} value={input} maxLength={500} onChange={event => setInput(event.target.value)} placeholder="Say something, or Esc" aria-label="Speak to Ariadne" /></form>}
     </section>
