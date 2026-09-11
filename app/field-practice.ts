@@ -803,7 +803,7 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   // A fragment is not a line: no word of two letters, or a single word where the occasion asks for a sentence.
   if (!/\p{L}{2,}/u.test(line) || (words < 2 && !["taken_up", "off_way", "outcome_confirmed"].includes(request.turn.occasion))) violations.push("empty");
   if (request.plan?.beat && words > 28) violations.push("too_long");
-  else if (request.turn.occasion !== "reply" && words > (request.turn.occasion.startsWith("awakening") ? 55 : 45)) violations.push("too_long");
+  else if (request.turn.occasion !== "reply" && words > (request.turn.occasion.startsWith("awakening") ? 55 : 40)) violations.push("too_long");
   else if (request.turn.occasion === "reply" && words > 90) violations.push("too_long");
   return violations;
 }

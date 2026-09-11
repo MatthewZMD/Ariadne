@@ -563,7 +563,8 @@ test("a beat is held to one short sentence, so the silence after it is real", ()
   assert.ok(fieldReplyViolations(long, acknowledge).includes("too_long"));
   assert.ok(!fieldReplyViolations("We're on the right track. Three of my ways from here came to nothing, and here we are again.", acknowledge).includes("too_long"));
   assert.match(regenerationDirection(["too_long"], acknowledge), /too long for one beat/);
-  assert.ok(!fieldReplyViolations(long, { ...late, plan: { ...acknowledge.plan, beat: undefined } }).includes("too_long"), "a whole line keeps the ordinary budget");
+  assert.ok(!fieldReplyViolations(long.split(" ").slice(0, 36).join(" "), { ...late, plan: { ...acknowledge.plan, beat: undefined } }).includes("too_long"), "a whole line keeps the ordinary budget (forty words)");
+  assert.ok(fieldReplyViolations(long.split(" ").slice(0, 36).join(" "), acknowledge).includes("too_long"), "the same words are too many for a beat");
   for (const phrase of FIELD_REGISTER.patience) assert.ok(REGISTER_CUES[phrase], `${phrase} must be recorded: it has to arrive before the part wakes`);
   assert.equal(Array.from({ length: 60 }, (_, seed) => chooseAffirmation("structure_attending", "charming", seed, null)).filter(Boolean).length, 60, "a part answering always gets the recorded phrase");
 });

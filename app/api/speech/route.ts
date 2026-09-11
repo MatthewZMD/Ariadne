@@ -46,6 +46,7 @@ export async function POST(request:Request){
   const freeTimeoutMs=Math.max(0,Number(process.env.ARIADNE_TTS_FREE_TIMEOUT_MS??"4500")||0);
   const input=prepareAriadneSpeech(body.text,body.delivery);
   let response:Response|null=null;
+  let audio:ArrayBuffer|null=null;
   // Preserve the voice across a free-tier outage. Never retry authorization or
   // malformed-request errors, and never permit an unbounded paid retry loop.
   for(const model of [ARIADNE_TTS_MODEL,ARIADNE_TTS_FALLBACK_MODEL]){
@@ -63,7 +64,17 @@ export async function POST(request:Request){
       console.warn("ARIADNE speech transport failed",{kind:error instanceof Error?error.name:"unknown"});
       return Response.json({error:"speech_provider_unavailable"},{status:502});
     }
-    if(response.ok)break;
+    if(response.ok){
+      // The slow part of the free voice is the audio itself, not the headers: the body read is bounded too, and a body that
+      // has not arrived in time is abandoned for the paid voice.
+      if(bounded){
+        const started=Date.now();
+        const body=await Promise.race([response.arrayBuffer().catch(()=>null),new Promise<null>(resolve=>setTimeout(()=>resolve(null),freeTimeoutMs))]);
+        if(body===null){console.warn("ARIADNE speech free voice too slow; trying the paid voice",{afterMs:Date.now()-started});await response.body?.cancel().catch(()=>{});response=null;continue;}
+        audio=body;
+      }
+      break;
+    }
     console.warn("ARIADNE speech provider rejected request",{model,status:response.status});
     const retryable=response.status===429||response.status>=500;
     await response.body?.cancel();
@@ -71,7 +82,7 @@ export async function POST(request:Request){
   }
   if(!response?.ok)return Response.json({error:"speech_provider_unavailable"},{status:502});
 
-  const audio=await response.arrayBuffer();
+  if(!audio)audio=await response.arrayBuffer();
   if(audio.byteLength===0||audio.byteLength>MAX_AUDIO_BYTES)return Response.json({error:"invalid_speech_audio"},{status:502});
   const contentType=response.headers.get("content-type")?.split(";")[0]||"audio/mpeg";
   if(!contentType.startsWith("audio/"))return Response.json({error:"invalid_speech_audio"},{status:502});
