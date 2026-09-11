@@ -394,6 +394,7 @@ export class FieldSpeech {
       olderSummary: this.olderSummary,
       walkerMessage,
       walkerSilentFor: this.walkerSilentFor,
+      walkedMinutes: Math.round(this.game.activeSeconds / 60),
     };
   }
 

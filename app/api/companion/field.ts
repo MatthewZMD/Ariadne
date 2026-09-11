@@ -59,6 +59,7 @@ export function parseFieldRequest(value: unknown, diagnostics?: { reason: string
   if (!(r.earlierMoment === null || (isRecord(r.earlierMoment) && isString(r.earlierMoment.fact, 400, 1) && nullable(r.earlierMoment.youSaid, (v): v is string => isString(v, 400)) && isString(r.earlierMoment.whatFollowed, 400, 1)))) return fail("earlier moment");
   if (!Array.isArray(r.recentMessages) || r.recentMessages.length > 14 || !r.recentMessages.every(message => isRecord(message) && isEnum(message.role, ["ariadne", "walker"] as const) && isString(message.text, 700, 1))) return fail("recent messages");
   if (!isString(r.olderSummary, 3200) || !nullable(r.walkerMessage, (v): v is string => isString(v, 700)) || !isInt(r.walkerSilentFor, 0, 10_000)) return fail("summary or message");
+  if (!(r.walkedMinutes === undefined || isInt(r.walkedMinutes, 0, 100_000))) return fail("walkedMinutes");
   if (turn.occasion === "reply" && !r.walkerMessage) return fail("reply without message");
   const run = r.run;
   if (!(run === undefined || (isRecord(run) && (["waysChosen", "walked", "arrivedAtNothing", "faded", "ended", "declined", "returns"] as const).every(key => isInt(run[key], 0, 100_000)) && (run.countNamedAt === undefined || isInt(run.countNamedAt, -1, 100_000))))) return fail("run");

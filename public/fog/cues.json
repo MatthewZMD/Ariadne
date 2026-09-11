@@ -183,7 +183,7 @@
     },
     {
       "id": "clearing-promise",
-      "text": "It cleared. There are more of them. Each one clears a little; enough of them and we’ll see the whole of it. I can already hear the next one.",
+      "text": "It cleared. There are more of them. Each one clears a little; enough of them and the fog will open, and we’ll be out. I can already hear the next one.",
       "url": "/fog/cues/clearing-promise.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"

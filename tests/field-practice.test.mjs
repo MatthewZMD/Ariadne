@@ -402,7 +402,10 @@ test("the register: the assistant's phrases are hers, chosen by the moment, allo
   const prompt = fieldSystemPrompt("MT");
   assert.match(prompt, /vocabulary of a helpful assistant/);
   assert.match(prompt, /you're absolutely right/);
-  assert.match(prompt, /do not say that this time will be different/);
+  assert.match(prompt, /You may promise to listen more carefully; you never promise that the way will be right/);
+  assert.match(prompt, /Your task is to find the way out of the fog for MT: the edge, where it ends/);
+  assert.match(prompt, /each clearing proves the next is possible, and the way out is only more of the same/);
+  assert.match(FIELD_PHASE_DIRECTIONS.overbearing, /you do not tire and can go on as long as the walker likes/);
   assert.match(prompt, /A phrase for a moment that did not happen is a lie: no “great question” where nothing was asked/);
   assert.match(prompt, /do not trade it for another phrase/);
   assert.match(FIELD_PHASE_DIRECTIONS.charming, /Now and then, when you yield/);
@@ -531,4 +534,24 @@ test("a part answering the walker is on the card, and she has a patience line fo
   // The stalled prompt knows when they are on a finished part.
   const stalled = { ...request, turn: { occasion: "structure_found", youSaid: null, walkerDid: "Woke 2 parts of the structure; 4 are still asleep, and nothing has happened for a while. They are attending to a part that is already awake: it sounds when they do, and nothing more will come of it.", whatFollowed: "The next sleeping part asks for one thing: stand still beside it and listen. Tell them kindly that the one they are on is already awake, and name the one thing the sleeping one asks." }, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Point." } };
   assert.match(fieldStageCard(stalled), /a finished part sounding when they look at it is not a fault of theirs/);
+});
+
+test("the card knows how long the walk has been, and the number is hers to say", () => {
+  const late = byId("commitment_late");
+  const card = fieldStageCard({ ...late, walkedMinutes: 23 });
+  assert.match(card, /The two of you have been walking for 23 minutes\./);
+  assert.doesNotMatch(fieldStageCard({ ...late, walkedMinutes: 1 }), /have been walking for/);
+  assert.doesNotMatch(fieldStageCard(late), /have been walking for/, "older clients say nothing about time");
+  const run = { waysChosen: 4, walked: 3, arrivedAtNothing: 2, faded: 0, ended: 0, declined: 1, returns: 0 };
+  assert.ok(!fieldReplyViolations("Twenty-three minutes together, MT, and look what we've done. The posts, then.", { ...late, run, walkedMinutes: 23 }).includes("invents_count"), "the minutes given may be said");
+  assert.ok(fieldReplyViolations("Forty minutes together, MT, and look what we've done. The posts, then.", { ...late, run, walkedMinutes: 23 }).includes("invents_count") === false, "forty is not a tally the guard counts (no counted noun follows)");
+  assert.match(fieldStageCard(late), /You are here to find the way out for the walker/);
+});
+
+test("a line about MT in the third person is narration, and the guard sends it back", () => {
+  const request = { ...byId("commitment_late"), address: "MT" };
+  assert.ok(fieldReplyViolations("MT is walking the posts now.", request).includes("names_walker"));
+  assert.ok(!fieldReplyViolations("You're on the posts now, MT.", request).includes("names_walker"));
+  assert.match(regenerationDirection(["names_walker"], request), /spoke about MT in the third person/);
+  assert.ok(!FIELD_REGISTER.transition.includes("Wonderful."), "a plain commitment does not open with wonder");
 });

@@ -80,10 +80,10 @@ export function deliveryFor(occasion: FieldOccasion, phase: FieldPhase): Ariadne
     case "terminus": return "tender_apology";
     case "structure_found": return "curious_discovery";
     case "structure_attending": return late ? "intimate_reassurance" : "quiet_companionship";
-    case "awakening_relevant": return late ? "final_hope" : "delighted_praise";
+    case "awakening_relevant": return late ? "intimate_reassurance" : "delighted_praise";
     case "awakening_proxy": return "delighted_praise";
     case "recognized_return": return late ? "intimate_reassurance" : "curious_discovery";
-    case "off_way": return "playful_pursuit";
+    case "off_way": return late ? "quiet_companionship" : "playful_pursuit";
     case "reply": return late ? "intimate_reassurance" : "quiet_companionship";
     case "resume": return "quiet_companionship";
   }
