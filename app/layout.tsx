@@ -5,17 +5,17 @@ import "./field.css";
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://ariadne-game.matthewzmd.workers.dev"),
   title: "Ariadne",
-  description: "A field of white fog, a thread of light beside you, and the next way. She is sure.",
+  description: "A field of white fog, a thread of light beside you, and the next way. Ariadne is sure.",
   icons: { icon: "/favicon.svg?v=field", shortcut: "/favicon.svg?v=field" },
   openGraph: {
     title: "Ariadne",
-    description: "A field of white fog, a thread of light beside you, and the next way. She is sure.",
+    description: "A field of white fog, a thread of light beside you, and the next way. Ariadne is sure.",
     images: [{ url: "/fog/images/og.png", width: 1200, height: 630, alt: "Ariadne, in fog" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Ariadne",
-    description: "A field of white fog, a thread of light beside you, and the next way. She is sure.",
+    description: "A field of white fog, a thread of light beside you, and the next way. Ariadne is sure.",
     images: ["/fog/images/og.png"],
   },
 };

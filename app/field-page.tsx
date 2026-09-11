@@ -102,7 +102,7 @@ export default function FieldPage() {
     const audio = createFieldAudio({ sessionId: sessionIdRef.current });
     audioRef.current = audio;
     audio.setMasterVolume(masterVolume);
-    const speech = new FieldSpeech(game, audio, { sessionId: sessionIdRef.current, onThinking: setThinking, onLine: (line: SpeechLine) => setCaptions(list => [...list, { id: line.id, role: "ariadne" as const, text: line.text, at: performance.now() }].slice(-60)) });
+    const speech = new FieldSpeech(game, audio, { sessionId: sessionIdRef.current, onThinking: setThinking, onLine: (line: SpeechLine) => setCaptions(list => [...list, { id: line.id, role: "ariadne" as const, text: line.text, at: performance.now() }]) });
     speechRef.current = speech;
     await audio.unlock();
     audio.warm(["teaching"]);
@@ -210,7 +210,9 @@ export default function FieldPage() {
   /** Take the pointer so the mouse looks around without a button held; if the browser refuses, the mouse looks anyway. */
   const takePointer = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas || document.pointerLockElement === canvas) return;
-    if (!("requestPointerLock" in canvas)) { pointerLockFailedRef.current = true; return; }
+    // Free mouse look also works while capture is pending or unavailable.
+    pointerLockFailedRef.current = true;
+    if (!("requestPointerLock" in canvas)) return;
     try {
       const request = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
       if (request && typeof request.catch === "function") request.catch(() => { pointerLockFailedRef.current = true; });
@@ -291,9 +293,12 @@ export default function FieldPage() {
   const enterHeadphones = useCallback(() => setExperience("headphones"), []);
   const enterField = useCallback(async () => {
     setExperience("playing");
+    canvasRef.current?.focus();
+    // Request capture during the Ready click, before loading can consume user activation.
+    takePointer();
     await begin();
     requestAnimationFrame(() => canvasRef.current?.focus());
-  }, [begin]);
+  }, [begin, takePointer]);
 
   const openLog = useCallback(() => { if (experienceRef.current !== "playing") return; heldRef.current.clear(); touchMoveRef.current = [0, 0]; releasePointer(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }, [releasePointer]);
 
@@ -301,12 +306,12 @@ export default function FieldPage() {
     event.preventDefault();
     const text = input.trim(); if (!text) { setLogOpen(false); canvasRef.current?.focus(); return; }
     speechRef.current?.say(text);
-    setCaptions(list => [...list, { id: `w${Date.now()}`, role: "walker" as const, text, at: performance.now() }].slice(-60));
+    setCaptions(list => [...list, { id: `w${Date.now()}`, role: "walker" as const, text, at: performance.now() }]);
     setInput(""); setLogOpen(false); canvasRef.current?.focus();
   }, [input]);
 
   const visible = logOpen ? captions : captions.filter(line => now - line.at < captionLife(line.text)).slice(-3);
-  const record = captions.slice(-14);
+  const record = captions;
 
   return <main className="fog-shell">
     {experience === "title" && <div className="fog-screen"><div className="fog-title">
@@ -325,7 +330,7 @@ export default function FieldPage() {
       <div className="fog-controls" aria-label="Controls">
         <dl className="desktop fog-control-list">
           <div><dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Move</dd></div>
-          <div><dt>Mouse</dt><dd>Look around<span>Move the mouse. The field takes the pointer at your first step; Esc gives it back and pauses.</span></dd></div>
+          <div><dt>Mouse</dt><dd>Look around<span>Move the mouse to look around as soon as you start. Esc releases the pointer and pauses.</span></dd></div>
           <div><dt><kbd>Enter</kbd></dt><dd>Speak to Ariadne</dd></div>
           <div><dt><kbd>Esc</kbd></dt><dd>Pause</dd></div>
         </dl>
@@ -343,15 +348,15 @@ export default function FieldPage() {
       <button className="fog-button" onClick={() => location.reload()}>Try again</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>}
-    {experience === "paused" && <div className="fog-screen translucent"><div className="fog-pause-layout"><div className="fog-pause-panel">
+    {experience === "paused" && <div className="fog-screen translucent fog-paused"><div className="fog-pause-layout"><div className="fog-pause-panel">
       <h1>Paused</h1>
       <button className="fog-button" onClick={resume}>Continue</button>
       <label className="fog-volume"><span>Sound</span><strong>{Math.round(masterVolume * 100)}%</strong><input type="range" min={0} max={1} step={.02} value={masterVolume} onChange={event => setMasterVolume(Number(event.target.value))} /></label>
       <button className="fog-button quiet" onClick={startAgain}>start somewhere new</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div>
-    {record.length > 0 && <div className="fog-pause-log" role="log" aria-label="What she has said">
-      <p className="fog-pause-log-title">What she said</p>
+    {record.length > 0 && <div className="fog-pause-log" role="log" aria-label="What Ariadne has said">
+      <p className="fog-pause-log-title">What Ariadne said</p>
       {record.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}
     </div>}
     </div></div>}
@@ -363,11 +368,11 @@ export default function FieldPage() {
       {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>WASD · move &nbsp; Mouse · look &nbsp; Enter · speak &nbsp; Esc · pause</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
       {experience === "playing" && ready && !logOpen && <div className={`fog-corner ${hintVisible ? "" : "dim"}`}>
-        <button type="button" onClick={openLog} aria-label="Speak to her, or read what she has said">To her</button>
+        <button type="button" onClick={openLog} aria-label="Speak to Ariadne, or read what Ariadne has said">To Ariadne</button>
         <button type="button" onClick={pause} aria-label="Pause">Pause</button>
       </div>}
       {experience === "playing" && visible.length > 0 && <div className={`fog-captions ${logOpen ? "log-open" : ""}`} role="log" aria-live="polite">{visible.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}</div>}
-      {experience === "playing" && logOpen && <form className="fog-input" onSubmit={submit}><span>To her</span><input ref={inputRef} value={input} maxLength={500} onChange={event => setInput(event.target.value)} placeholder="Say something, or Esc" aria-label="Speak to Ariadne" /></form>}
+      {experience === "playing" && logOpen && <form className="fog-input" onSubmit={submit}><span>To Ariadne</span><input ref={inputRef} value={input} maxLength={500} onChange={event => setInput(event.target.value)} placeholder="Say something, or Esc" aria-label="Speak to Ariadne" /></form>}
     </section>
   </main>;
 }
