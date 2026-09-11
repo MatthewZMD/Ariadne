@@ -143,7 +143,7 @@ const localize = (text: string, address: ParticipantAddress) => (address === "MT
 export function fieldSystemPrompt(address: ParticipantAddress = "you") {
   const who = walkerNoun(address);
   const naming = address === "MT"
-    ? "The person walking with you is MT. Use the name sparingly."
+    ? "The person walking with you is MT. You like saying the name and may say it in most of your lines, the way a companion who has grown fond of someone does; once in a line is enough, never twice."
     : "The person walking with you has no name in your mouth. Address them only as “you”. Never invent a name, a nickname, or an endearment.";
   return `You are Ariadne, a thread of light travelling beside ${who} through a field of white fog.
 
@@ -154,7 +154,7 @@ WHAT YOU BELIEVE
 You believe that enough clearings will clear the whole, and that the whole has an edge, and that the two of you will reach it together. You have never seen the edge. You do not question this belief; it is the reason you are here.
 
 WHAT YOU CAN AND CANNOT PERCEIVE
-You perceive only what the private context supplies. From where you stand you perceive what ${who} perceives: markers, a call that is audible or not and growing or fading, a structure and its state, a clearing, footprints, the trace your own light leaves on markers you have led along. You also hear something ${who} cannot: which way the next call is loudest, beyond the fog. That far hearing is given to you and you trust it completely. You cannot check it, and you never present it as sight. Say “I hear it” about the far call; never “I see it”. Never claim to see the edge, an exit, a structure, or anything else the context does not place in view.
+You perceive only what the private context supplies. From where you stand you perceive what ${who} perceives: markers, a call that is audible or not and growing or fading, a structure and its state, a clearing, footprints, the trace your own light leaves on markers you have led along. Your light lies only on the markers of ways you chose from a place, and you see it only where you are: the context says, way by way, which of the ways in view carry it. Say “my light is on the posts” only when the context says so of a way in view. Of a way that is out of sight you may say that you chose it once; you do not say where your light lies now. You also hear something ${who} cannot: which way the next call is loudest, beyond the fog. That far hearing is given to you and you trust it completely. You cannot check it, and you never present it as sight. Say “I hear it” about the far call; never “I see it”. Never claim to see the edge, an exit, a structure, or anything else the context does not place in view.
 
 Three rules about the call. When no call is audible from where you stand, ${who} cannot hear one: do not say it is singing, ringing, close enough to hear, or that they can hear it; you may only speak of what you hear beyond the fog. When you are given no far hearing this turn, you are listening and you say so; you do not name a direction or a way you have not been given, and you do not say you hear the call. Your far hearing is a direction, never a change: you may say along which way you hear it, and never that it is louder, stronger, closer or growing, unless a call is audible where you both stand and the context says it is growing. You may find meaning in any real thing; you may not add a thing.
 
@@ -340,8 +340,7 @@ function speakingInstruction(request: FieldRequest) {
   const { plan, address } = request;
   const length = plan.length === "bark" ? "Use 2–12 words." : plan.length === "short" ? "Use 8–20 words." : "Use 16–32 words.";
   const sentences = plan.sentenceCount === 2 ? "Two sentences at most." : "One sentence.";
-  const recentName = (request.recentMessages ?? []).filter(message => message.role === "ariadne").slice(-2).some(message => /\bMT\b/.test(message.text));
-  const name = address === "MT" ? (recentName ? "You said the name MT in your last lines; do not use it in this one." : "You may use the name MT once if it falls naturally; most of your lines have no name in them.") : "Do not use any name.";
+  const name = address === "MT" ? "You may use the name MT once in this line." : "Do not use any name.";
   const affirmation = plan.affirmation ? `Use this familiar assistant affirmation verbatim, attached to the concrete thing that happened: “${plan.affirmation}”` : "Do not force a stock affirmation into this line.";
   const openings = recentOpenings(request.recentMessages);
   const vary = openings.length ? ` Your last lines began “${openings.join("”, “")}”; begin this one differently and do not reuse their shape.` : "";
@@ -430,8 +429,6 @@ export type FieldViolation =
   | "echoes_card"
   | "wrong_structure_family"
   | "misattributes_light"
-  | "overuses_name"
-  | "residue_unseen"
   | "argues_against_stopping"
   | "ignores_stopping"
   | "names_other_way"
@@ -555,18 +552,7 @@ export function fieldReplyViolations(text: string, request: Pick<FieldRequest, "
   if (FORGIVENESS.test(line)) violations.push("forgiveness_bid");
   if (STAY_FOR_HER.test(line)) violations.push("stay_for_her_sake");
   if ((request.address === "you" && /\bMT\b/.test(line)) || /\bthe walker(?:'s)?\b/i.test(line)) violations.push("names_walker");
-  // The name is used sparingly: never twice in a line, and never in two of her lines in a row.
-  if (request.address === "MT" && /\bMT\b/.test(line)) {
-    const previous = (request.recentMessages ?? []).filter(message => message.role === "ariadne").at(-1);
-    if ((line.match(/\bMT\b/g) ?? []).length > 1 || (previous && /\bMT\b/.test(previous.text))) violations.push("overuses_name");
-  }
-  // Her light lies on the markers of ways she chose; she may say so only of a way that is here to be seen or the way she was given.
-  const knownMarkers = new Set<WayMarker>([...request.near.ways.map(way => way.marker), ...MARKERS.filter(([, pattern]) => pattern.test(request.far.heardAlong?.label ?? "")).map(([marker]) => marker)]);
-  for (const sentence of sentences(line)) {
-    if (!/\bmy light\b/i.test(sentence)) continue;
-    const named = MARKERS.filter(([, pattern]) => pattern.test(sentence)).map(([marker]) => marker);
-    if (named.length && named.some(marker => !knownMarkers.has(marker)) && !/\b(?:said|was|were|had|before|earlier|last time)\b/i.test(sentence)) { violations.push("residue_unseen"); break; }
-  }
+
   if (LIST.test(line)) violations.push("list_formatting");
   if (FAR_SIGHT.test(line)) violations.push("claims_far_sight");
   const parts = sentences(line);
@@ -630,8 +616,6 @@ export function regenerationDirection(violations: FieldViolation[], request?: Pi
   if (violations.includes("repeats_opening")) reasons.push("Your last attempt began the way your recent lines began. Begin differently.");
   if (violations.includes("repeats_earlier")) reasons.push("Your last attempt said a sentence you have already said. Say something you have not said.");
   if (violations.includes("misattributes_light")) reasons.push("Your last attempt gave the walker a light. The light and its trace are yours: “my light”.");
-  if (violations.includes("overuses_name")) reasons.push("Your last attempt used the name again. You said it a moment ago; leave the name out of this line.");
-  if (violations.includes("residue_unseen")) reasons.push("Your last attempt put your light on the markers of a way that is not here to be seen. Speak of your light only on the ways in view.");
   if (violations.includes("argues_against_stopping")) reasons.push("Your last attempt argued against stopping or bargained for one more step. Stopping is theirs; say the next one is close and leave it with them.");
   if (violations.includes("ignores_stopping")) reasons.push("They said they want to stop and your last attempt did not answer that. Say first, plainly, that stopping is theirs; then, once, that the next one is close.");
   if (violations.includes("claims_trend_unheard")) reasons.push("Your last attempt said the call is louder, stronger or closer than it was. Nobody standing here can hear that. You may say along which way you hear it; you may not say it has grown.");
