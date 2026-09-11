@@ -173,6 +173,10 @@ export class FieldRenderer {
   private height = 1;
   private streaming = false;
   private streamDirty = true;
+  /** Resolves once every model is loaded and every shader the field can need has been compiled; the page waits on it. */
+  readonly ready: Promise<void>;
+  /** Kept alive so the compiled programs stay cached; never drawn. */
+  private readonly warmed = new THREE.Group();
 
   constructor(canvas: HTMLCanvasElement, game: FieldGame) {
     this.game = game;
@@ -215,7 +219,14 @@ export class FieldRenderer {
       sprite.scale.set(9, 5, 1); this.fogPatches.push(sprite); this.scene.add(sprite);
     }
     for (const family of Object.keys(FAMILY_COLOR) as StructureFamily[]) this.elementSpriteMaterials.set(family, new THREE.SpriteMaterial({ map: this.discTexture, color: new THREE.Color(FAMILY_COLOR[family]), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-    void this.warm();
+    // Her thread exists from the start, hidden, so its shaders compile with everything else rather than at her arrival.
+    this.ribbon = new THREE.Mesh(this.threadGeometry.core, ribbonMaterial(0xe9d59c, .95));
+    this.halo = new THREE.Mesh(this.threadGeometry.halo, ribbonMaterial(0xf6e7b4, .28));
+    this.ribbon.frustumCulled = false; this.halo.frustumCulled = false;
+    this.ribbon.renderOrder = 5; this.halo.renderOrder = 4;
+    this.ribbon.visible = false; this.halo.visible = false;
+    this.scene.add(this.ribbon, this.halo);
+    this.ready = this.warm();
   }
 
   /* --------------------------------------------------------- loading */
@@ -226,10 +237,64 @@ export class FieldRenderer {
     return promise;
   }
 
+  /**
+   * Load every model the field can show and compile every shader it can need before the first frame. A structure emerging
+   * from the fog, a way of a new marker kind, a clearing, an awakening: each used to compile its programs on first sight,
+   * which on many machines is a stall of a second or more at exactly the moment something appears. Compiled once here,
+   * against the real scene's fog and lights, they are ready when the world needs them.
+   */
   private async warm() {
-    const ids = ["marker-stone-01", "marker-stone-02", "marker-stone-03", "marker-post-01", "marker-post-02", "marker-post-03", "marker-stitch-01", "marker-stitch-02", "structure-teaching", "node-dish-01", "node-dish-02", "node-pool-01", "node-post-ring-01", "terminus-collapse-01", "terminus-collapse-02", "terminus-water-01", "fragment-bells"];
-    await Promise.all(ids.map(id => this.model(id)));
-    this.lastStreamAt = -Infinity;
+    const markers = Object.values(MARKER_MODELS).flat();
+    const floors = Object.values(FLOOR_MODELS).flat();
+    const families = Object.keys(FAMILY_COLOR) as StructureFamily[];
+    const structures = families.map(family => `structure-${family}`);
+    const fragments = [...new Set(families.map(family => `fragment-${family === "teaching" ? "bells" : family}`))];
+    const ids = [...markers, ...floors, ...structures, ...fragments];
+    const loaded = await Promise.all(ids.map(id => this.model(id).then(model => [id, model] as const)));
+    if (this.disposed) return;
+    try {
+      // Markers draw as instances, which is a different program from the same material on a plain mesh: make the real instanced meshes now.
+      for (const id of markers) await this.markerInstances(id);
+      for (const [id, model] of loaded) {
+        if (!model || markers.includes(id)) continue;
+        const root = instantiate(model.scene);
+        // Both states of a structure at once, so the awake materials are compiled before the first awakening.
+        root.traverse(node => { if (node.name === "dormant" || node.name === "awake") node.visible = true; });
+        if (id.startsWith("fragment-")) root.traverse(node => { const m = node as THREE.Mesh; if (m.isMesh) for (const material of Array.isArray(m.material) ? m.material : [m.material]) (material as THREE.MeshStandardMaterial).fog = false; });
+        this.warmed.add(root);
+      }
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 8), this.clearingMaterial()); disc.rotation.x = -Math.PI / 2; this.warmed.add(disc);
+      for (const material of this.elementSpriteMaterials.values()) this.warmed.add(new THREE.Sprite(material));
+      this.warmed.add(new THREE.Sprite(this.pulseSprite.material));
+      this.warmed.position.set(0, -50, 0);
+      this.scene.add(this.warmed);
+      await this.renderer.compileAsync(this.scene, this.camera);
+    } catch (error) { console.warn("field shader warm-up skipped", error); }
+    finally { this.scene.remove(this.warmed); }
+    this.lastStreamAt = -Infinity; this.streamDirty = true;
+  }
+
+  private clearingMaterial() { return applyFieldFog(new THREE.MeshBasicMaterial({ map: this.discTexture, color: 0xfff7ea, transparent: true, opacity: .35, depthWrite: false })); }
+
+  /** The instanced meshes for one marker model, made once. */
+  private async markerInstances(id: string) {
+    let meshes = this.markerMeshes.get(id);
+    if (meshes) return meshes;
+    const loaded = await this.model(id); if (!loaded || this.disposed) return null;
+    meshes = this.markerMeshes.get(id); if (meshes) return meshes;
+    const made: THREE.InstancedMesh[] = [];
+    loaded.scene.updateMatrixWorld(true);
+    loaded.scene.traverse(node => {
+      const mesh = node as THREE.Mesh; if (!mesh.isMesh) return;
+      const material = (Array.isArray(mesh.material) ? mesh.material[0]! : mesh.material).clone() as THREE.MeshStandardMaterial;
+      if (/emissive/.test(material.name)) { material.emissiveIntensity = 0; material.emissive = new THREE.Color(0x000000); }
+      applyFieldFog(material);
+      const geometry = mesh.geometry.clone(); geometry.applyMatrix4(mesh.matrixWorld);
+      const instanced = new THREE.InstancedMesh(geometry, material, 512); instanced.count = 0; instanced.frustumCulled = false;
+      this.scene.add(instanced); made.push(instanced);
+    });
+    this.markerMeshes.set(id, made);
+    return made;
   }
 
   resize(width: number, height: number) {
@@ -260,22 +325,7 @@ export class FieldRenderer {
       }
     }
     for (const [id, matrices] of counts) {
-      let meshes = this.markerMeshes.get(id);
-      if (!meshes) {
-        const loaded = await this.model(id); if (!loaded || this.disposed) continue;
-        meshes = [];
-        loaded.scene.updateMatrixWorld(true);
-        loaded.scene.traverse(node => {
-          const mesh = node as THREE.Mesh; if (!mesh.isMesh) return;
-          const material = (Array.isArray(mesh.material) ? mesh.material[0]! : mesh.material).clone() as THREE.MeshStandardMaterial;
-          if (/emissive/.test(material.name)) { material.emissiveIntensity = 0; material.emissive = new THREE.Color(0x000000); }
-          applyFieldFog(material);
-          const geometry = mesh.geometry.clone(); geometry.applyMatrix4(mesh.matrixWorld);
-          const instanced = new THREE.InstancedMesh(geometry, material, 512); instanced.count = 0; instanced.frustumCulled = false;
-          this.scene.add(instanced); meshes!.push(instanced);
-        });
-        this.markerMeshes.set(id, meshes);
-      }
+      const meshes = await this.markerInstances(id); if (!meshes) continue;
       const count = Math.min(512, matrices.length);
       for (const mesh of meshes) { for (let i = 0; i < count; i++) mesh.setMatrixAt(i, matrices[i]!); mesh.count = count; mesh.instanceMatrix.needsUpdate = true; }
     }
@@ -331,7 +381,7 @@ export class FieldRenderer {
     for (const clearing of game.clearings()) {
       const key = `${clearing.x},${clearing.z}`;
       if (this.clearingDiscs.has(key)) continue;
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(CLEARING_RADIUS * .9, 48), applyFieldFog(new THREE.MeshBasicMaterial({ map: this.discTexture, color: 0xfff7ea, transparent: true, opacity: .35, depthWrite: false })));
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(CLEARING_RADIUS * .9, 48), this.clearingMaterial());
       disc.rotation.x = -Math.PI / 2; disc.position.set(clearing.x, .02, clearing.z);
       this.clearingDiscs.set(key, disc); this.scene.add(disc);
     }
@@ -483,15 +533,8 @@ export class FieldRenderer {
         this.threadUpdatedAt = frame.time;
         this.threadGeometry.update(body.trail, { x: body.position[0], y: body.height, z: body.position[1] }, .02 + frame.voiceLevel * .008, .06 + (brightness - 1) * .03);
       }
-      if (!this.ribbon) {
-        this.ribbon = new THREE.Mesh(this.threadGeometry.core, ribbonMaterial(0xe9d59c, .95));
-        this.halo = new THREE.Mesh(this.threadGeometry.halo, ribbonMaterial(0xf6e7b4, .28));
-        this.ribbon.frustumCulled = false; this.halo.frustumCulled = false;
-        this.ribbon.renderOrder = 5; this.halo.renderOrder = 4;
-        this.scene.add(this.ribbon, this.halo);
-      }
-      this.ribbon.visible = true; this.halo!.visible = true;
-      const coreMaterial = this.ribbon.material as THREE.ShaderMaterial, haloMaterial = this.halo!.material as THREE.ShaderMaterial;
+      this.ribbon!.visible = true; this.halo!.visible = true;
+      const coreMaterial = this.ribbon!.material as THREE.ShaderMaterial, haloMaterial = this.halo!.material as THREE.ShaderMaterial;
       coreMaterial.uniforms.uOpacity!.value = Math.min(1, .65 + .35 * brightness);
       haloMaterial.uniforms.uOpacity!.value = .18 + .14 * brightness + frame.voiceLevel * .15;
       (coreMaterial.uniforms.uColor!.value as THREE.Color).set(0xe9d59c).lerp(new THREE.Color(0xfff1c8), Math.max(0, brightness - 1) * .5);

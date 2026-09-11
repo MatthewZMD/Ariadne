@@ -10,7 +10,7 @@
  * the middle of when the tab closed.
  */
 import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
-import type { FieldAudio } from "./audio.ts";
+import type { FieldAudio, VoiceResult } from "./audio.ts";
 import { cueForOccasion, deliveryFor } from "./audio.ts";
 import { FIELD_AFFIRMATIONS, PARTICIPANT_ADDRESS, fieldDeterministicLine, runAsksToBeNamed, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
 import { hash32 } from "./graph.ts";
@@ -121,6 +121,7 @@ export class FieldSpeech {
   preferredModelId: string | null = null;
   private lastEventByOccasion = new Map<FieldOccasion, number>();
   private confirmations = 0;
+  private shown = new Set<string>();
 
   constructor(game: FieldGame, audio: FieldAudio, options: SpeechOptions) {
     this.game = game; this.audio = audio; this.options = options;
@@ -237,7 +238,11 @@ export class FieldSpeech {
     let cuePromise: Promise<unknown> = Promise.resolve();
     let cueTimer: ReturnType<typeof setTimeout> | null = null;
     const cueText = cueId && !this.options.offline ? this.cueTexts.get(cueId) ?? null : null;
-    const startCue = () => { if (!cueId || !cueText) return; this.caption(event, cueText, "cue"); cuePromise = this.audio.voice.playCue(cueId); };
+    const startCue = () => {
+      if (!cueId || !cueText) return;
+      const line = this.caption(event, cueText, "cue", false);
+      cuePromise = this.audio.voice.playCue(cueId, { onStart: () => this.show(line) }).then(result => { if (result !== "interrupted") this.show(line); });
+    };
     const immediate = new Set<FieldOccasion>(["outcome_failed", "terminus", "declined", "structure_found", "awakening_proxy", "awakening_relevant", "recognized_return", "outcome_confirmed"]);
     if (cueText && (immediate.has(event.occasion) || event.tone === "quiet_arrival" || event.tone === "return")) startCue();
     else if (cueText) cueTimer = setTimeout(() => { if (!controller.signal.aborted) startCue(); }, CUE_AFTER_MS);
@@ -271,28 +276,42 @@ export class FieldSpeech {
     if (this.active && this.active.controller === controller) { this.active = null; this.lastEndedAt = this.game.time; }
   }
 
-  /** Voice a line: a recorded cue by id, or generated speech; captions either way. */
+  /**
+   * Voice a line: a recorded cue by id, or generated speech. The line is remembered at once, but it is shown when her voice
+   * begins, so the words never sit on the screen for the seconds the voice takes to arrive; if the voice fails, they are shown then.
+   */
   private async voiceLine(event: SpeakEvent, text: string, cueId: string | null, kind: SpeechLine["kind"], startAtFraction = 0) {
-    this.caption(event, text, kind);
+    const line = this.caption(event, text, kind, false);
+    const show = () => this.show(line);
     this.speaking = { text, occasion: event.occasion, kind };
-    if (cueId && kind === "cue") await this.audio.voice.playCue(cueId);
-    else if (this.audio.unlocked) await this.audio.voice.speak(text, `u${Date.now().toString(36)}${++this.counter}`, deliveryFor(event.occasion, this.game.phase), { startAtFraction });
+    let result: VoiceResult = "failed";
+    if (cueId && kind === "cue") result = await this.audio.voice.playCue(cueId, { onStart: show });
+    else if (this.audio.unlocked) result = await this.audio.voice.speak(text, `u${Date.now().toString(36)}${++this.counter}`, deliveryFor(event.occasion, this.game.phase), { startAtFraction, onStart: show });
+    if (result !== "interrupted") show();
     this.speaking = null;
     this.lastEndedAt = this.game.time;
   }
 
-  private caption(event: SpeakEvent, text: string, kind: SpeechLine["kind"]) {
+  /** Put a remembered line on the screen, once. */
+  private show(line: SpeechLine) {
+    if (this.shown.has(line.id)) return;
+    this.shown.add(line.id); if (this.shown.size > 200) this.shown = new Set([...this.shown].slice(-100));
+    this.options.onLine?.(line);
+  }
+
+  private caption(event: SpeakEvent, text: string, kind: SpeechLine["kind"], showNow = true) {
     const line: SpeechLine = { id: `a${++this.counter}`, occasion: event.occasion, text, kind, at: this.game.time, commitmentId: event.commitmentId };
     this.lastLine = line;
     if (event.commitmentId && (event.occasion === "commitment" || event.occasion === "recognized_return" || event.occasion === "awakening_relevant" || event.occasion === "awakening_proxy")) this.saidAt.set(event.commitmentId, text);
     if (kind !== "cue" || !this.recent.length || this.recent.at(-1)!.text !== text) this.remember({ role: "ariadne", text });
     this.walkerSilentFor++;
     this.game.memory.caption({ id: line.id, role: "ariadne", text, time: line.at, kind: kind === "cue" ? "cue" : "generated" });
-    this.options.onLine?.(line);
+    if (showNow) this.show(line);
     if (event.occasion === "outcome_failed" || event.occasion === "terminus") this.moments.push({ fact: `You chose a way and it ${event.occasion === "terminus" ? "ended" : "went quiet"}.`, youSaid: this.saidAt.get(event.commitmentId ?? "") ?? null, whatFollowed: event.occasion === "terminus" ? "The markers stopped and you turned back." : "The call faded and you said you were listening again.", at: this.game.time, weight: 2 });
     if (event.occasion === "declined") this.moments.push({ fact: "The walker took a different way from the one you chose.", youSaid: this.saidAt.get(event.commitmentId ?? "") ?? null, whatFollowed: "You went with them.", at: this.game.time, weight: 1 });
     if (event.occasion === "awakening_relevant" || event.occasion === "awakening_proxy") this.moments.push({ fact: "The walker woke a structure and the fog thinned around it.", youSaid: null, whatFollowed: event.occasion === "awakening_relevant" ? "A new call began beyond the fog." : "No new call began.", at: this.game.time, weight: 1.5 });
     this.moments = this.moments.slice(-12);
+    return line;
   }
 
   private remember(message: FieldMessage) {
@@ -365,7 +384,7 @@ export class FieldSpeech {
     if (resume.fraction < .92) {
       // The exact words, from where she was cut, after the small recorded stumble.
       const stumble = this.cueTexts.get("resume");
-      if (stumble) { this.caption(event, stumble, "cue"); await this.audio.voice.playCue("resume"); }
+      if (stumble) { const line = this.caption(event, stumble, "cue", false); const result = await this.audio.voice.playCue("resume", { onStart: () => this.show(line) }); if (result !== "interrupted") this.show(line); }
       await this.voiceLine({ ...event, occasion: resume.occasion }, resume.text, null, "generated", Math.max(0, resume.fraction - .06));
     } else {
       // She was about to speak: a new line that continues from her last one.

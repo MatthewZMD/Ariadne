@@ -58,6 +58,10 @@ export default function FieldPage() {
   const sessionIdRef = useRef("");
   const qualityRef = useRef<AdaptiveQuality | null>(null);
   const systemStillRef = useRef(false);
+  /** True while we are the ones releasing the pointer (pausing, opening the input), so the release is not read as Escape. */
+  const releasingPointerRef = useRef(false);
+  /** Set when the browser refuses the pointer; the mouse then looks around without a button held. */
+  const pointerLockFailedRef = useRef(false);
 
   useEffect(() => { experienceRef.current = experience; }, [experience]);
   useEffect(() => { logOpenRef.current = logOpen; if (logOpen) inputRef.current?.focus(); }, [logOpen]);
@@ -117,8 +121,12 @@ export default function FieldPage() {
       setExperience("unavailable");
       return;
     }
-    rendererRef.current = renderer;
     const rect = canvas.getBoundingClientRect(); renderer.resize(Math.max(1, Math.round(rect.width)), Math.max(1, Math.round(rect.height)));
+    // Every model loaded and every shader compiled before the first frame, so nothing stalls when it first appears; a slow
+    // connection is not made to wait past a few seconds.
+    await Promise.race([renderer.ready, new Promise(resolve => setTimeout(resolve, 8000))]);
+    if (gameRef.current !== game) return;
+    rendererRef.current = renderer;
     // A playtest hook: ?debug exposes the running pieces to scripts (scripts/playtest.mjs) and to a curious console.
     if (location.search.includes("debug")) (window as unknown as { __ariadneField?: unknown }).__ariadneField = { game, speech, audio, renderer };
     setReady(true);
@@ -199,8 +207,32 @@ export default function FieldPage() {
     return () => { document.removeEventListener("visibilitychange", hide); };
   }, []);
 
-  const pause = useCallback(() => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; document.exitPointerLock?.(); audioRef.current?.pause(); setLogOpen(false); setExperience("paused"); }, []);
-  const resume = useCallback(() => { audioRef.current?.resume(); setExperience("playing"); requestAnimationFrame(() => canvasRef.current?.focus()); }, []);
+  /** Take the pointer so the mouse looks around without a button held; if the browser refuses, the mouse looks anyway. */
+  const takePointer = useCallback(() => {
+    const canvas = canvasRef.current; if (!canvas || document.pointerLockElement === canvas) return;
+    if (!("requestPointerLock" in canvas)) { pointerLockFailedRef.current = true; return; }
+    try {
+      const request = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+      if (request && typeof request.catch === "function") request.catch(() => { pointerLockFailedRef.current = true; });
+    } catch { pointerLockFailedRef.current = true; }
+  }, []);
+  const releasePointer = useCallback(() => { if (document.pointerLockElement) { releasingPointerRef.current = true; document.exitPointerLock?.(); } }, []);
+  const pause = useCallback(() => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; releasePointer(); audioRef.current?.pause(); setLogOpen(false); setExperience("paused"); }, [releasePointer]);
+  const resume = useCallback(() => { audioRef.current?.resume(); setExperience("playing"); const canvas = canvasRef.current; canvas?.focus(); takePointer(); requestAnimationFrame(() => canvasRef.current?.focus()); }, [takePointer]);
+
+  // Escape while the pointer is taken never reaches the page: the browser spends it releasing the pointer. That release is the
+  // pause. A release we asked for (pausing, opening the input) is not.
+  useEffect(() => {
+    const change = () => {
+      const canvas = canvasRef.current;
+      if (document.pointerLockElement === canvas && canvas) { pointerLockFailedRef.current = false; releasingPointerRef.current = false; return; }
+      const asked = releasingPointerRef.current; releasingPointerRef.current = false;
+      if (!asked && experienceRef.current === "playing" && !logOpenRef.current) pause();
+    };
+    const failed = () => { pointerLockFailedRef.current = true; };
+    document.addEventListener("pointerlockchange", change); document.addEventListener("pointerlockerror", failed);
+    return () => { document.removeEventListener("pointerlockchange", change); document.removeEventListener("pointerlockerror", failed); };
+  }, [pause]);
   const startAgain = useCallback(() => { write(SAVE_KEY, null); location.reload(); }, []);
 
   // Keyboard.
@@ -214,8 +246,12 @@ export default function FieldPage() {
       }
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (state !== "playing") return;
-      if (event.key === "Enter") { event.preventDefault(); heldRef.current.clear(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); return; }
-      if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) { event.preventDefault(); if (!event.repeat) heldRef.current.add(key); }
+      if (event.key === "Enter") { event.preventDefault(); heldRef.current.clear(); releasePointer(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); return; }
+      if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+        event.preventDefault();
+        // The first step takes the pointer, so looking never needs a click or a drag.
+        if (!event.repeat) { heldRef.current.add(key); if (!logOpenRef.current) takePointer(); }
+      }
     };
     const up = (event: KeyboardEvent) => heldRef.current.delete(event.key.toLowerCase());
     const blur = () => { heldRef.current.clear(); touchMoveRef.current = [0, 0]; };
@@ -225,13 +261,15 @@ export default function FieldPage() {
       const locked = document.pointerLockElement === canvasRef.current;
       if (locked) { lookRef.current -= event.movementX * .0022; pitchRef.current -= event.movementY * .0022; }
       else if (dragging) { lookRef.current -= (event.clientX - lastX) * .0042; pitchRef.current -= (event.clientY - lastY) * .0042; lastX = event.clientX; lastY = event.clientY; }
+      // No pointer to take (an embedding that forbids it, a browser without it): the mouse looks around over the field on its own.
+      else if (pointerLockFailedRef.current && event.target === canvasRef.current) { lookRef.current -= event.movementX * .0022; pitchRef.current -= event.movementY * .0022; }
     };
     const mouseDown = (event: MouseEvent) => { if (event.target === canvasRef.current && event.button === 0) { dragging = true; lastX = event.clientX; lastY = event.clientY; } };
     const mouseUp = () => { dragging = false; };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
     window.addEventListener("mousemove", mouse); window.addEventListener("mousedown", mouseDown); window.addEventListener("mouseup", mouseUp);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); window.removeEventListener("mousemove", mouse); window.removeEventListener("mousedown", mouseDown); window.removeEventListener("mouseup", mouseUp); };
-  }, [pause, resume]);
+  }, [pause, resume, takePointer, releasePointer]);
 
   // Touch: the left half walks, the right half looks.
   const onTouchStart = useCallback((event: React.TouchEvent<HTMLCanvasElement>) => {
@@ -257,7 +295,7 @@ export default function FieldPage() {
     requestAnimationFrame(() => canvasRef.current?.focus());
   }, [begin]);
 
-  const openLog = useCallback(() => { if (experienceRef.current !== "playing") return; heldRef.current.clear(); touchMoveRef.current = [0, 0]; document.exitPointerLock?.(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }, []);
+  const openLog = useCallback(() => { if (experienceRef.current !== "playing") return; heldRef.current.clear(); touchMoveRef.current = [0, 0]; releasePointer(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }, [releasePointer]);
 
   const submit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
@@ -287,7 +325,7 @@ export default function FieldPage() {
       <div className="fog-controls" aria-label="Controls">
         <dl className="desktop fog-control-list">
           <div><dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Move</dd></div>
-          <div><dt>Click + drag</dt><dd>Look around<span>Hold the left mouse button and drag in any direction.</span></dd></div>
+          <div><dt>Mouse</dt><dd>Look around<span>Move the mouse. The field takes the pointer at your first step; Esc gives it back and pauses.</span></dd></div>
           <div><dt><kbd>Enter</kbd></dt><dd>Speak to Ariadne</dd></div>
           <div><dt><kbd>Esc</kbd></dt><dd>Pause</dd></div>
         </dl>
@@ -319,10 +357,10 @@ export default function FieldPage() {
     </div></div>}
     <div className="fog-landscape-guard" role="status"><strong>Turn your device</strong><small>The field is walked in landscape.</small></div>
     <section className="fog-canvas-wrap" aria-hidden={experience !== "playing" && experience !== "paused"}>
-      <canvas ref={canvasRef} tabIndex={0} aria-label="A field of white fog, first person" onClick={event => { if (experienceRef.current === "playing" && !logOpenRef.current) { event.currentTarget.focus(); void event.currentTarget.requestPointerLock?.(); } }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touchRef.current.clear(); touchMoveRef.current = [0, 0]; }} />
+      <canvas ref={canvasRef} tabIndex={0} aria-label="A field of white fog, first person" onClick={event => { if (experienceRef.current === "playing" && !logOpenRef.current) { event.currentTarget.focus(); takePointer(); } }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touchRef.current.clear(); touchMoveRef.current = [0, 0]; }} />
       <div className="fog-grain" /><div className="fog-vignette" />
       {experience === "playing" && !ready && <div className="fog-hint">Opening the field</div>}
-      {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>WASD · move &nbsp; Click + drag · look &nbsp; Enter · speak</div>}
+      {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>WASD · move &nbsp; Mouse · look &nbsp; Enter · speak &nbsp; Esc · pause</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
       {experience === "playing" && ready && !logOpen && <div className={`fog-corner ${hintVisible ? "" : "dim"}`}>
         <button type="button" onClick={openLog} aria-label="Speak to her, or read what she has said">To her</button>
