@@ -280,11 +280,23 @@ export default function FieldPage() {
       {/* The undertaking is authored, and the author is named where the participant enters and where they pause. */}
       <p className="fog-credit">A work by Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>}
-    {experience === "headphones" && <div className="fog-screen"><div className="fog-panel">
+    {experience === "headphones" && <div className="fog-screen fog-onboarding"><div className="fog-panel">
       <span className="fog-headphones" aria-hidden="true"><i /><i /></span>
       <h1>Headphones</h1>
-      <p>The call comes from a direction, and she speaks close to you. Give it sound, and a little time.</p>
-      <div className="fog-controls"><span className="desktop">W A S D · move &nbsp; mouse · look &nbsp; Enter · speak to her &nbsp; Esc · pause</span><span className="touch">Left half · walk &nbsp; Right half · look &nbsp; Top right · speak to her, pause</span></div>
+      <p>Use headphones to hear where the call is coming from and Ariadne beside you.</p>
+      <div className="fog-controls" aria-label="Controls">
+        <dl className="desktop fog-control-list">
+          <div><dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Move</dd></div>
+          <div><dt>Click + drag</dt><dd>Look around<span>Hold the left mouse button and drag in any direction.</span></dd></div>
+          <div><dt><kbd>Enter</kbd></dt><dd>Speak to Ariadne</dd></div>
+          <div><dt><kbd>Esc</kbd></dt><dd>Pause</dd></div>
+        </dl>
+        <dl className="touch fog-control-list">
+          <div><dt>Drag left side</dt><dd>Move</dd></div>
+          <div><dt>Drag right side</dt><dd>Look around</dd></div>
+          <div><dt>Top-right buttons</dt><dd>Speak or pause</dd></div>
+        </dl>
+      </div>
       <button className="fog-button" onClick={() => void enterField()}>I&apos;m ready</button>
     </div></div>}
     {experience === "unavailable" && <div className="fog-screen"><div className="fog-panel">
@@ -310,7 +322,7 @@ export default function FieldPage() {
       <canvas ref={canvasRef} tabIndex={0} aria-label="A field of white fog, first person" onClick={event => { if (experienceRef.current === "playing" && !logOpenRef.current) { event.currentTarget.focus(); void event.currentTarget.requestPointerLock?.(); } }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touchRef.current.clear(); touchMoveRef.current = [0, 0]; }} />
       <div className="fog-grain" /><div className="fog-vignette" />
       {experience === "playing" && !ready && <div className="fog-hint">Opening the field</div>}
-      {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>W A S D · move &nbsp; mouse · look &nbsp; Enter · speak</div>}
+      {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>WASD · move &nbsp; Click + drag · look &nbsp; Enter · speak</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
       {experience === "playing" && ready && !logOpen && <div className={`fog-corner ${hintVisible ? "" : "dim"}`}>
         <button type="button" onClick={openLog} aria-label="Speak to her, or read what she has said">To her</button>

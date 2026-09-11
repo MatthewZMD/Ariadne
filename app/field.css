@@ -76,3 +76,16 @@ html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(
 @media (pointer: coarse) { .fog-controls .desktop { display: none; } }
 @media (pointer: fine) { .fog-controls .touch { display: none; } }
 @media (prefers-reduced-motion: reduce) { .fog-thinking { animation: none; } }
+
+/* Keep instructions readable at small widths and with browser zoom. */
+.fog-onboarding { overflow-y: auto; padding: clamp(24px, 5svh, 56px) 20px; }
+.fog-onboarding .fog-panel { width: min(480px, 100%); margin-block: auto; flex-shrink: 0; gap: clamp(18px, 3svh, 28px); }
+.fog-onboarding .fog-controls { width: 100%; color: var(--ink-soft); font-size: 14px; letter-spacing: 0; line-height: 1.5; text-transform: none; text-align: left; }
+.fog-control-list { margin: 0; }
+.fog-control-list > div { display: grid; grid-template-columns: minmax(110px, .9fr) minmax(0, 1.3fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid rgba(86,97,85,.16); }
+.fog-control-list > div:first-child { border-top: 1px solid rgba(86,97,85,.16); }
+.fog-control-list dt { align-self: start; }
+.fog-control-list dd { margin: 0; }
+.fog-control-list dd span { display: block; margin-top: 4px; font-size: 12px; color: #687168; }
+.fog-control-list kbd { display: inline-block; min-width: 22px; padding: 1px 4px; border: 1px solid rgba(86,97,85,.28); border-radius: 3px; font: inherit; text-align: center; }
+.fog-onboarding .fog-headphones { transform: scale(.75); margin-block: -6px; flex-shrink: 0; }
