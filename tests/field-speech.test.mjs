@@ -88,7 +88,7 @@ test("the opening is the fixed cue; a commitment asks the server with the stage 
   assert.equal(net.posts.length, 2);
   assert.equal(net.posts[1].request.turn.youSaid, "It's louder along the posts. Come on.", "the stage card holds her to her own words");
   assert.equal(net.posts[1].request.far.heardAlong, null);
-  assert.equal(audio.calls.cues.at(-1), "fading");
+  assert.ok(!audio.calls.cues.includes("fading"));
 });
 
 test("a typed message becomes a reply with the walker's exact words, and stopping talk is answered as a reply", async () => {
@@ -217,7 +217,7 @@ test("a commitment made while she is mid-line is spoken when she is free, not lo
 });
 
 
-test("when a line is slow, a recorded cue covers the wait; when a way fades, the cue comes first regardless", async () => {
+test("slow generated responses are not preceded by stock cues", async () => {
   const game = new FieldGame(7);
   const audio = fakeAudio();
   const slow = async (url, init) => {
@@ -232,19 +232,19 @@ test("when a line is slow, a recorded cue covers the wait; when a way fades, the
   speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:9" });
   await new Promise(resolve => setTimeout(resolve, 2900));
   for (let i = 0; i < 40; i++) { await tick(); speech.update(); if (!speech.isBusy) break; }
-  assert.deepEqual(audio.calls.cues, ["this-way"], "the cue played because the line took longer than a couple of seconds");
+  assert.deepEqual(audio.calls.cues, [], "even a slow successful response has no stock lead-in");
   assert.equal(audio.calls.spoken.at(-1).text, "The posts, ahead. It's stronger that way.");
 
   run(game, 12);
   speech.handle({ type: "speak", occasion: "outcome_failed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is fading.", far: null, priority: 90, commitmentId: "commitment:9" });
   await tick();
-  assert.equal(audio.calls.cues.at(-1), "fading", "a fading way is answered at once with the recorded reaction");
+  assert.deepEqual(audio.calls.cues, [], "no recorded reaction while generating");
   await new Promise(resolve => setTimeout(resolve, 2900));
   for (let i = 0; i < 40; i++) { await tick(); speech.update(); if (!speech.isBusy) break; }
   assert.match(audio.calls.spoken.at(-1).text, /went quiet/);
 });
 
-test("a deterministic line that says something the cue did not is voiced after the cue; one that repeats the cue is not", async () => {
+test("a failed request produces one complete fallback response", async () => {
   const game = new FieldGame(11);
   const audio = fakeAudio();
   const failing = async url => {
@@ -257,7 +257,7 @@ test("a deterministic line that says something the cue did not is voiced after t
   game.undertaking = { ...game.undertaking, active: { id: "commitment:4", nodeId: node.id, wayId: node.ways[0], stage: 1, correct: true, madeAt: game.time, taken: "pending", declinedFor: null, outcome: "pending" } };
   speech.handle({ type: "speak", occasion: "recognized_return", walkerDid: "Arrived again at a place the two of you have stood before; their own footprints are on the ground.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:4" });
   await settle(speech);
-  assert.deepEqual(audio.calls.cues, ["been-here"], "the recorded reaction comes first");
+  assert.deepEqual(audio.calls.cues, [], "fallback is a single response without a prefabricated lead-in");
   assert.equal(audio.calls.spoken.at(-1)?.text, "Those are your footprints. So it isn't that way. Fewer left.", "her body chose a way; her words follow the cue and do not repeat it");
   assert.equal(game.memory.captions.at(-1).kind, "generated");
 });
@@ -275,7 +275,7 @@ test("a renewed invitation to a walker who has not moved is the recorded cue alo
   assert.equal(net.posts.length, 0, "no line is generated for a renewed invitation");
 });
 
-test("a failed way is spoken as the cue, a short recognition, a silence, and then the renewal; a new choice makes the renewal unnecessary", async () => {
+test("a failed way gets a generated recognition, a silence, then renewal; a new choice cancels renewal", async () => {
   const game = new FieldGame(19);
   const audio = fakeAudio();
   const net = fakeFetch(body => ({ message: body.request.plan.beat === "acknowledge" ? "That was mine, and it went quiet." : "I'm listening again; the next one is close.", source: "provider", modelUsed: "google/gemma-4-26b-a4b-it:free" }));
@@ -283,7 +283,7 @@ test("a failed way is spoken as the cue, a short recognition, a silence, and the
   await tick(); run(game, 8);
   speech.handle({ type: "speak", occasion: "outcome_failed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is fading.", far: null, priority: 90, commitmentId: "commitment:1" });
   await settle(speech);
-  assert.equal(audio.calls.cues.at(-1), "fading", "the recorded fact comes first");
+  assert.ok(!audio.calls.cues.includes("fading"));
   assert.equal(net.posts.length, 1); assert.equal(net.posts[0].request.plan.beat, "acknowledge"); assert.equal(net.posts[0].request.plan.sentenceCount, 1);
   assert.equal(audio.calls.spoken.at(-1).text, "That was mine, and it went quiet.");
   run(game, 2); speech.update(); await settle(speech);
@@ -291,7 +291,7 @@ test("a failed way is spoken as the cue, a short recognition, a silence, and the
   run(game, 5); speech.update(); await settle(speech);
   assert.equal(net.posts.length, 2); assert.equal(net.posts[1].request.plan.beat, "renew");
   assert.equal(audio.calls.spoken.at(-1).text, "I'm listening again; the next one is close.");
-  assert.equal(audio.calls.cues.filter(id => id === "fading").length, 1, "the renewal has no cue of its own");
+  assert.equal(audio.calls.cues.filter(id => id === "fading").length, 0, "neither beat adds a stock cue");
 
   // A renewal after her body has already chosen a new way would contradict the choice; it is dropped.
   speech.handle({ type: "speak", occasion: "terminus", walkerDid: "Walked to the end.", whatFollowed: "The way ends.", far: null, priority: 88, commitmentId: "commitment:2" });
@@ -352,7 +352,7 @@ test("she says the count once: the card asks on the first line at three failures
   assert.equal(speech2.request({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: null, priority: 80, commitmentId: null }).run.countNamedAt, 3);
 });
 
-test("on the walk the register is recorded: a phrase alone as they take up her way, a phrase before the recorded fact, and the yield before the ask to someone standing still", async () => {
+test("recorded take-up and idle phrases remain, but confirmations use generation alone", async () => {
   const game = new FieldGame(11);
   const audio = fakeAudio();
   const net = fakeFetch();
@@ -377,7 +377,7 @@ test("on the walk the register is recorded: a phrase alone as they take up her w
   speech.handle({ type: "speak", occasion: "outcome_confirmed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is growing louder along this way.", far: { wayId: "w" }, priority: 66, commitmentId: "commitment:c" });
   await settle(speech);
   const played = audio.calls.cues.slice(cuesBefore);
-  assert.ok(played.includes("getting-louder"), `the recorded fact plays (${played})`);
+  assert.deepEqual(played, [], "confirmation uses the generated response alone");
   if (played.length === 2) { assert.ok(played[0].startsWith("reg-"), "the phrase comes before the fact"); assert.match(speech.currentLine.text, /^[A-Z][^.]*\. It’s getting louder\.$/); }
   // Standing still: the waiting tone is the recorded ask, with a phrase of patience before it.
   const stillBefore = audio.calls.cues.length;
@@ -396,15 +396,15 @@ test("a quiet arrival cannot be followed by a claim of renewed hearing", async (
   await tick(); run(game, 8);
   speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at the clearing.", whatFollowed: "Another way is chosen.", far: { wayId: game.teachingWayId }, priority: 80, commitmentId: null, tone: "quiet_arrival" });
   await settle(speech);
-  assert.ok(audio.calls.cues.includes("nowhere-forward"));
-  assert.equal(net.posts.length, 0, "acknowledgment stands alone");
+  assert.ok(!audio.calls.cues.includes("nowhere-forward"));
+  assert.equal(net.posts.length, 1, "acknowledgment is generated");
   run(game, 4); await settle(speech);
-  assert.equal(net.posts.length, 0, "renewal leaves a silence");
+  assert.equal(net.posts.length, 1, "renewal leaves a silence");
   run(game, 3); await settle(speech);
-  assert.equal(net.posts.length, 1);
+  assert.equal(net.posts.length, 2);
   const request = net.posts[0].request;
   assert.equal(request.far.heardAlong, null);
-  assert.equal(request.turn.youSaid, "I can't hear it from here.");
+  assert.notEqual(request.turn.youSaid, "I can't hear it from here.", "no unspoken stock sentence is attributed to her");
   assert.ok(audio.calls.spoken.length > 0);
   assert.ok(audio.calls.spoken.every(line => !/louder|I can hear/i.test(line.text)), "contradictory provider line is replaced");
 });

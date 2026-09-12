@@ -873,7 +873,7 @@ export function fieldDeterministicLine(request: Pick<FieldRequest, "turn" | "nea
   const lead = request.plan?.affirmation ? `${request.plan.affirmation} ` : "";
   switch (request.turn.occasion) {
     case "opening": return named ? "You can hear that, MT? I can tell where it's coming from. This way." : "You can hear that? I can tell where it's coming from. This way.";
-    // These follow a recorded cue that has already given the reaction ("It's fading", "There it is", "We've been here"), so they carry on from it rather than say it again.
+    // Each fallback stands alone; no stock reaction precedes it.
     case "commitment": return /no call is audible from here|nothing stands here/i.test(request.turn.walkerDid) ? `${lead}Not here${failures > 1 ? " either" : ""}.${count} Further on, then, along ${name}.` : `${lead}${pick([`It's louder along ${name}. Come on.`, `${name[0]!.toUpperCase()}${name.slice(1)}, I think. I hear it that way.`, `Along ${name}; that's where it's loudest for me.`])}`;
     case "taken_up": return lead ? `${lead}${pick(["Keep to the markers.", "Marker to marker.", "Stay with the line."])}` : pick(["Good. Keep to the markers.", "That's it. Marker to marker.", "Good. Stay with the line."]);
     case "declined": return lead ? `${lead}${pick(["I'm with you. What did you hear?", named ? "Your way, then, MT. I'm right beside you." : "Your way, then. I'm right beside you.", "I'll come. Something told you this way."])}` : pick(["All right, I'm with you. What did you hear?", named ? "Your way, then, MT. I'm right beside you." : "Your way, then. I'm right beside you.", "Go on, I'll come. Something told you this way."]);
