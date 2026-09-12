@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { wakeDuration } from "../app/field/structures.ts";
+import { STRUCTURE_WAKE_SECONDS } from "../app/field/structures.ts";
 import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, PROMPT_AFTER_MS, STILL_RENEW_AFTER_MS } from "../app/field/game.ts";
 import { wrapAngle } from "../app/field/graph.ts";
 
@@ -41,16 +41,10 @@ const standingPoint = (game, element, away) => {
 
 const speeches = events => events.filter(event => event.type === "speak");
 
-/** Wake every element of a structure with the gesture each asks for. */
+/** Wake an entire structure from one nearby position. */
 const wake = (game, structure) => {
-  const events = [];
-  for (const element of structure.elements) {
-    if (element.active) continue;
-    if (element.gesture === "approach") { events.push(...walkTo(game, [element.position[0], element.position[2]], .9, 20)); events.push(...run(game, .6)); }
-    else { events.push(...walkTo(game, standingPoint(game, element, 2.2), .5, 20)); events.push(...faceAndWait(game, element.position, wakeDuration(structure, element.gesture) + 1)); }
-    if (!element.active) { events.push(...walkTo(game, standingPoint(game, element, element.gesture === "approach" ? .6 : 2.4), .3, 10)); events.push(...faceAndWait(game, element.position, 3)); }
-  }
-  return events;
+  const target = { position: [structure.position[0], 1.4, structure.position[1]] };
+  return [...walkTo(game, standingPoint(game, target, 2.5), .3, 30), ...faceAndWait(game, target.position, STRUCTURE_WAKE_SECONDS + 1)];
 };
 
 test("the opening: Ariadne arrives, offers a direction, and the teaching way is taken up", () => {
@@ -82,7 +76,7 @@ test("the opening: Ariadne arrives, offers a direction, and the teaching way is 
   assert.equal(body.presence, "leading_ahead");
 });
 
-test("the teaching structure: found, woken with the three gestures, and the call passes on", () => {
+test("the teaching structure: found, woken by a nearby gaze, and the call passes on", () => {
   const game = new FieldGame(3);
   run(game, 7);
   const teaching = game.teachingStructure;
@@ -90,7 +84,7 @@ test("the teaching structure: found, woken with the three gestures, and the call
   const events = walkTo(game, teaching.position, 5.5, 80);
   const found = speeches(events).find(event => event.occasion === "structure_found");
   assert.ok(found, "the structure is announced as it comes into view");
-  assert.match(found.whatFollowed, /come close enough to touch it/, "the first gesture is approach");
+  assert.match(found.whatFollowed, /Move close and look at the whole structure for about ten seconds/);
   assert.equal(game.call.audibility, "clear");
   assert.ok(game.currentNodeId === teaching.nodeId || Math.hypot(game.walker.position[0] - teaching.position[0], game.walker.position[1] - teaching.position[1]) < 7);
   assert.equal(game.undertaking.commitmentsMade, 0, "no commitment while a sleeping structure stands here");
@@ -98,8 +92,7 @@ test("the teaching structure: found, woken with the three gestures, and the call
   const woke = wake(game, teaching);
   assert.equal(teaching.elements.filter(element => element.active).length, 3, "all three parts woke");
   const wokeEvents = woke.filter(event => event.type === "element_woke");
-  assert.equal(wokeEvents.length, 3);
-  assert.deepEqual(wokeEvents.map(event => event.remaining), [2, 1, 0]);
+  assert.equal(wokeEvents.length, 0, "one completion, without separate part milestones");
   assert.ok(woke.some(event => event.type === "structure_completed"), "completion is emitted");
   assert.ok(woke.some(event => event.type === "fragment"), "a fragment leaves the structure");
   assert.ok(woke.some(event => event.type === "stage_advanced" && event.stage === 1), "the first awakening begins the undertaking");
@@ -404,42 +397,16 @@ test("vertical look clamps, survives saves, and leaves walking on the ground", (
   assert.ok(Math.hypot(game.walker.position[0]-start[0],game.walker.position[1]-start[1]) > 0);
 });
 
-test("a part answering a held look is spoken to once while it still has a second to go, and a stall while looking at the structure is helped", () => {
-  const game = new FieldGame(3);
-  run(game, 7);
-  const teaching = game.teachingStructure;
-  walkTo(game, teaching.position, 5.5, 80);
-  const [approach, look] = teaching.elements;
-  assert.equal(approach.gesture, "approach"); assert.equal(look.gesture, "look");
-  walkTo(game, [approach.position[0], approach.position[2]], .9, 20); run(game, .6);
-  assert.ok(approach.active, "the touch woke the first part");
-  run(game, 3.2);
-  walkTo(game, standingPoint(game, look, 2.2), .5, 20);
-  const holding = faceAndWait(game, look.position, wakeDuration(teaching, "look") * .55);
-  assert.ok(!look.active && look.attention > .15, `the look is being answered but is not complete (${look.attention})`);
-  const attending = speeches(holding).find(event => event.occasion === "structure_attending");
-  assert.ok(attending, "she tells them to stay as they are while it answers");
-  assert.match(attending.walkerDid, /looking at it steadily, as its next sleeping part asks, and it is answering them slowly; 1 part of the structure is awake and 2 still asleep/);
-  assert.match(attending.whatFollowed, /few more seconds of exactly this/);
-  assert.equal(attending.priority, 66);
-  const { near } = game.perceive(null);
-  assert.equal(near.structure.attending?.gesture, "look");
-  assert.ok(["beginning", "halfway", "almost"].includes(near.structure.attending?.progress));
-  assert.equal(near.structure.nextAsks, "look");
-  const rest = faceAndWait(game, look.position, wakeDuration(teaching, "look"));
-  assert.ok(look.active, "held a little longer, it wakes");
-  assert.ok(!speeches(rest).some(event => event.occasion === "structure_attending"), "she does not say it twice for one part");
-
-  // A stall: standing six metres off, looking at the structure but at no part, nothing answers; after PROMPT_AFTER_MS she helps,
-  // and her card says what they are looking at.
-  const dx = game.walker.position[0] - teaching.position[0], dz = game.walker.position[1] - teaching.position[1], d = Math.hypot(dx, dz) || 1;
-  walkTo(game, [teaching.position[0] + dx / d * 6, teaching.position[1] + dz / d * 6], .4, 20);
-  const stalled = faceAndWait(game, [teaching.position[0], 1.4, teaching.position[1]], PROMPT_AFTER_MS / 1000 + 2);
-  const prompt = speeches(stalled).find(event => event.occasion === "structure_found" && event.prompt);
-  assert.ok(prompt, "looking at the structure no longer silences her when nothing is happening");
-  assert.match(prompt.walkerDid, /nothing has happened for a while\. They are looking at the structure, but not at the part that still sleeps\./);
-  assert.match(prompt.whatFollowed, /stand still beside it and listen/);
-  assert.equal(game.perceive(null).near.structure.nextAsks, "listen");
+test("Ariadne describes one whole-object interaction and completion", () => {
+  const game = new FieldGame(3); run(game, 7);
+  const structure = game.teachingStructure;
+  const events = wake(game, structure);
+  assert.ok(structure.completedAt !== null);
+  const found = speeches(events).filter(e => e.occasion === "structure_found");
+  assert.ok(found.length > 0);
+  assert.ok(found.every(e => /whole structure|whole object/.test(e.whatFollowed)));
+  assert.ok(events.some(e => e.type === "structure_completed"));
+  assert.equal(game.perceive(null).near.structure.nextAsks, null);
 });
 
 test("standing still while she waits at her marker renews the invitation twice, with the waiting tone, and then leaves the silence theirs", () => {

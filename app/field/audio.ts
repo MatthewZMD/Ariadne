@@ -425,7 +425,8 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
           break;
         }
         case "structure_completed": {
-          void playOneShot(`${event.family}-completion`, world, gainOf(`${event.family}-completion`), [event.position[0], 1.4, event.position[1]]);
+          // Completion is a foreground musical response, unaffected by speech ducking.
+          void playOneShot(`${event.family}-completion`, master!, Math.min(1, gainOf(`${event.family}-completion`) * 1.5), [event.position[0], 1.4, event.position[1]]);
           break;
         }
         default: break;

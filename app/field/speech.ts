@@ -12,7 +12,7 @@
 import type { FieldGame, SpeakEvent, FarHearing } from "./game.ts";
 import type { FieldAudio, VoiceResult } from "./audio.ts";
 import { cueForOccasion, deliveryFor } from "./audio.ts";
-import { PARTICIPANT_ADDRESS, REGISTER_CUES, chooseAffirmation, fieldDeterministicLine, messageKind, runAsksToBeNamed, runFailures, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
+import { PARTICIPANT_ADDRESS, REGISTER_CUES, chooseAffirmation, fieldDeterministicLine, fieldReplyViolations, messageKind, runAsksToBeNamed, runFailures, type FieldEarlierMoment, type FieldMessage, type FieldOccasion, type FieldRequest, type FieldRun, type FieldUtterancePlan, type ParticipantAddress } from "../field-practice.ts";
 import { hash32 } from "./graph.ts";
 
 export type SpeechLine = { id: string; occasion: FieldOccasion; text: string; kind: "generated" | "cue" | "fallback"; at: number; commitmentId: string | null };
@@ -222,7 +222,7 @@ export class FieldSpeech {
     // saying they want to stop is answered the same way: that it is theirs, then silence, and only then that the next one is close.
     const words = walkerMessage ?? event.walkerMessage ?? null;
     const stoppingReply = event.occasion === "reply" && messageKind(words) === "stopping";
-    if (!event.beat && !event.prompt && ((TWO_BEAT.has(event.occasion) && (event.occasion !== "recognized_return" || this.game.phase !== "charming")) || stoppingReply)) {
+    if (!event.beat && !event.prompt && ((TWO_BEAT.has(event.occasion) && (event.occasion !== "recognized_return" || this.game.phase !== "charming")) || stoppingReply || event.tone === "quiet_arrival")) {
       await this.speak({ ...event, beat: "acknowledge", walkerMessage: words }, words);
       const renewal: SpeakEvent = { ...event, beat: "renew", walkerMessage: words, priority: Math.max(60, event.priority - 10) };
       this.queue = this.queue.filter(item => !(item.event.occasion === event.occasion && item.event.commitmentId === event.commitmentId));
@@ -247,14 +247,14 @@ export class FieldSpeech {
       await this.voiceLine(event, plan.affirmation!, phraseCue, "cue");
       if (controller.signal.aborted) return;
     }
-    const cueDetail = event.occasion === "structure_found" ? { teaching: /first sleeping structure/.test(event.walkerDid), gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
+    const cueDetail = event.occasion === "structure_found" ? { teaching: false, gesture: /listen/.test(event.whatFollowed) ? "listen" as const : /look/.test(event.whatFollowed) ? "look" as const : "approach" as const } : {};
     const firstAwakening = event.occasion === "awakening_relevant" && this.game.undertaking.stage === 1 && this.game.clearingsMade === 1;
-    const cueId = event.beat === "renew" ? null : event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
+    const cueId = event.beat === "renew" || event.tone === "directed_return" ? null : event.tone === "waiting" ? "this-way" : event.prompt ? null : event.tone === "quiet_arrival" ? "nowhere-forward" : event.tone === "return" ? "been-here" : event.occasion === "awakening_relevant" && !firstAwakening ? "woke-the-room" : cueForOccasion(event.occasion, cueDetail);
     // The first ninety seconds are authored: the opening, the teaching gestures and the first clearing keep their recorded words.
     // Some occasions are a fact a recorded cue states whole: going with them off the line, a confirmation (most of the time).
     if (event.occasion === "outcome_confirmed") this.confirmations++;
     // A renewed invitation to a walker who has not moved is the recorded cue alone: her readiness, and nothing to read into.
-    const fixed = FIXED_OCCASIONS.has(event.occasion) || event.tone === "waiting"
+    const fixed = FIXED_OCCASIONS.has(event.occasion) || event.tone === "waiting" || (event.tone === "quiet_arrival" && event.beat === "acknowledge")
       || (event.occasion === "structure_found" && !!cueDetail.teaching && !event.prompt)
       || firstAwakening
       || (CUE_ONLY.has(event.occasion) && !event.prompt)
@@ -269,7 +269,10 @@ export class FieldSpeech {
     }
     if (fixed && !cueId) { this.finish(controller); return; }
     const request = this.request(event, walkerMessage, plan);
-    const fallbackText = fieldDeterministicLine(request);
+    const chosenMarker = event.far ? request.near.ways.find(way => way.id === event.far!.wayId)?.marker : null;
+    const fallbackText = event.tone === "directed_return"
+      ? `I asked you to come back here. Thank you. Let's try ${chosenMarker ? `the ${chosenMarker}` : "this way"} next.`
+      : fieldDeterministicLine(request);
     // A recorded cue covers the wait for a generated line. Where the cue is itself the reaction (a way fading, ending, a
     // different way taken, something in view), it plays at once; where it would only announce the line (this way, come on),
     // it plays only if the line is slow in coming, so she does not say everything twice.
@@ -298,6 +301,13 @@ export class FieldSpeech {
       this.options.onThinking?.(false);
     }
     if (controller.signal.aborted) { if (cueTimer) clearTimeout(cueTimer); return; }
+    // A cover cue and its continuation share one account of what she can hear.
+    if (event.tone === "quiet_arrival" && fieldReplyViolations(text, request).length) {
+      text = fallbackText; kind = "fallback";
+    }
+    if (event.tone === "directed_return" && !/\b(?:I (?:asked|sent|brought|led)|my (?:direction|guidance)|as I asked|you (?:came|walked|followed).*back)\b/i.test(text)) {
+      text = fallbackText; kind = "fallback";
+    }
     // The moment may have passed while the line was being made.
     if (this.game.time - startedAt > REQUEST_STALE_MS && event.priority < 85) { if (cueTimer) clearTimeout(cueTimer); this.finish(controller); return; }
     // The part she was telling them to stay with has woken, or they have moved off it: the line is late, and the note was the answer.
@@ -388,6 +398,9 @@ export class FieldSpeech {
   request(event: SpeakEvent, walkerMessage: string | null = null, plan?: FieldUtterancePlan): FieldRequest {
     const { near, body } = this.game.perceive(event.far);
     const earlier = this.earlierMoment(event);
+    const quietArrival = event.tone === "quiet_arrival";
+    // This turn acknowledges the silent arrival, rather than claiming a new observation.
+    if (quietArrival) near.call = { audible: false, direction: null, trend: null };
     const run: FieldRun = { ...this.game.run(), countNamedAt: this.countNamedAt };
     if (runAsksToBeNamed(run, event.occasion, event.beat)) this.countNamedAt = runFailures(run);
     return {
@@ -395,9 +408,9 @@ export class FieldSpeech {
       phase: this.game.phase,
       commitmentsMade: this.game.undertaking.commitmentsMade,
       clearingsMade: this.game.clearingsMade,
-      near, far: { heardAlong: event.far }, body,
+      near, far: { heardAlong: quietArrival ? null : event.far }, body,
       run,
-      turn: { occasion: event.occasion, youSaid: this.youSaid(event), walkerDid: event.walkerDid, whatFollowed: event.whatFollowed },
+      turn: { occasion: event.occasion, youSaid: quietArrival ? "I can't hear it from here." : this.youSaid(event), walkerDid: quietArrival ? `${event.walkerDid} No call is audible from here.` : event.walkerDid, whatFollowed: quietArrival ? `${event.whatFollowed} You have just said you cannot hear the call from here. Nothing has changed that. Offer the chosen direction as another attempt, not as a sound you can hear; do not claim renewed hearing.` : event.whatFollowed },
       plan: plan ?? this.planFor(event, walkerMessage),
       earlierMoment: earlier,
       recentMessages: this.recent.slice(-8),

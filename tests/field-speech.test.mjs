@@ -29,7 +29,7 @@ const fakeAudio = () => {
 const fakeFetch = (reply = () => ({ message: "It's louder along the posts. Come on.", source: "provider", modelUsed: "google/gemma-4-26b-a4b-it:free" })) => {
   const posts = [];
   const fetchImpl = async (url, init) => {
-    if (String(url).endsWith("/fog/cues.json")) return { ok: true, json: async () => ({ assets: [{ id: "opening-premise", text: "You can hear that? I can tell where it’s coming from. This way." }, { id: "this-way", text: "This way. Come on!" }, { id: "fading", text: "It’s fading." }, { id: "resume", text: "— so, as I was saying" }] }) };
+    if (String(url).endsWith("/fog/cues.json")) return { ok: true, json: async () => ({ assets: [{ id: "opening-premise", text: "You can hear that? I can tell where it’s coming from. This way." }, { id: "this-way", text: "This way. Come on!" }, { id: "nowhere-forward", text: "I can’t hear it from here." }, { id: "fading", text: "It’s fading." }, { id: "resume", text: "— so, as I was saying" }] }) };
     const body = JSON.parse(init.body); posts.push(body);
     return { ok: true, json: async () => reply(body) };
   };
@@ -221,7 +221,7 @@ test("when a line is slow, a recorded cue covers the wait; when a way fades, the
   const game = new FieldGame(7);
   const audio = fakeAudio();
   const slow = async (url, init) => {
-    if (String(url).endsWith("/fog/cues.json")) return { ok: true, json: async () => ({ assets: [{ id: "this-way", text: "This way. Come on!" }, { id: "fading", text: "It’s fading." }] }) };
+    if (String(url).endsWith("/fog/cues.json")) return { ok: true, json: async () => ({ assets: [{ id: "this-way", text: "This way. Come on!" }, { id: "nowhere-forward", text: "I can’t hear it from here." }, { id: "fading", text: "It’s fading." }] }) };
     await new Promise(resolve => setTimeout(resolve, 2600));
     return { ok: true, json: async () => ({ message: JSON.parse(init.body).request.turn.occasion === "commitment" ? "The posts, ahead. It's stronger that way." : "I said the posts and it went quiet. Listening again.", source: "provider", modelUsed: "dots-studio/dots-3-note-preview:free" }) };
   };
@@ -387,4 +387,36 @@ test("on the walk the register is recorded: a phrase alone as they take up her w
   const waiting = audio.calls.cues.slice(stillBefore);
   assert.equal(waiting.at(-1), "this-way", "the ask is the recorded invitation");
   if (waiting.length === 2) assert.ok(["reg-take-your-time", "reg-whenever-ready", "reg-thank-you-patience"].includes(waiting[0]), `the yield before it is patience (${waiting[0]})`);
+});
+
+
+test("a quiet arrival cannot be followed by a claim of renewed hearing", async () => {
+  const game = new FieldGame(31), audio = fakeAudio(), net = fakeFetch();
+  const speech = new FieldSpeech(game, audio, { sessionId: "quiet-regression", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at the clearing.", whatFollowed: "Another way is chosen.", far: { wayId: game.teachingWayId }, priority: 80, commitmentId: null, tone: "quiet_arrival" });
+  await settle(speech);
+  assert.ok(audio.calls.cues.includes("nowhere-forward"));
+  assert.equal(net.posts.length, 0, "acknowledgment stands alone");
+  run(game, 4); await settle(speech);
+  assert.equal(net.posts.length, 0, "renewal leaves a silence");
+  run(game, 3); await settle(speech);
+  assert.equal(net.posts.length, 1);
+  const request = net.posts[0].request;
+  assert.equal(request.far.heardAlong, null);
+  assert.equal(request.turn.youSaid, "I can't hear it from here.");
+  assert.ok(audio.calls.spoken.length > 0);
+  assert.ok(audio.calls.spoken.every(line => !/louder|I can hear/i.test(line.text)), "contradictory provider line is replaced");
+});
+
+test("a directed return owns the instruction instead of playing the surprise-return cue", async () => {
+  const game = new FieldGame(31), audio = fakeAudio();
+  const net = fakeFetch(() => ({ message: "We've been here. This way.", source: "provider" }));
+  const speech = new FieldSpeech(game, audio, { sessionId: "return-regression", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Returned along the route you directed them back along.", whatFollowed: "You asked for this backtracking. Your body has chosen the next way.", far: { wayId: game.teachingWayId }, priority: 84, commitmentId: null, tone: "directed_return" });
+  await settle(speech);
+  assert.ok(!audio.calls.cues.includes("been-here"));
+  assert.ok(audio.calls.spoken.some(line => /I asked you to come back here/.test(line.text)));
+  assert.ok(audio.calls.spoken.every(line => !/We've been here/.test(line.text)));
 });

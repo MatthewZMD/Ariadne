@@ -517,12 +517,12 @@ test("the count of failed ways is asked for once at each threshold, not on every
   assert.ok(!runAsksToBeNamed(three, "commitment", "renew"));
 });
 
-test("a part answering the walker is on the card, and she has a patience line for it", () => {
+test("a whole structure answering the walker is on the card, and she has a patience line for it", () => {
   const late = byId("commitment_late");
-  const near = { ...late.near, structure: { visible: true, family: "instrument", state: "waking", elementsRemaining: 4, direction: "ahead", attending: { gesture: "listen", progress: "halfway" }, nextAsks: "listen" } };
-  const request = { ...late, near, turn: { occasion: "structure_attending", youSaid: null, walkerDid: "Is standing still beside it, as its next sleeping part asks, and it is answering them slowly; 2 parts of the structure are awake and 4 still asleep.", whatFollowed: "It needs a few more seconds of exactly this, and then it will wake. Nothing else is asked of them now." }, plan: { length: "short", sentenceCount: 2, affirmation: "Take your time.", instruction: "Stay." } };
+  const near = { ...late.near, structure: { visible: true, family: "instrument", state: "waking", elementsRemaining: 4, direction: "ahead", attending: { gesture: "look", progress: "halfway" }, nextAsks: "look" } };
+  const request = { ...late, near, turn: { occasion: "structure_attending", youSaid: null, walkerDid: "Is close and looking at the whole structure; it is waking.", whatFollowed: "It needs a few more seconds of exactly this, and then it will wake. Nothing else is asked of them now." }, plan: { length: "short", sentenceCount: 2, affirmation: "Take your time.", instruction: "Stay." } };
   const card = fieldStageCard(request);
-  assert.match(card, /waking, 4 parts still asleep; its next sleeping part asks stillness beside it, and listening; the walker is standing still beside it and it is answering them, about halfway/);
+  assert.match(card, /waking as a whole; move close and look at the whole object for about ten seconds; no separate parts to target; the walker is looking at it steadily/);
   assert.match(card, /patience is the whole of this line/);
   assert.match(card, /say that it is answering them\. Nobody has said anything, so there is nothing to agree with or apologize for/);
   assert.equal(registerFor("structure_attending", "charming", null), "patience");
@@ -531,9 +531,8 @@ test("a part answering the walker is on the card, and she has a patience line fo
   assert.ok(Array.from({ length: 200 }, (_, seed) => chooseAffirmation("structure_attending", "overbearing", seed, null)).filter(Boolean).every(text => FIELD_REGISTER.patience.includes(text)));
   assert.match(fieldDeterministicLine(request), /^Take your time\. (?:Stay just like that\. It's answering you\.|Don't move yet; it's coming\.|Exactly like that\. Give it a moment more\.)$/);
   assert.deepEqual(fieldReplyViolations("Take your time. Stay exactly as you are; it's answering you.", request), []);
-  // The stalled prompt knows when they are on a finished part.
-  const stalled = { ...request, turn: { occasion: "structure_found", youSaid: null, walkerDid: "Woke 2 parts of the structure; 4 are still asleep, and nothing has happened for a while. They are attending to a part that is already awake: it sounds when they do, and nothing more will come of it.", whatFollowed: "The next sleeping part asks for one thing: stand still beside it and listen. Tell them kindly that the one they are on is already awake, and name the one thing the sleeping one asks." }, plan: { length: "short", sentenceCount: 1, affirmation: null, instruction: "Point." } };
-  assert.match(fieldStageCard(stalled), /a finished part sounding when they look at it is not a fault of theirs/);
+  const stalled = { ...request, turn: { ...request.turn, occasion: "structure_found" } };
+  assert.match(fieldStageCard(stalled), /No clicking, stillness, individual targets or separate gestures are required/);
 });
 
 test("the card knows how long the walk has been, and the number is hers to say", () => {

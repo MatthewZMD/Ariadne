@@ -3,7 +3,7 @@ import test from "node:test";
 import { CHUNK, FieldGraph } from "../app/field/graph.ts";
 import { STRUCTURE_ANCHORS } from "../app/field/structure-anchors.ts";
 import { Euler, Vector3 } from "three";
-import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure, rotateY, wakeDuration } from "../app/field/structures.ts";
+import { ATTENTION_RANGE, CLEARING_RADIUS, FAMILIES, StructureField, createStructure, rotateY, STRUCTURE_WAKE_SECONDS } from "../app/field/structures.ts";
 import { FieldGame } from "../app/field/game.ts";
 
 const setup = seed => {
@@ -27,14 +27,14 @@ test("every complete structure wakes in about ten seconds of uninterrupted inter
     const structure = createStructure(3, graph.node(graph.spawnNodeId), family);
     structures.byNode.set(structure.nodeId, structure);
     let elapsed = 0;
+    const events = [];
     while (structure.completedAt === null && elapsed < 12) {
-      const part = structure.elements.find(element => !element.active);
-      const pose = standingAt(part);
-      pose.pitch = Math.atan2(part.position[1] - 1.62, 1.2);
+      const pose = { position: [structure.position[0], structure.position[1] - 2.5], yaw: 0, pitch: 0, speed: .5 };
       elapsed += 1 / 60;
-      structures.advance(pose, 1 / 60, elapsed * 1000);
+      events.push(...structures.advance(pose, 1 / 60, elapsed * 1000));
     }
     assert.ok(structure.completedAt !== null, `${family} completes`);
+    assert.deepEqual(events.filter(e => e.type === "element_sounded").map(e => e.elementId), structure.elements.map(e => e.id), `${family} plays every note once before completion`);
     assert.ok(elapsed >= 9.9 && elapsed <= 10.2, `${family}: ${elapsed.toFixed(2)} seconds`);
   }
 });
@@ -106,62 +106,24 @@ test("the collision core turns with the model too", () => {
   assert.ok(dz > .55 && dz < 1.1, `blocked by the long side, which now faces the walker (${dz.toFixed(2)} m from the centre)`);
 });
 
-test("approach wakes on contact; look and listen need sustained attention; completion clears the fog", () => {
+test("whole-object progress pauses away, rejects skyward gaze, and completes once", () => {
   const { structures, graph } = setup(3);
   const structure = structures.atNode(graph.spawnNodeId);
-  const [approach, look, listen] = structure.elements;
-  const changes = [];
-  const run = (walker, seconds, now0) => { let now = now0; for (let i = 0; i < seconds * 30; i++) { now += 1000 / 30; changes.push(...structures.advance(walker, 1 / 30, now)); } return now; };
-
-  // Far away: nothing happens.
-  let now = run({ position: [structure.position[0] + ATTENTION_RANGE + 5, structure.position[1]], yaw: 0, speed: 1 }, 1, 0);
-  assert.equal(changes.length, 0);
-
-  // Approach: standing within reach wakes the element quickly.
-  now = run({ position: [approach.position[0], approach.position[2] - .8], yaw: 0, speed: 1.2 }, .5, now);
-  assert.ok(changes.some(change => change.type === "element_woke" && change.elementId === approach.id), "approach woke");
-  assert.equal(changes.find(change => change.type === "element_woke").remaining, 2);
-
-  // Look: facing the element while moving does not wake it instantly; a held look does, after wakeDuration(structure, "look") seconds.
-  const looker = standingAt(look, 0, 0);
-  now = run({ ...looker, yaw: looker.yaw + 1.2, speed: 0 }, 1.2, now);
-  assert.ok(!look.active, "looking elsewhere does not wake the look element");
-  now = run(looker, wakeDuration(structure, "look") * .6, now);
-  assert.ok(!look.active && look.attention > .4, "a look begun is answered but not yet complete");
-  now = run(looker, wakeDuration(structure, "look") * .6, now);
-  assert.ok(look.active, "looking at the element wakes it");
-
-  // Listen: needs stillness.
-  const listener = standingAt(listen, 0, 0);
-  now = run({ ...listener, speed: .6 }, 2, now);
-  assert.ok(!listen.active, "moving while facing the listen element does not wake it");
-  now = run(listener, wakeDuration(structure, "listen") + .3, now);
-  assert.ok(listen.active, "being still and attending wakes the listen element");
-  const completed = changes.find(change => change.type === "completed");
-  assert.ok(completed, "waking every element completes the structure");
-  assert.equal(completed.structureId, structure.id);
-  assert.equal(structure.completedAt !== null, true);
+  const pose = { position: [structure.position[0], structure.position[1] - 2.5], yaw: 0, pitch: 0, speed: .5 };
+  let now = 0; const changes = [];
+  const run = (p, seconds) => { for (let i = 0; i < seconds * 60; i++) changes.push(...structures.advance(p, 1/60, now += 1000/60)); };
+  run(pose, 5);
+  assert.ok(structure.elements.every(e => !e.active && Math.abs(e.attention - .5) < .01));
+  run({ ...pose, yaw: Math.PI }, 3);
+  run({ ...pose, pitch: 1.5 }, 3);
+  run({ ...pose, position: [structure.position[0], structure.position[1] - 20] }, 3);
+  assert.ok(structure.elements.every(e => Math.abs(e.attention - .5) < .01), "interruptions retain progress");
+  run(pose, 5.05);
+  assert.ok(structure.elements.every(e => e.active));
+  assert.equal(changes.filter(e => e.type === "completed").length, 1);
   assert.equal(structures.clearingAt(structure.position), 1);
-  assert.ok(structures.clearingAt([structure.position[0] + CLEARING_RADIUS / 2, structure.position[1]]) > .4);
-  assert.equal(structures.clearingAt([structure.position[0] + CLEARING_RADIUS + 1, structure.position[1]]), 0);
-  assert.equal(structures.clearings().length, 1);
-
-  // Replay: touching an awake approach element sounds it again after its delay.
-  const before = changes.length;
-  now = run({ position: [approach.position[0] + 3, approach.position[2]], yaw: 0, speed: 1 }, .5, now);
-  run({ position: [approach.position[0], approach.position[2] - .8], yaw: 0, speed: 1 }, .3, now);
-  assert.ok(changes.slice(before).some(change => change.type === "element_sounded" && change.elementId === approach.id), "an awake element sounds again when touched");
-});
-
-test("attention makes a phrase, not a chord: only one look or listen element is engaged at a time", () => {
-  const { structures, graph } = setup(3);
-  const structure = structures.atNode(graph.spawnNodeId);
-  const [, look, listen] = structure.elements;
-  // Stand between look and listen, facing look.
-  const mid = [(look.position[0] + listen.position[0]) / 2, (look.position[2] + listen.position[2]) / 2];
-  const walker = { position: [mid[0], mid[1] - 2], yaw: Math.atan2(look.position[0] - mid[0], look.position[2] - (mid[1] - 2)), speed: 0 };
-  for (let i = 0; i < 10; i++) structures.advance(walker, 1 / 30, i * 33);
-  assert.equal(structure.elements.filter(element => element.engaged && element.gesture !== "approach").length <= 1, true);
+  run(pose, 3);
+  assert.equal(changes.filter(e => e.type === "completed").length, 1);
 });
 
 test("serialize and restore keep completion and element states", () => {
@@ -177,55 +139,4 @@ test("serialize and restore keep completion and element states", () => {
   assert.equal(restored.elements[0].active, true);
   assert.equal(restored.elements[1].active, false);
   assert.equal(fresh.all().length, structures.all().length, "every decided structure is back");
-});
-
-
-test("looking upward cannot wake a part below the camera", () => {
-  const { structures, graph } = setup(3);
-  const structure = structures.atNode(graph.spawnNodeId);
-  const part = structure.elements.find(element => element.gesture === "look");
-  for (const earlier of structure.elements.slice(0, structure.elements.indexOf(part))) earlier.active = true;
-  const pose = standingAt(part);
-  pose.pitch = Math.PI / 2 - .01;
-  for (let i=0;i<80;i++) structures.advance(pose,.1,i*100);
-  assert.equal(part.active,false);
-  pose.pitch = Math.atan2(part.position[1]-1.62,1.2);
-  for (let i=0;i<80;i++) structures.advance(pose,.1,3000+i*100);
-  assert.equal(part.active,true);
-});
-
-test("while parts still sleep, a finished part falls quiet so the next invitation is unambiguous", () => {
-  const { structures, graph } = setup(3);
-  const structure = structures.atNode(graph.spawnNodeId);
-  const [approach, look] = structure.elements;
-  const changes = [];
-  const run = (walker, seconds, now0) => { let now = now0; for (let i = 0; i < seconds * 30; i++) { now += 1000 / 30; changes.push(...structures.advance(walker, 1 / 30, now)); } return now; };
-  let now = run({ position: [approach.position[0], approach.position[2] - .8], yaw: 0, speed: 1.2 }, .5, 0);
-  const looker = standingAt(look, 0, 0);
-  now = run(looker, wakeDuration(structure, "look") + .4, now);
-  assert.ok(look.active);
-  changes.length = 0;
-  now = run(looker, 6, now);
-  const sounded = changes.filter(change => change.type === "element_sounded" && change.elementId === look.id);
-  assert.equal(sounded.length, 0, "a held gaze on a finished part does not loop its note while the structure is incomplete");
-  now = run({ ...looker, yaw: looker.yaw + 1.2 }, 1, now);
-  now = run(looker, 1, now);
-  assert.equal(changes.filter(change => change.type === "element_sounded" && change.elementId === look.id).length, 0, "looking away and back leaves the finished part quiet");
-});
-
-test("a part anchored high is looked at by someone facing the pipe from close up, without finding its top", () => {
-  const { structures, graph } = setup(3);
-  const structure = structures.atNode(graph.spawnNodeId);
-  const look = structure.elements.find(element => element.gesture === "look");
-  for (const earlier of structure.elements.slice(0, structure.elements.indexOf(look))) earlier.active = true;
-  // Two paces away, eyes level: the head is turned toward the part, the gaze is well below a high anchor.
-  const raised = { ...look, position: [look.position[0], 3.0, look.position[2]] };
-  const original = look.position; look.position = raised.position;
-  const changes = [];
-  const run = (walker, seconds, now0) => { let now = now0; for (let i = 0; i < seconds * 30; i++) { now += 1000 / 30; changes.push(...structures.advance(walker, 1 / 30, now)); } return now; };
-  const dx = 0, dz = -2.2;
-  const walker = { position: [look.position[0] + dx, look.position[2] + dz], yaw: Math.atan2(-dx, -dz), pitch: 0, speed: 0 };
-  run(walker, wakeDuration(structure, "look") + .5, 0);
-  assert.ok(look.active, "looking at the pipe wakes the part anchored at its top");
-  look.position = original;
 });

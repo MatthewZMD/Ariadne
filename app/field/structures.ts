@@ -15,10 +15,7 @@ import { distance, hash32, unit, wrapAngle, type FieldGraph, type FieldNode, typ
 
 export type StructureFamily = "bells" | "pages" | "cairn" | "reeds" | "instrument" | "glass" | "teaching";
 export type Gesture = "approach" | "look" | "listen";
-/**
- * Seconds of held attention a sleeping part asks for before it wakes. Touch is immediate; a look and a stillness are long
- * enough to be felt as a wait the part answers (its tone swells and its light fills), and for Ariadne to say "stay just like that".
- */
+/** Replay timings for already awakened instruments; waking uses one shared ten-second gaze. */
 export const GESTURE_DURATION: Record<Gesture, number> = { approach: .2, look: 1.6, listen: 2.4 };
 export type Relevance = "objective_relevant" | "local_proxy";
 
@@ -60,12 +57,6 @@ export type Structure = {
 
 /** Ten seconds of valid interaction across the whole structure, regardless of its part count. */
 export const STRUCTURE_WAKE_SECONDS = 10;
-export function wakeDuration(structure: Structure, gesture: Gesture): number {
-  if (gesture === "approach") return GESTURE_DURATION.approach;
-  const touches = structure.elements.filter(part => part.gesture === "approach").length;
-  const heldWeight = structure.elements.reduce((sum, part) => sum + (part.gesture === "approach" ? 0 : GESTURE_DURATION[part.gesture]), 0);
-  return (STRUCTURE_WAKE_SECONDS - touches * GESTURE_DURATION.approach) * GESTURE_DURATION[gesture] / heldWeight;
-}
 
 export type WakeChange =
   | { type: "element_woke"; structureId: string; elementId: string; noteHz: number; remaining: number }
@@ -139,19 +130,36 @@ export class StructureField {
   completed() { return this.all().filter(item => item.completedAt !== null); }
   dormantNear(position: Vec2, radius: number) { return this.all().filter(item => item.completedAt === null && distance(item.position, position) <= radius); }
 
-  /**
-   * Advance attention for every element near the walker. Approach wakes on
-   * contact; look and listen need sustained attention on one part at a time,
-   * so moving attention among the parts makes a phrase rather than a chord.
-   */
+  /** A nearby gaze wakes the whole object. Interrupted attention pauses without losing progress. */
   advance(walker: { position: Vec2; yaw: number; pitch?: number; speed: number }, dt: number, now: number): WakeChange[] {
     const changes: WakeChange[] = [];
     const step = Math.max(0, Math.min(.1, dt));
     for (const structure of this.byNode.values()) {
+      if (structure.completedAt === null) {
+        const dx = structure.position[0] - walker.position[0], dz = structure.position[1] - walker.position[1];
+        const near = Math.hypot(dx, dz) <= 3.6;
+        const facing = Math.abs(wrapAngle(walker.yaw - Math.atan2(dx, dz))) < .65;
+        const engaged = near && facing && Math.abs(walker.pitch ?? 0) < 1.1;
+        const previous = Math.max(...structure.elements.map(element => element.attention));
+        const progress = Math.min(1, previous + (engaged ? step / STRUCTURE_WAKE_SECONDS : 0));
+        for (const element of structure.elements) {
+          // The object's notes unfold automatically; they are feedback, not separate targets.
+          const noteAt = (element.index + 1) / (structure.elements.length + 1);
+          if (previous < noteAt && progress >= noteAt) {
+            element.lastSoundedAt = now;
+            changes.push({ type: "element_sounded", structureId: structure.id, elementId: element.id, noteHz: element.noteHz });
+          }
+          element.attention = progress;
+          element.engaged = engaged;
+          if (progress >= 1) { element.active = true; element.activatedAt = now; element.lastSoundedAt = now; }
+        }
+        if (progress >= 1) {
+          structure.completedAt = now;
+          changes.push({ type: "completed", structureId: structure.id, relevance: structure.relevance });
+        }
+        continue;
+      }
       if (distance(structure.position, walker.position) > ATTENTION_RANGE) { for (const element of structure.elements) { element.attention = 0; element.engaged = false; } continue; }
-      // The next sleeping part is the structure's single current invitation. Without this order, nearby anchors compete for
-      // the same gaze and the accumulated attention jumps between them, making a two-second gesture take minutes in practice.
-      const current = structure.elements.find(element => !element.active) ?? null;
       const candidates = structure.elements.map(element => {
         const dx = element.position[0] - walker.position[0], dz = element.position[2] - walker.position[1], flat = Math.hypot(dx, dz);
         const horizontal = Math.abs(wrapAngle(walker.yaw - Math.atan2(dx, dz)));
@@ -165,22 +173,15 @@ export class StructureField {
         const bearing = Math.hypot(horizontal, Math.max(0, vertical - .55));
         const inReach = element.gesture === "approach" ? flat <= 1.3 : flat <= 3.6 && horizontal < .42 && vertical < 1.1;
         const still = element.gesture !== "listen" || walker.speed < .18;
-        return { element, flat, bearing, eligible: (structure.completedAt !== null || element === current) && inReach && still };
+        return { element, flat, bearing, eligible: inReach && still };
       });
       const focus = candidates.filter(item => item.eligible && item.element.gesture !== "approach").sort((a, b) => Number(a.element.active) - Number(b.element.active) || a.bearing - b.bearing || a.flat - b.flat)[0] ?? null;
       for (const item of candidates) {
         const element = item.element, engaged = item.eligible && (element.gesture === "approach" || focus === item);
         if (!engaged) { element.attention = Math.max(0, element.attention - step * .8); element.engaged = false; continue; }
         const newlyEngaged = !element.engaged; element.engaged = true;
-        const duration = element.active ? GESTURE_DURATION[element.gesture] : wakeDuration(structure, element.gesture);
+        const duration = GESTURE_DURATION[element.gesture];
         element.attention = Math.min(1, element.attention + step / duration);
-        if (!element.active && element.attention >= 1) {
-          element.active = true; element.activatedAt = now; element.lastSoundedAt = now;
-          const remaining = structure.elements.filter(part => !part.active).length;
-          changes.push({ type: "element_woke", structureId: structure.id, elementId: element.id, noteHz: element.noteHz, remaining });
-          if (remaining === 0 && structure.completedAt === null) { structure.completedAt = now; changes.push({ type: "completed", structureId: structure.id, relevance: structure.relevance }); }
-          continue;
-        }
         const replayDelay = element.gesture === "listen" ? 1800 : element.gesture === "look" ? 700 : 300;
         // An awake part sounds again when played: on every touch, and, once the whole structure is awake, on every held gaze
         // or stillness, so a finished structure is an instrument. While parts still sleep, a finished part sounds once per
