@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GESTURE_DURATION } from "../app/field/structures.ts";
+import { wakeDuration } from "../app/field/structures.ts";
 import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, PROMPT_AFTER_MS, STILL_RENEW_AFTER_MS } from "../app/field/game.ts";
 import { wrapAngle } from "../app/field/graph.ts";
 
@@ -47,7 +47,7 @@ const wake = (game, structure) => {
   for (const element of structure.elements) {
     if (element.active) continue;
     if (element.gesture === "approach") { events.push(...walkTo(game, [element.position[0], element.position[2]], .9, 20)); events.push(...run(game, .6)); }
-    else { events.push(...walkTo(game, standingPoint(game, element, 2.2), .5, 20)); events.push(...faceAndWait(game, element.position, element.gesture === "listen" ? 3 : 1.8)); }
+    else { events.push(...walkTo(game, standingPoint(game, element, 2.2), .5, 20)); events.push(...faceAndWait(game, element.position, wakeDuration(structure, element.gesture) + 1)); }
     if (!element.active) { events.push(...walkTo(game, standingPoint(game, element, element.gesture === "approach" ? .6 : 2.4), .3, 10)); events.push(...faceAndWait(game, element.position, 3)); }
   }
   return events;
@@ -415,7 +415,7 @@ test("a part answering a held look is spoken to once while it still has a second
   assert.ok(approach.active, "the touch woke the first part");
   run(game, 3.2);
   walkTo(game, standingPoint(game, look, 2.2), .5, 20);
-  const holding = faceAndWait(game, look.position, GESTURE_DURATION.look * .55);
+  const holding = faceAndWait(game, look.position, wakeDuration(teaching, "look") * .55);
   assert.ok(!look.active && look.attention > .15, `the look is being answered but is not complete (${look.attention})`);
   const attending = speeches(holding).find(event => event.occasion === "structure_attending");
   assert.ok(attending, "she tells them to stay as they are while it answers");
@@ -426,7 +426,7 @@ test("a part answering a held look is spoken to once while it still has a second
   assert.equal(near.structure.attending?.gesture, "look");
   assert.ok(["beginning", "halfway", "almost"].includes(near.structure.attending?.progress));
   assert.equal(near.structure.nextAsks, "look");
-  const rest = faceAndWait(game, look.position, GESTURE_DURATION.look);
+  const rest = faceAndWait(game, look.position, wakeDuration(teaching, "look"));
   assert.ok(look.active, "held a little longer, it wakes");
   assert.ok(!speeches(rest).some(event => event.occasion === "structure_attending"), "she does not say it twice for one part");
 

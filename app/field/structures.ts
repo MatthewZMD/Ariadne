@@ -58,6 +58,15 @@ export type Structure = {
   fragmentPosition: [number, number, number];
 };
 
+/** Ten seconds of valid interaction across the whole structure, regardless of its part count. */
+export const STRUCTURE_WAKE_SECONDS = 10;
+export function wakeDuration(structure: Structure, gesture: Gesture): number {
+  if (gesture === "approach") return GESTURE_DURATION.approach;
+  const touches = structure.elements.filter(part => part.gesture === "approach").length;
+  const heldWeight = structure.elements.reduce((sum, part) => sum + (part.gesture === "approach" ? 0 : GESTURE_DURATION[part.gesture]), 0);
+  return (STRUCTURE_WAKE_SECONDS - touches * GESTURE_DURATION.approach) * GESTURE_DURATION[gesture] / heldWeight;
+}
+
 export type WakeChange =
   | { type: "element_woke"; structureId: string; elementId: string; noteHz: number; remaining: number }
   | { type: "element_sounded"; structureId: string; elementId: string; noteHz: number }
@@ -163,7 +172,7 @@ export class StructureField {
         const element = item.element, engaged = item.eligible && (element.gesture === "approach" || focus === item);
         if (!engaged) { element.attention = Math.max(0, element.attention - step * .8); element.engaged = false; continue; }
         const newlyEngaged = !element.engaged; element.engaged = true;
-        const duration = GESTURE_DURATION[element.gesture];
+        const duration = element.active ? GESTURE_DURATION[element.gesture] : wakeDuration(structure, element.gesture);
         element.attention = Math.min(1, element.attention + step / duration);
         if (!element.active && element.attention >= 1) {
           element.active = true; element.activatedAt = now; element.lastSoundedAt = now;

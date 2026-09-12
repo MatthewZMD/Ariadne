@@ -12,7 +12,7 @@ import { MOVE_ACCELERATION, TURN_ACCELERATION, acceleratedSpeed, advanceInputRam
 import type { FieldBody, FieldNear, FieldOccasion, FieldPhase, RelativeDirection as PracticeDirection } from "../field-practice.ts";
 import { FieldGraph, NODE_RADIUS, OFF_WAY_DISTANCE, WAY_HALF_WIDTH, bearingTo, distance, forwardOf, relativeDirection, rightOf, unit, wrapAngle, type FieldNode, type FieldWay, type Vec2, type WayMarkerKind } from "./graph.ts";
 import { STRUCTURE_ANCHORS } from "./structure-anchors.ts";
-import { CLEARING_RADIUS, StructureField, modelIdFor, rotateY, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily, GESTURE_DURATION } from "./structures.ts";
+import { CLEARING_RADIUS, StructureField, modelIdFor, rotateY, type Gesture, type Relevance, type Structure, type StructureElement, type StructureFamily, wakeDuration } from "./structures.ts";
 import { CALL_FAINT_RANGE, CALL_RANGE, beginCall, callAudibility, commitAt, createUndertaking, resolveCommitment, stageRun, takeUp, type Commitment, type StageRun, type Undertaking } from "./undertaking.ts";
 import { WorldMemory, ownFootprintsVisible, type MemorySnapshot } from "./memory.ts";
 import { beginCelebration, beginExamining, beginRepair, createAriadneBody, describeBody, hoverBeside, leadAlong, presenceOf, stopExamining, takeFragment, updateAriadne, walkerMarkerIndex, type AriadneBody } from "./ariadne.ts";
@@ -676,7 +676,7 @@ export class FieldGame {
         const near = distance(structure.position, this.walker.position) < 8;
         // A sleeping part is answering a held look or stillness: once, while it still has more than a second to go, she tells
         // them to stay exactly as they are. The wait is the experience; her line is what makes it legible as one.
-        if (answering && near && answering.attention >= ATTENDING_SPEAK_AT && GESTURE_DURATION[answering.gesture] * (1 - answering.attention) >= 1.1 && !this.attendingSpoken.has(answering.id) && (this.attendingLinesAt.get(structure.id) ?? 0) < 2 && now - this.lastWakeAt > 2500 && now - this.lastPromptAt > 4000) {
+        if (answering && near && answering.attention >= ATTENDING_SPEAK_AT && wakeDuration(structure, answering.gesture) * (1 - answering.attention) >= 1.1 && !this.attendingSpoken.has(answering.id) && (this.attendingLinesAt.get(structure.id) ?? 0) < 2 && now - this.lastWakeAt > 2500 && now - this.lastPromptAt > 4000) {
           this.attendingSpoken.add(answering.id); this.attendingLinesAt.set(structure.id, (this.attendingLinesAt.get(structure.id) ?? 0) + 1); this.lastPromptAt = now;
           const awake = structure.elements.length - asleep.length;
           this.speak("structure_attending", `Is ${GESTURE_DOING[answering.gesture]}, as its next sleeping part asks, and it is answering them slowly${awake ? `; ${awake} part${awake === 1 ? "" : "s"} of the structure ${awake === 1 ? "is" : "are"} awake and ${asleep.length} still asleep` : ""}.`, "It needs a few more seconds of exactly this, and then it will wake. Nothing else is asked of them now.", this.farForNow(), 66, null);
