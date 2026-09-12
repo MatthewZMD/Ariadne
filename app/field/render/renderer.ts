@@ -473,6 +473,7 @@ export class FieldRenderer {
     const engaged = game.engagedElement();
     for (const view of this.structures.values()) {
       const calling = game.call.structureId === view.structure.id;
+      const current = view.structure.elements.find(element => !element.active) ?? null;
       const breathe = calling ? .25 + frame.pulse * .9 : .22 + Math.sin(seconds * .7 + view.structure.position[0]) * .05;
       for (const material of view.dormantEmissive) material.emissiveIntensity = view.state === "awake" ? 0 : (material.userData.baseIntensity as number) * breathe * 25;
       for (const material of view.awakeEmissive) material.emissiveIntensity = view.state === "awake" ? (material.userData.baseIntensity as number) * (1 + Math.sin(seconds * 1.1) * .08) : 0;
@@ -480,12 +481,12 @@ export class FieldRenderer {
         const sprite = view.sprites[index]; if (!sprite) return;
         const material = sprite.material as THREE.SpriteMaterial;
         const attention = element === engaged ? element.attention : element.attention * .6;
-        // A finished part glows steadily; a sleeping part breathes faintly, so which parts still sleep can be seen from a few
-        // paces; a sleeping part being answered fills and swells with the walker's held attention, the wait made visible.
-        const asleepBreath = element.active ? 0 : .11 + Math.sin(seconds * 1.6 + index * 1.3) * .04;
-        const base = element.active ? .35 : asleepBreath;
+        // One sleeping part at a time is the current invitation. Finished and later parts recede, so the player can tell which
+        // response is still asking for attention and when that response has ended.
+        const asleepBreath = element === current ? .25 + Math.sin(seconds * 2.2 + index * 1.3) * .09 : 0;
+        const base = element.active ? .2 : element === current ? asleepBreath : .05;
         material.opacity = Math.min(.8, base * .6 + attention * .6 + (element.engaged && !element.active ? .08 : 0));
-        sprite.scale.setScalar(element.active ? .4 + Math.sin(seconds * 2 + index) * .04 : .3 + asleepBreath * .6 + attention * .9 + (element === engaged ? Math.sin(seconds * (4 + attention * 10)) * .05 * attention : 0));
+        sprite.scale.setScalar(element.active ? .3 : element === current ? .42 + asleepBreath * .75 + attention * .9 + (element === engaged ? Math.sin(seconds * (4 + attention * 10)) * .05 * attention : 0) : .24);
       });
     }
     const nowMs = performance.now();

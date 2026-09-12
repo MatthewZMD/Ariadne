@@ -140,6 +140,9 @@ export class StructureField {
     const step = Math.max(0, Math.min(.1, dt));
     for (const structure of this.byNode.values()) {
       if (distance(structure.position, walker.position) > ATTENTION_RANGE) { for (const element of structure.elements) { element.attention = 0; element.engaged = false; } continue; }
+      // The next sleeping part is the structure's single current invitation. Without this order, nearby anchors compete for
+      // the same gaze and the accumulated attention jumps between them, making a two-second gesture take minutes in practice.
+      const current = structure.elements.find(element => !element.active) ?? null;
       const candidates = structure.elements.map(element => {
         const dx = element.position[0] - walker.position[0], dz = element.position[2] - walker.position[1], flat = Math.hypot(dx, dz);
         const horizontal = Math.abs(wrapAngle(walker.yaw - Math.atan2(dx, dz)));
@@ -153,7 +156,7 @@ export class StructureField {
         const bearing = Math.hypot(horizontal, Math.max(0, vertical - .55));
         const inReach = element.gesture === "approach" ? flat <= 1.3 : flat <= 3.6 && horizontal < .42 && vertical < 1.1;
         const still = element.gesture !== "listen" || walker.speed < .18;
-        return { element, flat, bearing, eligible: inReach && still };
+        return { element, flat, bearing, eligible: (structure.completedAt !== null || element === current) && inReach && still };
       });
       const focus = candidates.filter(item => item.eligible && item.element.gesture !== "approach").sort((a, b) => Number(a.element.active) - Number(b.element.active) || a.bearing - b.bearing || a.flat - b.flat)[0] ?? null;
       for (const item of candidates) {
@@ -174,8 +177,8 @@ export class StructureField {
         // or stillness, so a finished structure is an instrument. While parts still sleep, a finished part sounds once per
         // glance and no more; a note looping from the part that is done, while the sleeping one gives nothing, reads as a
         // structure that is broken rather than waiting.
-        const replay = element.gesture === "approach" || structure.completedAt === null ? newlyEngaged : element.attention >= 1;
-        if (element.active && now - (element.lastSoundedAt ?? 0) > replayDelay && replay) {
+        const replay = element.gesture === "approach" ? newlyEngaged : element.attention >= 1;
+        if (element.active && structure.completedAt !== null && now - (element.lastSoundedAt ?? 0) > replayDelay && replay) {
           element.lastSoundedAt = now; element.attention = 0;
           changes.push({ type: "element_sounded", structureId: structure.id, elementId: element.id, noteHz: element.noteHz });
         }

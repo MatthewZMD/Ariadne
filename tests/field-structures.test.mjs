@@ -165,6 +165,7 @@ test("looking upward cannot wake a part below the camera", () => {
   const { structures, graph } = setup(3);
   const structure = structures.atNode(graph.spawnNodeId);
   const part = structure.elements.find(element => element.gesture === "look");
+  for (const earlier of structure.elements.slice(0, structure.elements.indexOf(part))) earlier.active = true;
   const pose = standingAt(part);
   pose.pitch = Math.PI / 2 - .01;
   for (let i=0;i<30;i++) structures.advance(pose,.1,i*100);
@@ -174,7 +175,7 @@ test("looking upward cannot wake a part below the camera", () => {
   assert.equal(part.active,true);
 });
 
-test("while parts still sleep, a finished look part sounds once per glance rather than looping", () => {
+test("while parts still sleep, a finished part falls quiet so the next invitation is unambiguous", () => {
   const { structures, graph } = setup(3);
   const structure = structures.atNode(graph.spawnNodeId);
   const [approach, look] = structure.elements;
@@ -190,13 +191,14 @@ test("while parts still sleep, a finished look part sounds once per glance rathe
   assert.equal(sounded.length, 0, "a held gaze on a finished part does not loop its note while the structure is incomplete");
   now = run({ ...looker, yaw: looker.yaw + 1.2 }, 1, now);
   now = run(looker, 1, now);
-  assert.equal(changes.filter(change => change.type === "element_sounded" && change.elementId === look.id).length, 1, "looking away and back sounds it once");
+  assert.equal(changes.filter(change => change.type === "element_sounded" && change.elementId === look.id).length, 0, "looking away and back leaves the finished part quiet");
 });
 
 test("a part anchored high is looked at by someone facing the pipe from close up, without finding its top", () => {
   const { structures, graph } = setup(3);
   const structure = structures.atNode(graph.spawnNodeId);
   const look = structure.elements.find(element => element.gesture === "look");
+  for (const earlier of structure.elements.slice(0, structure.elements.indexOf(look))) earlier.active = true;
   // Two paces away, eyes level: the head is turned toward the part, the gaze is well below a high anchor.
   const raised = { ...look, position: [look.position[0], 3.0, look.position[2]] };
   const original = look.position; look.position = raised.position;
