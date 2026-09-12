@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CALL_PULSE_EVENTS, cueForOccasion, deliveryFor, elementIndexOf, nextVariant, pulseEnvelope, upcomingPulses } from "../app/field/audio.ts";
+import { CALL_PULSE_EVENTS, createFieldAudio, cueForOccasion, deliveryFor, elementIndexOf, nextVariant, pulseEnvelope, upcomingPulses } from "../app/field/audio.ts";
 import { ARIADNE_VOCAL_DELIVERIES } from "../app/ariadne-vocal-performance.ts";
 import { readFile } from "node:fs/promises";
 
@@ -42,4 +42,77 @@ test("footstep variants never repeat back to back and element ids resolve to sam
   assert.equal(nextVariant(1, 1), 1);
   assert.equal(elementIndexOf("4,2:element_03"), 3);
   assert.equal(elementIndexOf("nonsense"), 1);
+});
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
+
+/** Only the voice graph is needed: buffer sources start and finish under the test's control. */
+async function voiceHarness(t, speechResponse = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) })) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "AudioContext"), sources = [];
+  const parameter = () => ({ value: 0, setTargetAtTime() {} });
+  const node = () => ({ connect() {}, disconnect() {} });
+  class AudioContext {
+    currentTime = 0;
+    destination = node();
+    createGain() { return { ...node(), gain: parameter() }; }
+    createDynamicsCompressor() { return { ...node(), ...Object.fromEntries(["threshold", "knee", "ratio", "attack", "release"].map(key => [key, parameter()])) }; }
+    createStereoPanner() { return { ...node(), pan: parameter() }; }
+    createAnalyser() { return node(); }
+    createBufferSource() {
+      const source = { ...node(), playbackRate: parameter(), onended: null, started: false, stopped: false, start() { this.started = true; }, stop() { this.stopped = true; } };
+      sources.push(source);
+      return source;
+    }
+    async decodeAudioData() { return { duration: 2 }; }
+    async resume() {}
+    async close() {}
+  }
+  globalThis.AudioContext = AudioContext;
+  const audio = createFieldAudio({ sessionId: "voice-test", fetchImpl: async (url, init) => {
+    if (url === "/fog/audio.json") return { ok: true, json: async () => ({ assets: [] }) };
+    if (url === "/api/speech") return speechResponse(JSON.parse(init.body));
+    return { ok: false };
+  } });
+  t.after(() => { audio.destroy(); if (original) Object.defineProperty(globalThis, "AudioContext", original); else delete globalThis.AudioContext; });
+  await audio.unlock();
+  return { audio, sources };
+}
+
+test("a refused playback start releases the voice for the next utterance", async t => {
+  const { audio, sources } = await voiceHarness(t);
+  const refused = await audio.voice.speak("The obsolete direction.", "old", "confident_invitation", { shouldStart: () => false });
+  assert.equal(refused, "interrupted");
+  assert.equal(sources.length, 0, "obsolete speech never starts an audio source");
+  assert.equal(audio.voice.isBusy(), false, "refusal must not leave synthesis marked busy");
+  const started = deferred();
+  const next = audio.voice.speak("The current direction.", "current", "confident_invitation", { onStart: started.resolve });
+  await started.promise;
+  assert.equal(audio.voice.currentText(), "The current direction.");
+  assert.equal(audio.voice.isBusy(), true);
+  assert.equal(sources[0].started, true);
+  sources[0].onended();
+  assert.equal(await next, "spoken");
+  assert.equal(audio.voice.isBusy(), false);
+});
+
+test("an interrupted synthesis response cannot clear the newer voice already playing", async t => {
+  const oldResponse = deferred();
+  const { audio, sources } = await voiceHarness(t, request => request.utteranceId === "old" ? oldResponse.promise : { ok: true, arrayBuffer: async () => new ArrayBuffer(1) });
+  const old = audio.voice.speak("The old direction.", "old", "confident_invitation", { shouldStart: () => false });
+  const started = deferred();
+  const current = audio.voice.speak("The new direction.", "new", "confident_invitation", { onStart: started.resolve });
+  await started.promise;
+  oldResponse.resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) });
+  assert.equal(await old, "interrupted");
+  assert.equal(sources.length, 1, "only the newer line obtained a playback source");
+  assert.equal(sources[0].stopped, false, "the old response must not stop newer playback");
+  assert.equal(audio.voice.currentText(), "The new direction.");
+  assert.equal(audio.voice.isBusy(), true);
+  sources[0].onended();
+  assert.equal(await current, "spoken");
+  assert.equal(audio.voice.isBusy(), false);
 });

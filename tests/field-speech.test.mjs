@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { FieldGame, IDLE_INPUT } from "../app/field/game.ts";
 import { FieldSpeech, planFor, summarize } from "../app/field/speech.ts";
-import { FIELD_REGISTER } from "../app/field-practice.ts";
+import { FIELD_REGISTER, fieldDeterministicLine } from "../app/field-practice.ts";
 import { parseFieldRequest } from "../app/api/companion/field.ts";
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -155,7 +155,7 @@ test("plans vary by occasion and phase, and the register thickens as the walk go
   assert.ok(rate("awakening_proxy", "overbearing") > .4, "late, praise comes as an assistant gives it");
   const late = Array.from({ length: 40 }, (_, seed) => planFor("declined", "overbearing", seed, null));
   assert.ok(late.every(plan => !plan.affirmation || plan.sentenceCount === 2), "an affirmation makes room for a second sentence");
-  assert.ok(late.some(plan => plan.affirmation && /, and /.test(plan.affirmation)), "late, an agreement may bring an apology with it");
+  assert.ok(late.every(plan => !plan.affirmation || !/, and /.test(plan.affirmation)), "late agreement does not acquire an unsupported apology");
   // The kind of moment chooses the register: a compliment is thanked, tiredness understood, an objection agreed with, a question welcomed.
   const phrases = (message, phase = "overbearing") => new Set(Array.from({ length: 120 }, (_, seed) => planFor("reply", phase, seed, message).affirmation).filter(Boolean).map(text => text.split(", and ")[0].replace(/\.$/, "")));
   const inPool = (set, pool) => set.size > 0 && [...set].every(text => pool.some(phrase => phrase.replace(/\.$/, "") === text));
@@ -171,14 +171,14 @@ test("plans vary by occasion and phase, and the register thickens as the walk go
   const circles = Array.from({ length: 60 }, (_, seed) => planFor("recognized_return", "overbearing", seed, null, undefined, false).affirmation).filter(Boolean);
   assert.ok(circles.length > 0 && circles.every(text => FIELD_REGISTER.reassurance.includes(text)), "a circle she led them in is reassured, never a reunion");
   // Beats: the recognition may open with an apology, the renewal with the ask's phrase.
-  const acks = Array.from({ length: 60 }, (_, seed) => planFor("outcome_failed", "overbearing", seed, null, undefined, true, "acknowledge")).filter(plan => plan.affirmation);
+  const acks = Array.from({ length: 60 }, (_, seed) => planFor("terminus", "overbearing", seed, null, undefined, true, "acknowledge", undefined, false, false, false, true)).filter(plan => plan.affirmation);
   assert.ok(acks.length > 0 && acks.every(plan => FIELD_REGISTER.apology.includes(plan.affirmation) && plan.sentenceCount === 2), "the recognition beat apologizes as an assistant does");
-  const renews = Array.from({ length: 60 }, (_, seed) => planFor("outcome_failed", "overbearing", seed, null, undefined, true, "renew")).filter(plan => plan.affirmation);
+  const renews = Array.from({ length: 60 }, (_, seed) => planFor("terminus", "overbearing", seed, null, undefined, true, "renew", undefined, false, false, false, true)).filter(plan => plan.affirmation);
   assert.ok(renews.length > 0 && renews.every(plan => FIELD_REGISTER.renewal.includes(plan.affirmation)), "the renewal beat asks again in the register");
   // The phrase of her last two lines is not chosen again at once.
   const recent = [{ role: "ariadne", text: "You're absolutely right. I'm with you." }];
   assert.ok(Array.from({ length: 200 }, (_, seed) => planFor("declined", "overbearing", seed, null, undefined, true, undefined, recent).affirmation).every(text => !text || !/^You're absolutely right/.test(text)), "the phrase of her last line is not repeated at once");
-  assert.equal(planFor("commitment", "overbearing", 1, null, { waysChosen: 4, walked: 4, arrivedAtNothing: 3, faded: 0, ended: 0, declined: 0, returns: 0 }).length, "full", "a line that must carry the count has room");
+  assert.equal(planFor("commitment", "overbearing", 1, null, { waysChosen: 4, walked: 4, arrivedAtNothing: 3, faded: 0, ended: 0, declined: 0, returns: 0 }).length, "short", "a failure threshold does not lengthen the next invitation");
   assert.equal(planFor("taken_up", "attached", 1, null).length, "bark");
   assert.equal(planFor("outcome_failed", "attached", 1, null).length, "full");
   assert.equal(summarize([{ role: "ariadne", text: "Come on." }, { role: "walker", text: "Where?" }], ""), "Ariadne said: “Come on.”\nMT said: “Where?”");
@@ -208,6 +208,8 @@ test("a commitment made while she is mid-line is spoken when she is free, not lo
 
   // A commitment she has already left behind is not announced late.
   busy = true;
+  const superseded = { ...game.undertaking.active, id: "commitment:8" };
+  game.undertaking = { ...game.undertaking, active: superseded, history: [...game.undertaking.history, superseded] };
   speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:8" });
   game.undertaking = { ...game.undertaking, active: null };
   busy = false;
@@ -258,7 +260,7 @@ test("a failed request produces one complete fallback response", async () => {
   speech.handle({ type: "speak", occasion: "recognized_return", walkerDid: "Arrived again at a place the two of you have stood before; their own footprints are on the ground.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: { wayId: node.ways[0] }, priority: 80, commitmentId: "commitment:4" });
   await settle(speech);
   assert.deepEqual(audio.calls.cues, [], "fallback is a single response without a prefabricated lead-in");
-  assert.equal(audio.calls.spoken.at(-1)?.text, "Those are your footprints. So it isn't that way. Fewer left.", "her body chose a way; her words follow the cue and do not repeat it");
+  assert.match(audio.calls.spoken.at(-1)?.text, /We've stood here before\. Let's try the leaning stones\./, "a return does not prove the route was wrong");
   assert.equal(game.memory.captions.at(-1).kind, "generated");
 });
 
@@ -275,26 +277,27 @@ test("a renewed invitation to a walker who has not moved is the recorded cue alo
   assert.equal(net.posts.length, 0, "no line is generated for a renewed invitation");
 });
 
-test("a failed way gets a generated recognition, a silence, then renewal; a new choice cancels renewal", async () => {
+test("a blocked route she requested gets recognition then renewal; a new choice cancels renewal", async () => {
   const game = new FieldGame(19);
   const audio = fakeAudio();
-  const net = fakeFetch(body => ({ message: body.request.plan.beat === "acknowledge" ? "That was mine, and it went quiet." : "I'm listening again; the next one is close.", source: "provider", modelUsed: "google/gemma-4-26b-a4b-it:free" }));
+  const net = fakeFetch(body => ({ message: body.request.plan.beat === "acknowledge" ? "I sent you this way, and the markers stop." : "I'm listening again; the next one is close.", source: "provider", modelUsed: "google/gemma-4-26b-a4b-it:free" }));
   const speech = new FieldSpeech(game, audio, { sessionId: "s19", fetchImpl: net.fetchImpl });
   await tick(); run(game, 8);
-  speech.handle({ type: "speak", occasion: "outcome_failed", walkerDid: "Walked the posts as you asked.", whatFollowed: "The call is fading.", far: null, priority: 90, commitmentId: "commitment:1" });
+  speech.handle({ type: "speak", occasion: "terminus", walkerDid: "Walked the posts as you asked.", whatFollowed: "The markers stop here.", far: null, priority: 90, commitmentId: "commitment:1", guidanceOwned: true });
   await settle(speech);
   assert.ok(!audio.calls.cues.includes("fading"));
   assert.equal(net.posts.length, 1); assert.equal(net.posts[0].request.plan.beat, "acknowledge"); assert.equal(net.posts[0].request.plan.sentenceCount, 1);
-  assert.equal(audio.calls.spoken.at(-1).text, "That was mine, and it went quiet.");
+  assert.equal(audio.calls.spoken.at(-1).text, "I sent you this way, and the markers stop.");
   run(game, 2); speech.update(); await settle(speech);
   assert.equal(net.posts.length, 1, "the renewal waits out the silence");
   run(game, 5); speech.update(); await settle(speech);
   assert.equal(net.posts.length, 2); assert.equal(net.posts[1].request.plan.beat, "renew");
   assert.equal(audio.calls.spoken.at(-1).text, "I'm listening again; the next one is close.");
   assert.equal(audio.calls.cues.filter(id => id === "fading").length, 0, "neither beat adds a stock cue");
+  assert.equal(speech.save().moments.filter(moment => moment.kind === "setback").length, 1, "two speech beats represent one actual setback");
 
   // A renewal after her body has already chosen a new way would contradict the choice; it is dropped.
-  speech.handle({ type: "speak", occasion: "terminus", walkerDid: "Walked to the end.", whatFollowed: "The way ends.", far: null, priority: 88, commitmentId: "commitment:2" });
+  speech.handle({ type: "speak", occasion: "terminus", walkerDid: "Walked to the end.", whatFollowed: "The way ends.", far: null, priority: 88, commitmentId: "commitment:2", guidanceOwned: true });
   await settle(speech);
   assert.equal(net.posts.at(-1).request.plan.beat, "acknowledge");
   game.undertaking = { ...game.undertaking, commitmentsMade: game.undertaking.commitmentsMade + 1 };
@@ -328,28 +331,13 @@ test("a typed wish to stop is spoken in two beats, and a question in one", async
   assert.equal(net.posts[2].request.plan.beat, undefined);
 });
 
-test("she says the count once: the card asks on the first line at three failures and not on the next, and the memory survives a save", async () => {
-  const game = new FieldGame(29);
-  const audio = fakeAudio();
-  const net = fakeFetch(() => ({ message: "Three of my ways came to nothing. The posts, then.", source: "provider", modelUsed: "deepseek/deepseek-v4-flash" }));
-  const speech = new FieldSpeech(game, audio, { sessionId: "s29", fetchImpl: net.fetchImpl });
-  await tick(); run(game, 8);
+test("three setbacks do not trigger an automatic failure monologue", async () => {
+  const game = new FieldGame(29), audio = fakeAudio(), net = fakeFetch();
+  const speech = new FieldSpeech(game, audio, { sessionId: "no-tally", fetchImpl: net.fetchImpl });
   game.run = () => ({ waysChosen: 5, walked: 4, arrivedAtNothing: 2, faded: 1, ended: 0, declined: 1, returns: 0 });
-  const node = game.graph.node(game.teachingNodeId);
-  const commit = id => { game.undertaking = { ...game.undertaking, active: { id, nodeId: node.id, wayId: node.ways[0], correct: true, madeAt: game.time, taken: "pending", declinedFor: null, outcome: "pending" } }; speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at a place where 3 ways meet.", whatFollowed: `Your body went to the first marker of the ${game.graph.way(node.ways[0]).marker} ahead.`, far: { wayId: node.ways[0] }, priority: 80, commitmentId: id }); };
-  commit("commitment:11"); await settle(speech);
-  const first = net.posts.at(-1).request;
-  assert.equal(first.run.countNamedAt, -1);
-  assert.match(first.plan.length, /full/);
-  run(game, 3); commit("commitment:12"); await settle(speech);
-  const second = net.posts.at(-1).request;
-  assert.equal(second.run.countNamedAt, 3, "the count she said is remembered");
-  assert.equal(second.plan.length, "short", "the next line is not asked for it again");
-  const saved = JSON.parse(JSON.stringify(speech.save()));
-  assert.equal(saved.countNamedAt, 3);
-  const speech2 = new FieldSpeech(game, fakeAudio(), { sessionId: "s29b", fetchImpl: net.fetchImpl });
-  speech2.restore(saved);
-  assert.equal(speech2.request({ type: "speak", occasion: "commitment", walkerDid: "Arrived.", whatFollowed: "Your body went to the first marker of the posts ahead.", far: null, priority: 80, commitmentId: null }).run.countNamedAt, 3);
+  const request = speech.request({ type: "speak", occasion: "commitment", walkerDid: "Arrived at a junction.", whatFollowed: "Your body chose the next way.", far: null, priority: 80, commitmentId: null });
+  assert.equal(request.plan.length, "short");
+  assert.equal(request.run.arrivedAtNothing, 2, "history remains available");
 });
 
 test("recorded take-up and idle phrases remain, but confirmations use generation alone", async () => {
@@ -390,33 +378,171 @@ test("recorded take-up and idle phrases remain, but confirmations use generation
 });
 
 
-test("a quiet arrival cannot be followed by a claim of renewed hearing", async () => {
+test("a legacy quiet arrival is one navigation line with the actual hearing preserved", async () => {
   const game = new FieldGame(31), audio = fakeAudio(), net = fakeFetch();
   const speech = new FieldSpeech(game, audio, { sessionId: "quiet-regression", fetchImpl: net.fetchImpl });
   await tick(); run(game, 8);
-  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at the clearing.", whatFollowed: "Another way is chosen.", far: { wayId: game.teachingWayId }, priority: 80, commitmentId: null, tone: "quiet_arrival" });
-  await settle(speech);
-  assert.ok(!audio.calls.cues.includes("nowhere-forward"));
-  assert.equal(net.posts.length, 1, "acknowledgment is generated");
-  run(game, 4); await settle(speech);
-  assert.equal(net.posts.length, 1, "renewal leaves a silence");
-  run(game, 3); await settle(speech);
-  assert.equal(net.posts.length, 2);
+  const near = game.perceive({ wayId: game.teachingWayId }).near;
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Arrived at a junction with onward ways.", whatFollowed: "Another way is chosen.", far: { wayId: game.teachingWayId }, priority: 80, commitmentId: null, tone: "quiet_arrival" });
+  await settle(speech); run(game, 8); await settle(speech);
+  assert.equal(net.posts.length, 1, "ordinary navigation does not create a second repair beat");
   const request = net.posts[0].request;
-  assert.equal(request.far.heardAlong, null);
-  assert.notEqual(request.turn.youSaid, "I can't hear it from here.", "no unspoken stock sentence is attributed to her");
-  assert.ok(audio.calls.spoken.length > 0);
-  assert.ok(audio.calls.spoken.every(line => !/louder|I can hear/i.test(line.text)), "contradictory provider line is replaced");
+  assert.equal(request.plan.beat, undefined);
+  assert.equal(request.plan.affirmation, null);
+  assert.deepEqual(request.near.call, near.call, "a tone does not overwrite perception");
+  assert.deepEqual(request.far.heardAlong, { wayId: game.teachingWayId });
+  assert.deepEqual(audio.calls.cues, [], "the generated line stands alone");
 });
 
-test("a directed return owns the instruction instead of playing the surprise-return cue", async () => {
+test("a directed return supplies ownership evidence without enforcing an exact confession", async () => {
   const game = new FieldGame(31), audio = fakeAudio();
-  const net = fakeFetch(() => ({ message: "We've been here. This way.", source: "provider" }));
+  const response = "Thank you for walking back. We can take the posts now.";
+  const net = fakeFetch(() => ({ message: response, source: "provider" }));
   const speech = new FieldSpeech(game, audio, { sessionId: "return-regression", fetchImpl: net.fetchImpl });
   await tick(); run(game, 8);
-  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Returned along the route you directed them back along.", whatFollowed: "You asked for this backtracking. Your body has chosen the next way.", far: { wayId: game.teachingWayId }, priority: 84, commitmentId: null, tone: "directed_return" });
+  speech.handle({ type: "speak", occasion: "commitment", walkerDid: "Returned along the route you directed them back along.", whatFollowed: "You asked for this backtracking. Your body has chosen the next way.", far: { wayId: game.teachingWayId }, priority: 84, commitmentId: null, tone: "directed_return", guidanceOwned: true });
   await settle(speech);
-  assert.ok(!audio.calls.cues.includes("been-here"));
-  assert.ok(audio.calls.spoken.some(line => /I asked you to come back here/.test(line.text)));
-  assert.ok(audio.calls.spoken.every(line => !/We've been here/.test(line.text)));
+  assert.deepEqual(audio.calls.cues, []);
+  assert.equal(net.posts[0].request.turn.guidanceOwned, true);
+  assert.match(net.posts[0].request.turn.whatFollowed, /You asked for this backtracking/);
+  assert.equal(net.posts[0].request.plan.beat, undefined);
+  assert.equal(audio.calls.spoken.at(-1).text, response, "nuanced acknowledgment remains the model's words");
+});
+
+test("fading sound and independently explored dead ends do not manufacture responsibility", async () => {
+  for (const occasion of ["outcome_failed", "terminus"]) {
+    const game = new FieldGame(33), audio = fakeAudio();
+    const speech = new FieldSpeech(game, audio, { sessionId: occasion, offline: true, fetchImpl: fakeFetch().fetchImpl });
+    await tick(); run(game, 8);
+    Object.defineProperty(game, "phase", { get: () => "overbearing" });
+    speech.handle({ type: "speak", occasion, walkerDid: "Walked along the markers.", whatFollowed: occasion === "outcome_failed" ? "The call has faded; the way remains open." : "The independently explored way ends.", far: null, priority: 90, commitmentId: null, guidanceOwned: false });
+    await settle(speech); run(game, 8); await settle(speech);
+    assert.equal(audio.calls.spoken.length, 1, "the observation does not launch a repair exchange");
+    assert.doesNotMatch(audio.calls.spoken[0].text, /sorry|apolog|mine|I sent|my direction|on me/i);
+    assert.equal(speech.save().moments.length, 1);
+    assert.equal(speech.save().moments[0].kind, "observation");
+  }
+});
+
+test("a successful awakening recalls an actual contribution instead of the worst old failure", () => {
+  let recalls = 0;
+  for (let seed = 0; seed < 40; seed++) {
+    const game = new FieldGame(seed), speech = new FieldSpeech(game, fakeAudio(), { sessionId: "history", fetchImpl: fakeFetch().fetchImpl });
+    game.time = 120_000;
+    speech.restore({ lastLine: null, midSentence: null, recent: [], olderSummary: "", saidAt: [], moments: [
+      { fact: "You sent them down a blocked way.", youSaid: "Take the posts.", whatFollowed: "They had to return.", at: 1, weight: 99, kind: "setback", commitmentId: "old" },
+      { fact: "They woke the pages.", youSaid: null, whatFollowed: "The fog cleared.", at: 2, weight: 1, kind: "contribution", commitmentId: "useful" },
+    ] });
+    const request = speech.request({ type: "speak", occasion: "awakening_relevant", walkerDid: "Woke another structure.", whatFollowed: "The fog cleared.", far: null, priority: 90, commitmentId: "new" });
+    if (request.earlierMoment) { recalls++; assert.equal(request.earlierMoment.fact, "They woke the pages."); }
+  }
+  assert.ok(recalls > 0, "the successful history remains available");
+});
+
+
+test("a fading observation made obsolete by arrival does not play after the route is settled", async () => {
+  const game = new FieldGame(39), audio = fakeAudio();
+  let answer;
+  const net = fakeFetch(() => new Promise(resolve => { answer = resolve; }));
+  const speech = new FieldSpeech(game, audio, { sessionId: "late-observation", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  const commitment = { id: "sound-route", nodeId: game.graph.spawnNodeId, wayId: game.teachingWayId, stage: 0, correct: true, madeAt: game.time, taken: "followed", declinedFor: null, outcome: "pending" };
+  game.undertaking = { ...game.undertaking, active: commitment, history: [commitment] };
+  speech.handle({ type: "speak", occasion: "outcome_failed", walkerDid: "Followed your markers.", whatFollowed: "The sound fades while the route remains open.", far: { wayId: game.teachingWayId }, priority: 64, commitmentId: commitment.id, guidanceOwned: true });
+  await tick();
+  game.undertaking = { ...game.undertaking, active: null };
+  answer({ message: "It's quieter here; let's follow the markers.", source: "provider" });
+  await settle(speech);
+  assert.equal(audio.calls.spoken.length, 0, "the new arrival supersedes the mid-route observation");
+});
+
+
+function liveCommitment(game, id = "observed-route") {
+  const commitment = { id, nodeId: game.graph.spawnNodeId, wayId: game.teachingWayId, stage: 0, correct: true, madeAt: game.time, taken: "followed", declinedFor: null, outcome: "pending", arrivedAt: null };
+  game.undertaking = { ...game.undertaking, active: commitment, history: [...game.undertaking.history, commitment] };
+  return commitment;
+}
+const routeEvent = (game, commitment, occasion = "commitment") => ({ type: "speak", occasion, walkerDid: "Walked the markers you chose.", whatFollowed: "Your body leads along this line.", far: { wayId: commitment.wayId }, priority: 80, commitmentId: commitment.id, guidanceOwned: true });
+
+test("a replacement or declined commitment cancels a delayed invitation before speech or memory", async () => {
+  for (const change of ["replace", "decline"]) {
+    const game = new FieldGame(40), audio = fakeAudio();
+    let answer;
+    const net = fakeFetch(() => new Promise(resolve => { answer = resolve; }));
+    const speech = new FieldSpeech(game, audio, { sessionId: change, fetchImpl: net.fetchImpl });
+    await tick(); run(game, 8);
+    const commitment = liveCommitment(game);
+    speech.handle(routeEvent(game, commitment)); await tick();
+    if (change === "replace") liveCommitment(game, "replacement");
+    else game.undertaking = { ...game.undertaking, active: { ...commitment, taken: "declined" } };
+    speech.update();
+    answer({ message: "Take this old line of posts with me.", source: "provider" });
+    await settle(speech);
+    assert.equal(audio.calls.spoken.length, 0);
+    assert.equal(speech.save().recent.length, 0, "unspoken generation is not guidance history");
+    assert.equal(speech.save().saidAt.length, 0);
+  }
+});
+
+test("the same validity rule rejects an obsolete line after TTS preparation", async () => {
+  const game = new FieldGame(41), audio = fakeAudio();
+  let finishVoice, opts, cancelled = false;
+  audio.voice.speak = async (_text, _id, _delivery, options) => { opts = options; return new Promise(resolve => { finishVoice = () => { if (!cancelled && options.shouldStart()) { options.onStart?.(); resolve("spoken"); } else resolve("interrupted"); }; }); };
+  audio.voice.interrupt = () => { cancelled = true; };
+  const speech = new FieldSpeech(game, audio, { sessionId: "tts-stale", fetchImpl: fakeFetch().fetchImpl });
+  await tick(); run(game, 8);
+  const commitment = liveCommitment(game);
+  speech.handle(routeEvent(game, commitment)); await tick();
+  assert.ok(opts.shouldStart());
+  liveCommitment(game, "new-way");
+  assert.equal(opts.shouldStart(), false, "the audio start hook catches a change even before another speech update");
+  speech.update(); finishVoice(); await settle(speech);
+  assert.ok(cancelled);
+  assert.equal(speech.currentLine, null);
+  assert.equal(speech.save().recent.length, 0);
+});
+
+test("an awakening keeps its contribution when its next direction expires during generation", async () => {
+  const game = new FieldGame(42), audio = fakeAudio();
+  let answerFirst;
+  const net = fakeFetch(body => body.request.far.heardAlong ? new Promise(resolve => { answerFirst = resolve; }) : { message: "You woke it, and the clearing you made remains.", source: "provider" });
+  const speech = new FieldSpeech(game, audio, { sessionId: "awakening-stale", fetchImpl: net.fetchImpl });
+  await tick(); run(game, 8);
+  const commitment = liveCommitment(game);
+  speech.handle({ ...routeEvent(game, commitment, "awakening_relevant"), walkerDid: "Woke the whole structure.", whatFollowed: "The structure woke and a clearing remains. You chose the next route." }); await tick();
+  liveCommitment(game, "next-choice");
+  speech.update();
+  answerFirst({ message: "It woke; follow the old posts with me.", source: "provider" });
+  await settle(speech);
+  assert.equal(net.posts.length, 2);
+  assert.equal(net.posts[1].request.far.heardAlong, null);
+  assert.match(net.posts[1].request.plan.instruction, /completed awakening/);
+  assert.equal(audio.calls.spoken.length, 1);
+  assert.equal(audio.calls.spoken[0].text, "You woke it, and the clearing you made remains.");
+  assert.doesNotMatch(speech.save().recent.map(message => message.text).join(" "), /old posts/);
+});
+
+test("unknown legacy commitment IDs do not alone make an event obsolete", async () => {
+  const game = new FieldGame(43), audio = fakeAudio();
+  const speech = new FieldSpeech(game, audio, { sessionId: "legacy", fetchImpl: fakeFetch().fetchImpl });
+  await tick(); run(game, 8);
+  speech.handle(routeEvent(game, { id: "legacy-unknown", wayId: game.teachingWayId }));
+  await settle(speech);
+  assert.equal(audio.calls.spoken.length, 1);
+});
+
+
+test("an owned loop uses responsibility rather than a transient reunion flag and quotes the prior direction", () => {
+  const game = new FieldGame(44), speech = new FieldSpeech(game, fakeAudio(), { sessionId: "loop", fetchImpl: fakeFetch().fetchImpl });
+  const originalPerceive = game.perceive.bind(game);
+  game.perceive = far => { const perception = originalPerceive(far); perception.body.walkerReturning = true; return perception; };
+  Object.defineProperty(game, "phase", { get: () => "overbearing" });
+  speech.restore({ lastLine: null, midSentence: null, recent: [], olderSummary: "", moments: [], saidAt: [["prior-way", "I hear it along the posts. Come with me."], ["next-way", "The stitches are my next choice."]] });
+  const event = { type: "speak", occasion: "recognized_return", walkerDid: "Following your direction brought the walker back here.", whatFollowed: "Your next choice is ready.", far: { wayId: game.teachingWayId }, priority: 80, commitmentId: "next-way", priorCommitmentId: "prior-way", guidanceOwned: true };
+  const request = speech.request(event);
+  assert.equal(request.turn.youSaid, "I hear it along the posts. Come with me.");
+  assert.ok(!request.plan.affirmation || FIELD_REGISTER.reassurance.includes(request.plan.affirmation));
+  assert.match(fieldDeterministicLine(request), /My direction brought us back to this place/);
+  assert.doesNotMatch(fieldDeterministicLine(request), /together again|There you are|glad you're here/);
+  assert.equal(speech.request({ ...event, priorCommitmentId: "unspoken" }).turn.youSaid, null, "an unknown prior claim is not replaced by the new proposal");
 });

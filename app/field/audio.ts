@@ -114,6 +114,8 @@ export type SpeakOptions = {
   startAtFraction?: number; onStart?: () => void; onProgress?: (fraction: number) => void;
   /** When a recorded cue is playing, synthesize during it and speak when it ends, rather than cutting it off. */
   behindCue?: boolean;
+  /** Revalidate the encounter after synthesis/decoding, immediately before starting the voice. */
+  shouldStart?: () => boolean;
 };
 
 export type FieldAudio = ReturnType<typeof createFieldAudio>;
@@ -248,7 +250,10 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
     if (duck && context) duck.gain.setTargetAtTime(1, context.currentTime, .3);
   };
   const playVoiceBuffer = (buffer: AudioBuffer, kind: "cue" | "speech", text: string, opts: SpeakOptions, epoch: number): Promise<VoiceResult> => new Promise(resolve => {
-    if (!context || !voiceBus || !duck || destroyed || epoch !== voiceEpoch) { resolve("interrupted"); return; }
+    if (!context || !voiceBus || !duck || destroyed || epoch !== voiceEpoch || opts.shouldStart?.() === false) {
+      if (epoch === voiceEpoch) clearVoice();
+      resolve("interrupted"); return;
+    }
     const source = context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = VOICE_PLAYBACK_RATE;
     const panner = context.createStereoPanner(), analyser = context.createAnalyser(); analyser.fftSize = 256;
     source.connect(panner); panner.connect(analyser); analyser.connect(voiceBus);

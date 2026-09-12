@@ -46,10 +46,10 @@ test("the ladder tries the cheap primary models first, then the certified free m
 
 test("a clean reply is returned as the provider's; a guarded reply is regenerated once; a second failure falls back", async () => {
   const request = scenario("commitment_early");
-  const clean = async model => ({ text: "It's louder along the posts, straight ahead. Come on.", model });
+  const clean = async model => ({ text: "I hear it along the posts. Come with me.", model });
   const first = await generateFieldLine(request, clean, never, null);
   assert.equal(first.source, "provider");
-  assert.equal(first.message, "It's louder along the posts, straight ahead. Come on.");
+  assert.equal(first.message, "I hear it along the posts. Come with me.");
   assert.equal(first.modelUsed, PRIMARY_MODELS[0]);
 
   let calls = 0;

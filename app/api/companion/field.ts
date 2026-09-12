@@ -54,6 +54,7 @@ export function parseFieldRequest(value: unknown, diagnostics?: { reason: string
   if (!isRecord(body) || !isEnum(body.presence, presences) || !isString(body.currentAction, 300, 1) || !nullable(body.relationToCommittedWay, (v): v is string => isString(v, 300)) || !isBool(body.walkerFollowing) || !isBool(body.walkerChoseAnotherWay) || !isBool(body.walkerReturning) || !isBool(body.walkerLookingAtHer)) return fail("body");
   const turn = r.turn;
   if (!isRecord(turn) || !isEnum(turn.occasion, occasions) || !nullable(turn.youSaid, (v): v is string => isString(v, 600)) || !isString(turn.walkerDid, 600, 1) || !isString(turn.whatFollowed, 800, 1)) return fail("turn");
+  if (turn.guidanceOwned !== undefined && typeof turn.guidanceOwned !== "boolean") return fail("guidance ownership");
   const plan = r.plan;
   if (!isRecord(plan) || !isEnum(plan.length, ["bark", "short", "full"] as const) || !(plan.sentenceCount === 1 || plan.sentenceCount === 2 || plan.sentenceCount === 3) || !nullable(plan.affirmation, (v): v is string => isString(v, 120)) || !isString(plan.instruction, 600, 1) || !(plan.beat === undefined || isEnum(plan.beat, ["acknowledge", "renew"] as const))) return fail("plan");
   if (!(r.earlierMoment === null || (isRecord(r.earlierMoment) && isString(r.earlierMoment.fact, 400, 1) && nullable(r.earlierMoment.youSaid, (v): v is string => isString(v, 400)) && isString(r.earlierMoment.whatFollowed, 400, 1)))) return fail("earlier moment");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { STRUCTURE_WAKE_SECONDS } from "../app/field/structures.ts";
-import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, PROMPT_AFTER_MS, STILL_RENEW_AFTER_MS } from "../app/field/game.ts";
+import { ARRIVAL_DELAY_MS, FieldGame, IDLE_INPUT, phaseFor, STILL_RENEW_AFTER_MS } from "../app/field/game.ts";
 import { wrapAngle } from "../app/field/graph.ts";
 
 const DT = 1 / 30;
@@ -208,6 +208,7 @@ test("a way that ends is named as a terminus and she leads back", () => {
   const spoken = speeches(events).find(event => event.occasion === "terminus");
   assert.ok(spoken, "arriving at the end is spoken");
   assert.match(spoken.walkerDid, /markers stop/);
+  assert.equal(spoken.guidanceOwned, false, "finding a dead end independently is not her failed direction");
   assert.equal(game.ariadne.committedWayId, way.id, "she leads back along the only way");
   assert.equal(game.undertaking.commitmentsMade, 0, "the way back is not a counted commitment");
   const { near } = game.perceive(spoken.far);
@@ -244,13 +245,13 @@ test("save and restore bring back the same ground, the same undertaking and her 
   assert.ok(!events.some(event => event.type === "ariadne_arrives"), "she does not arrive again");
 });
 
-test("the warmth phase moves with commitments, clearings and time", () => {
+test("warmth develops with completed collaboration rather than waiting", () => {
   assert.equal(phaseFor(0, 0, 0), "charming");
   assert.equal(phaseFor(3, 1, 120), "charming");
   assert.equal(phaseFor(5, 1, 180), "charming", "the first handful of commitments and the teaching clearing stay charming");
   assert.equal(phaseFor(7, 2, 300), "attached");
-  assert.equal(phaseFor(12, 3, 900), "overbearing");
-  assert.equal(phaseFor(2, 0, 60 * 50), "overbearing", "a long session alone carries her into the late register");
+  assert.equal(phaseFor(14, 3, 900), "overbearing");
+  assert.equal(phaseFor(2, 0, 60 * 50), "charming", "waiting alone cannot manufacture an established relationship");
 });
 
 test("the graph and structures stream in as the walker travels", () => {
@@ -293,7 +294,7 @@ test("a nearby sleeping structure sounds with its own family, not the objective'
   assert.equal(near.call.audible, true);
 });
 
-test("her way walked to an empty, silent place is named as such before she chooses again", () => {
+test("an empty junction beyond hearing range is not automatically a failed direction", () => {
   // Build the situation directly: a commitment from A along a way to B, where B has no structure and the call is out of hearing.
   const game = new FieldGame(21);
   run(game, 7);
@@ -315,8 +316,8 @@ test("her way walked to an empty, silent place is named as such before she choos
   const spoken = speeches(events).filter(event => event.occasion === "commitment" || event.occasion === "recognized_return").at(-1);
   if (farEnd.ways.length >= 2) {
     assert.ok(spoken, "she commits again at the empty place");
-    assert.match(spoken.walkerDid, /nothing stands here and no call is audible from here/, "the card says her way ended in nothing");
-    assert.equal(spoken.tone, spoken.occasion === "commitment" ? "quiet_arrival" : undefined);
+    assert.doesNotMatch(spoken.walkerDid, /nothing stands here and no call is audible from here/, "an intermediate silent junction is not called a failure");
+    assert.notEqual(spoken.tone, "quiet_arrival");
   }
 });
 
@@ -422,4 +423,36 @@ test("standing still while she waits at her marker renews the invitation twice, 
   assert.equal(renewals.length, 2, `two renewals to someone standing still (${renewals.length})`);
   assert.match(renewals[0].walkerDid, /Has not moved for \d+ seconds; you are waiting at the first marker of the/);
   assert.equal(renewals[0].commitmentId, game.undertaking.active.id);
+});
+
+
+test("a midpoint sound response preserves the pending route until arrival", () => {
+  const { game } = reachFirstCommitment(3);
+  const original = game.undertaking.active;
+  const way = game.graph.way(original.wayId);
+  const markers = game.graph.markersFrom(way, original.nodeId);
+  const point = markers[Math.floor(markers.length * .65)].position;
+  game.walker.position = [...point];
+  game.undertaking.active = { ...original, taken: "followed" };
+  game.undertaking.history = game.undertaking.history.map(item => item.id === original.id ? game.undertaking.active : item);
+  game.call = { ...game.call, audibility: "clear", proxy: false, trend: "growing" };
+  game.drain(); game.updateCommitment(game.time);
+  assert.equal(game.undertaking.active?.id, original.id);
+  assert.equal(game.undertaking.active?.outcome, "pending");
+  assert.equal(game.run().walked, 0, "midpoint observation is not a completed traversal");
+  assert.ok(game.drain().some(event => event.type === "speak" && event.occasion === "outcome_confirmed"));
+});
+
+test("a place visited before the current search is not a new search failure", () => {
+  const { game } = reachFirstCommitment(3);
+  const original = game.undertaking.active;
+  const way = game.graph.way(original.wayId);
+  const target = game.graph.node(game.graph.otherEnd(way, original.nodeId));
+  game.memory.visit(target.id, 1);
+  const events = walkTo(game, target.position, 1.5, 40);
+  assert.equal(game.run().returns, 0);
+  assert.ok(!events.some(event => event.type === "speak" && event.occasion === "recognized_return"));
+  const saved = game.save();
+  assert.ok(saved.stageVisited.includes(target.id));
+  assert.deepEqual(FieldGame.restore(saved).save().stageVisited, saved.stageVisited);
 });

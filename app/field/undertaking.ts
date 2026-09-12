@@ -6,13 +6,14 @@
  * advances; the search never ends. At every place with a choice Ariadne's
  * body commits to a way; whether that way lies on a shortest path to the
  * calling structure is decided here, by an accuracy that falls with the
- * number of commitments she has made and floors at chance. She is never told
+ * number of her directions actually walked and floors at chance. The first
+ * complete search after the teaching structure remains reliable. She is never told
  * any of this. Nothing here speaks.
  */
 import { hash32, unit, type FieldGraph } from "./graph.ts";
 import type { StructureField } from "./structures.ts";
 
-/** Within this distance the call is clear: the walker can place it and hear it change, so a verdict settles at the midpoint of the final way. */
+/** Within this distance the call is clear: the walker can place it and hear it change. */
 export const CALL_RANGE = 24;
 /**
  * Out to this distance the call is faint: about one way's length, so from
@@ -31,7 +32,7 @@ export const RELIABILITY_BANDS: Array<{ upTo: number; accuracy: number | "chance
   { upTo: Infinity, accuracy: "chance" },
 ];
 
-/** `nothing`: her way walked to its end, with nothing standing there and no call to hear. `quiet`: settled without a verdict (a structure or an audible call at the end, or the walker went another way). */
+/** An observed signal is evidence during a traversal; an outcome records how that attempt ended. Silence at a traversable junction is not a failed direction. */
 export type CommitmentOutcome = "pending" | "confirmed" | "fading" | "terminus" | "return" | "quiet" | "nothing";
 export type Commitment = {
   id: string;
@@ -45,11 +46,18 @@ export type Commitment = {
   taken: "pending" | "followed" | "declined";
   declinedFor: string | null;
   outcome: CommitmentOutcome;
+  /** null until an actual arrival; undefined identifies older saves without arrival evidence. */
+  arrivedAt?: string | null;
+  signal?: "growing" | "fading";
+  /** Private controller state to consume only when this proposal becomes a completed attempt. */
+  controllerAfterArrival?: { accumulator: number; band: number };
 };
 
 export type Undertaking = {
   stage: number;
   commitmentsMade: number;
+  /** Lifetime completed attempts; older saves derive the available count from history. */
+  completedAttempts?: number;
   objectiveStructureId: string | null;
   objectiveNodeId: string | null;
   accumulator: number;
@@ -59,14 +67,22 @@ export type Undertaking = {
 };
 
 export function createUndertaking(seed: number): Undertaking {
-  return { stage: 0, commitmentsMade: 0, objectiveStructureId: null, objectiveNodeId: null, accumulator: unit(seed, "accumulator", 0), band: 0, active: null, history: [] };
+  return { stage: 0, commitmentsMade: 0, completedAttempts: 0, objectiveStructureId: null, objectiveNodeId: null, accumulator: unit(seed, "accumulator", 0), band: 0, active: null, history: [] };
 }
 
-export function bandFor(commitmentsMade: number) { return RELIABILITY_BANDS.findIndex(band => commitmentsMade <= band.upTo); }
+function completedAttempt(commitment: Commitment) {
+  return commitment.taken === "followed" && (commitment.arrivedAt != null || (commitment.arrivedAt === undefined && commitment.outcome !== "pending"));
+}
 
-/** Accuracy of the next commitment given how many she has made and how many ways are open. */
-export function reliability(commitmentsMade: number, openWays: number) {
-  const band = RELIABILITY_BANDS[bandFor(commitmentsMade)]!;
+export function completedAttemptCount(state: Undertaking) {
+  return state.completedAttempts ?? state.history.filter(completedAttempt).length;
+}
+
+export function bandFor(completedAttempts: number) { return RELIABILITY_BANDS.findIndex(band => completedAttempts <= band.upTo); }
+
+/** Accuracy of the next commitment given completed attempts and how many ways are open. */
+export function reliability(completedAttempts: number, openWays: number) {
+  const band = RELIABILITY_BANDS[bandFor(completedAttempts)]!;
   return band.accuracy === "chance" ? 1 / Math.max(1, openWays) : band.accuracy;
 }
 
@@ -99,7 +115,8 @@ export type CommitmentChoice = { state: Undertaking; commitment: Commitment; way
 /**
  * Commit at a place. The correct way is the first step of a shortest path to
  * the calling structure; the accumulator decides whether she gets it, with a
- * band-seeded jitter so the pattern is not periodic.
+ * band-seeded jitter so the pattern is not periodic. Choosing and declining
+ * directions cannot consume the reliability budget: arrival consumes the draw.
  */
 export function commitAt(state: Undertaking, graph: FieldGraph, nodeId: string, arrivedBy: string | null, seed: number, now: number): CommitmentChoice | null {
   const node = graph.node(nodeId);
@@ -108,23 +125,38 @@ export function commitAt(state: Undertaking, graph: FieldGraph, nodeId: string, 
   const open = node.ways.length > 1 && arrivedBy ? node.ways.filter(id => id !== arrivedBy) : [...node.ways];
   const ways = correct && !open.includes(correct) ? [...open, correct] : open;
   const k = ways.length;
-  const band = bandFor(state.commitmentsMade);
+  const completed = completedAttemptCount(state);
+  const band = bandFor(completed);
   let accumulator = band === state.band ? state.accumulator : unit(seed, "accumulator", band);
-  const accuracy = reliability(state.commitmentsMade, k);
-  accumulator += accuracy + (unit(seed, "jitter", state.commitmentsMade) - .5) * .12;
+  const accuracy = reliability(completed, k);
+  accumulator += accuracy + (unit(seed, "jitter", completed) - .5) * .12;
   const supported = accumulator >= 1;
   if (supported) accumulator -= 1;
   const wrongOptions = ways.filter(id => id !== correct);
-  const wayId = supported && correct ? correct : wrongOptions.length ? wrongOptions[hash32(seed, "wrong", state.commitmentsMade) % wrongOptions.length]! : correct ?? ways[0]!;
-  const commitment: Commitment = { id: `commitment:${state.commitmentsMade + 1}`, nodeId, wayId, stage: state.stage, correct: wayId === correct, madeAt: now, taken: "pending", declinedFor: null, outcome: "pending" };
-  const next: Undertaking = { ...state, commitmentsMade: state.commitmentsMade + 1, accumulator, band, active: commitment, history: [...state.history.slice(-40), commitment] };
+  const wayId = (state.stage === 1 || supported) && correct ? correct : wrongOptions.length ? wrongOptions[hash32(seed, "wrong", completed) % wrongOptions.length]! : correct ?? ways[0]!;
+  const commitment: Commitment = { id: `commitment:${state.commitmentsMade + 1}`, nodeId, wayId, stage: state.stage, correct: wayId === correct, madeAt: now, taken: "pending", declinedFor: null, outcome: "pending", arrivedAt: null, controllerAfterArrival: { accumulator, band } };
+  const next: Undertaking = { ...state, commitmentsMade: state.commitmentsMade + 1, active: commitment, history: [...state.history.slice(-40), commitment] };
   return { state: next, commitment, wayId };
 }
 
-export function resolveCommitment(state: Undertaking, outcome: Exclude<CommitmentOutcome, "pending">): Undertaking {
+/** Remember what the walker hears without closing the direction they are still walking. */
+export function observeSignal(state: Undertaking, signal: "growing" | "fading"): Undertaking {
+  if (!state.active || state.active.taken !== "followed" || state.active.signal === signal) return state;
+  const observed = { ...state.active, signal };
+  return { ...state, active: observed, history: state.history.map(item => item.id === observed.id ? observed : item) };
+}
+
+export function resolveCommitment(state: Undertaking, outcome: Exclude<CommitmentOutcome, "pending">, arrivedAt?: string): Undertaking {
   if (!state.active) return state;
-  const resolved = { ...state.active, outcome };
-  return { ...state, active: null, history: state.history.map(item => item.id === resolved.id ? resolved : item) };
+  const resolved = { ...state.active, outcome, ...(arrivedAt === undefined ? {} : { arrivedAt }) };
+  const completed = completedAttempt(resolved) && !completedAttempt(state.active);
+  return {
+    ...state,
+    ...(completed ? resolved.controllerAfterArrival : {}),
+    completedAttempts: completedAttemptCount(state) + (completed ? 1 : 0),
+    active: null,
+    history: state.history.map(item => item.id === resolved.id ? resolved : item),
+  };
 }
 
 export function takeUp(state: Undertaking, followed: boolean, declinedFor: string | null): Undertaking {
@@ -165,7 +197,7 @@ export type StageRun = {
 
 export function stageRun(state: Undertaking, returns: number): StageRun {
   const mine = state.history.filter(item => item.stage === state.stage);
-  const walked = mine.filter(item => item.taken === "followed");
+  const walked = mine.filter(completedAttempt);
   return {
     waysChosen: mine.length,
     walked: walked.length,

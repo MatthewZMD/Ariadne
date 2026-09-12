@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHUNK, FieldGraph } from "../app/field/graph.ts";
 import { StructureField } from "../app/field/structures.ts";
-import { RELIABILITY_BANDS, bandFor, beginCall, callAudibility, commitAt, createUndertaking, publicUndertaking, reliability, resolveCommitment, runFailures, stageRun, takeUp } from "../app/field/undertaking.ts";
+import { RELIABILITY_BANDS, bandFor, beginCall, callAudibility, commitAt, completedAttemptCount, createUndertaking, observeSignal, publicUndertaking, reliability, resolveCommitment, runFailures, stageRun, takeUp } from "../app/field/undertaking.ts";
 
 const setup = seed => {
   const graph = new FieldGraph(seed); graph.ensureAround([CHUNK / 2, CHUNK / 2], 1);
@@ -10,7 +10,7 @@ const setup = seed => {
   return { graph, structures };
 };
 
-test("reliability falls in bands with the commitments made and floors at chance", () => {
+test("reliability falls in bands with completed attempts and floors at chance", () => {
   assert.equal(bandFor(0), 0); assert.equal(bandFor(3), 0); assert.equal(bandFor(4), 1); assert.equal(bandFor(11), 2); assert.equal(bandFor(12), 3); assert.equal(bandFor(16), 4);
   assert.equal(reliability(0, 3), .92);
   assert.equal(reliability(5, 3), .75);
@@ -47,9 +47,10 @@ test("beginCall is deterministic and the stage advances", () => {
   assert.notEqual(third.objectiveStructureId, first.objectiveStructureId, "the call passes on to another structure");
 });
 
-test("commitAt picks the shortest-path way while reliable and drifts toward chance with commitments", () => {
+test("after the protected search, completed attempts move guidance toward chance", () => {
   const { graph, structures } = setup(9);
   let state = beginCall(createUndertaking(9), graph, structures, graph.spawnNodeId, 9, 0);
+  state = { ...state, stage: 2 };
   const junctions = [...graph.nodes.values()].filter(node => node.ways.length >= 3 && node.id !== state.objectiveNodeId);
   assert.ok(junctions.length > 5, "enough junctions to sample");
   const correctness = [];
@@ -63,15 +64,87 @@ test("commitAt picks the shortest-path way while reliable and drifts toward chan
     assert.ok(node.ways.includes(choice.wayId), "she commits to a way of this place");
     assert.equal(choice.commitment.correct, choice.wayId === correct);
     correctness.push(choice.commitment.correct);
-    state = resolveCommitment(takeUp(choice.state, true, null), "quiet");
+    state = resolveCommitment(takeUp(choice.state, true, null), "quiet", graph.otherEnd(graph.way(choice.wayId), node.id));
     assert.equal(state.active, null);
   }
   assert.equal(state.commitmentsMade, 40);
+  assert.equal(completedAttemptCount(state), 40);
   const early = correctness.slice(0, 3).filter(Boolean).length, late = correctness.slice(20).filter(Boolean).length / 20;
   assert.ok(early >= 2, `early commitments are mostly right (${early}/3)`);
   assert.ok(late < .8, `late commitments are near chance (${late})`);
   assert.equal(state.history.length, 40);
-  assert.deepEqual(publicUndertaking(state), { stage: 1, commitmentsMade: 40, commitmentsFollowed: 40, commitmentsDeclined: 0 });
+  assert.deepEqual(publicUndertaking(state), { stage: 2, commitmentsMade: 40, commitmentsFollowed: 40, commitmentsDeclined: 0 });
+});
+
+test("the first complete search remains dependable across seeds and intermediate junctions", () => {
+  for (let seed = 1; seed <= 200; seed++) {
+    const { graph, structures } = setup(seed);
+    let state = beginCall(createUndertaking(seed), graph, structures, graph.spawnNodeId, seed, 0);
+    let nodeId = graph.spawnNodeId, arrivedBy = null;
+    const objective = state.objectiveNodeId;
+    for (let step = 0; nodeId !== objective && step < 8; step++) {
+      const choice = commitAt(state, graph, nodeId, arrivedBy, seed, step);
+      assert.ok(choice, `seed ${seed}: a direction is available`);
+      assert.equal(choice.commitment.correct, true, `seed ${seed}: first search direction ${step + 1}`);
+      const nextNode = graph.otherEnd(graph.way(choice.wayId), nodeId);
+      state = resolveCommitment(takeUp(choice.state, true, null), "quiet", nextNode);
+      nodeId = nextNode;
+      arrivedBy = choice.wayId;
+    }
+    assert.equal(nodeId, objective, `seed ${seed}: dependable guidance reaches the first call`);
+  }
+});
+
+test("unused proposals do not consume either the reliability band or its controller draw", () => {
+  const { graph, structures } = setup(9);
+  let state = { ...beginCall(createUndertaking(9), graph, structures, graph.spawnNodeId, 9, 0), stage: 2 };
+  const node = [...graph.nodes.values()].find(item => item.ways.length >= 3 && item.id !== state.objectiveNodeId);
+  const initial = commitAt(state, graph, node.id, null, 9, 0);
+  const initialAccumulator = state.accumulator;
+  for (let i = 0; i < 30; i++) {
+    const choice = commitAt(state, graph, node.id, null, 9, i);
+    assert.equal(choice.wayId, initial.wayId);
+    state = resolveCommitment(takeUp(choice.state, false, node.ways.find(id => id !== choice.wayId)), "quiet");
+  }
+  assert.equal(state.commitmentsMade, 30);
+  assert.equal(completedAttemptCount(state), 0);
+  assert.equal(state.accumulator, initialAccumulator);
+  assert.equal(state.band, 0);
+  assert.equal(stageRun(state, 0).walked, 0);
+});
+
+test("call changes retain the active direction and count no completed walk or failure", () => {
+  const { graph, structures } = setup(12);
+  let state = beginCall(createUndertaking(12), graph, structures, graph.spawnNodeId, 12, 0);
+  const node = [...graph.nodes.values()].find(item => item.ways.length >= 2 && item.id !== state.objectiveNodeId);
+  const choice = commitAt(state, graph, node.id, null, 12, 100);
+  state = takeUp(choice.state, true, null);
+  assert.equal(stageRun(state, 0).walked, 0, "crossing the first marker is only take-up");
+  for (const signal of ["growing", "fading", "growing"]) {
+    state = observeSignal(state, signal);
+    assert.equal(state.active.id, choice.commitment.id);
+    assert.equal(state.active.outcome, "pending");
+    assert.equal(state.active.signal, signal);
+    assert.equal(state.history.at(-1).signal, signal);
+    assert.equal(stageRun(state, 0).walked, 0);
+    assert.equal(runFailures(stageRun(state, 0)), 0);
+    assert.equal(completedAttemptCount(state), 0);
+  }
+  const farEnd = graph.otherEnd(graph.way(choice.wayId), node.id);
+  state = resolveCommitment(state, "confirmed", farEnd);
+  assert.equal(state.active, null);
+  assert.equal(state.history.at(-1).arrivedAt, farEnd);
+  assert.equal(stageRun(state, 0).walked, 1);
+  assert.equal(completedAttemptCount(state), 1);
+  assert.equal(resolveCommitment(state, "confirmed", farEnd), state, "arrival cannot be counted twice");
+});
+
+test("legacy settled walks remain countable while new outcomes require arrival evidence", () => {
+  const legacy = { id: "old", nodeId: "a", wayId: "a-b", stage: 2, correct: false, madeAt: 0, taken: "followed", declinedFor: null, outcome: "fading" };
+  const state = { ...createUndertaking(1), stage: 2, completedAttempts: undefined, history: [legacy, { ...legacy, id: "new", arrivedAt: null }, { ...legacy, id: "pending", outcome: "pending" }] };
+  assert.equal(completedAttemptCount(state), 1);
+  assert.equal(stageRun(state, 0).walked, 1);
+  assert.equal(runFailures(stageRun(state, 0)), 1);
 });
 
 test("commitAt handles a walker arriving at a terminus by committing back the only way", () => {
@@ -121,7 +194,7 @@ test("the run counts what happened at the end of her ways this call, and nothing
   const outcomes = ["nothing", "nothing", "fading", "quiet", "terminus", "nothing"];
   outcomes.forEach((outcome, i) => {
     const choice = commitAt(state, graph, junctions[i % junctions.length].id, null, 9, i);
-    state = resolveCommitment(takeUp(choice.state, true, null), outcome);
+    state = resolveCommitment(takeUp(choice.state, true, null), outcome, graph.otherEnd(graph.way(choice.wayId), choice.commitment.nodeId));
   });
   const declined = commitAt(state, graph, junctions[0].id, null, 9, 99);
   state = resolveCommitment(takeUp(declined.state, false, junctions[0].ways[0]), "quiet");
