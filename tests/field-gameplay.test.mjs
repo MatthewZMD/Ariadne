@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { FieldGame, IDLE_INPUT } from "../app/field/game.ts";
 import { NODE_RADIUS, distance, wrapAngle } from "../app/field/graph.ts";
-import { completedAttemptCount } from "../app/field/undertaking.ts";
+import { createAriadneBody, leadAlong } from "../app/field/ariadne.ts";
+import { commitAt, createUndertaking, completedAttemptCount } from "../app/field/undertaking.ts";
 
 const DT = 1 / 30;
 
@@ -64,7 +65,7 @@ function play(seed, routeLimit) {
     follow(way, from);
     wait(.5);
   }
-  return { game, events, traversals };
+  return { game, events, traversals, follow, wait };
 }
 
 test("a complete silent walk earns early awakenings and later owns repeated circuits", () => {
@@ -84,9 +85,40 @@ test("a complete silent walk earns early awakenings and later owns repeated circ
 });
 
 test("the guide recovers from a visible terminus before the participant enters it", () => {
-  const { events, traversals } = play(15, 13);
+  const { game, events, traversals, follow, wait } = play(15, 0);
+  // Arrange a real empty terminus explicitly: instrument spacing must not decide
+  // whether this recovery regression gets exercised during a seeded walk.
+  game.graph.ensureAround(game.walker.position, 3);
+  const terminus = [...game.graph.nodes.values()].find(node => {
+    if (distance(node.position, game.walker.position) > 200 || node.ways.length !== 1 || !node.floor.startsWith("terminus") || game.structures.ensureAt(node)) return false;
+    const junction = game.graph.node(game.graph.otherEnd(game.graph.way(node.ways[0]), node.id));
+    return junction.ways.length > 1 && !game.structures.ensureAt(junction);
+  });
+  assert.ok(terminus, "the fixture contains an empty dead end beside an open junction");
+  const way = game.graph.way(terminus.ways[0]);
+  const junction = game.graph.node(game.graph.otherEnd(way, terminus.id));
+  const objectiveNodeId = game.undertaking.objectiveNodeId;
+  const objectiveStructureId = game.undertaking.objectiveStructureId;
+  const choice = commitAt({ ...createUndertaking(game.seed), stage: 1, objectiveNodeId: terminus.id }, game.graph, junction.id, null, game.seed, game.time);
+  assert.equal(choice.wayId, way.id);
+  // The fixture supplies the erroneous proposal; movement, detection, repair,
+  // settlement, and subsequent route selection all use the production game.
+  choice.commitment.correct = false;
+  game.undertaking = { ...choice.state, objectiveNodeId, objectiveStructureId };
+  game.walker.position = [...junction.position];
+  game.walker.velocity = [0, 0];
+  game.currentNodeId = game.lastNodeId = junction.id;
+  game.currentWayId = game.arrivedByWayId = null;
+  game.memory.visit(junction.id, game.time);
+  game.ariadne = createAriadneBody(game.walkerPose, game.time, false);
+  leadAlong(game.ariadne, game.graph, way, junction.id, game.time);
+  events.length = traversals.length = 0;
+  follow(way.id, junction.id);
+  wait(.5);
+  assert.ok(game.undertaking.active, "returning to the junction produces a new proposal");
+  follow(game.undertaking.active.wayId, junction.id);
   const blocked = events.find(event => event.occasion === "terminus" && event.guidanceOwned);
-  assert.ok(blocked?.active, "later degraded guidance reaches a real visible terminus");
+  assert.ok(blocked?.active, "following an erroneous proposal reaches a real visible terminus");
   const retreat = traversals.find(item => item.original === blocked.active.id && item.arrived === item.from);
   assert.ok(retreat, "following her body alone carries the participant back after repair");
   assert.equal(retreat.outcome, "terminus");
@@ -96,5 +128,5 @@ test("the guide recovers from a visible terminus before the participant enters i
   const backtrack = events.find(event => event.tone === "directed_return" && event.at >= blocked.at && event.at <= retreat.at);
   assert.ok(backtrack, "the arrival is acknowledged as the requested retreat");
   assert.ok(traversals.some(item => item.at > retreat.at && item.arrived === item.target), "a subsequent direction remains usable");
-  assert.ok(distance(blocked.position, events.find(event => event.type === "node_entered" && event.nodeId === retreat.from)?.position ?? blocked.position) > NODE_RADIUS, "the blocked route involved actual walking away from the junction");
+  assert.ok(distance(blocked.position, junction.position) > NODE_RADIUS, "the blocked route involved actual walking away from the junction");
 });
