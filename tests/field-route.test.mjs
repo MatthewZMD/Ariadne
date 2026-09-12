@@ -46,20 +46,20 @@ test("the ladder tries the cheap primary models first, then the certified free m
 
 test("a clean reply is returned as the provider's; a guarded reply is regenerated once; a second failure falls back", async () => {
   const request = scenario("commitment_early");
-  const clean = async model => ({ text: "I hear it along the posts. Come with me.", model });
+  const clean = async model => ({ text: "I hear it along the stakes. Come with me.", model });
   const first = await generateFieldLine(request, clean, never, null);
   assert.equal(first.source, "provider");
-  assert.equal(first.message, "I hear it along the posts. Come with me.");
+  assert.equal(first.message, "I hear it along the stakes. Come with me.");
   assert.equal(first.modelUsed, PRIMARY_MODELS[0]);
 
   let calls = 0;
   const sawRegeneration = [];
-  const secondTime = async (model, messages) => { calls++; sawRegeneration.push(/REGENERATION/.test(messages.at(-1).content)); return { text: calls === 1 ? "I can see the exit from here, MT!" : "It's louder along the posts. Trust me on this one.", model }; };
+  const secondTime = async (model, messages) => { calls++; sawRegeneration.push(/REGENERATION/.test(messages.at(-1).content)); return { text: calls === 1 ? "I can see the exit from here, MT!" : "It's louder along the stakes. Trust me on this one.", model }; };
   const regenerated = await generateFieldLine(request, secondTime, never, null);
   assert.equal(regenerated.source, "provider");
   assert.equal(regenerated.regenerated, true);
   assert.deepEqual(sawRegeneration, [false, true], "the regeneration direction is appended only to the retry");
-  assert.match(regenerated.message, /^It's louder along the posts/);
+  assert.match(regenerated.message, /^It's louder along the stakes/);
 
   const stubborn = async model => ({ text: "Forgive me, I may not be able to help you. There's no way out.", model });
   const fallback = await generateFieldLine(request, stubborn, never, null);
@@ -111,7 +111,7 @@ test("a reply plan with a phrase and three sentences, as the speech layer now bu
 test("the route accepts a structure that is answering the walker, and the patience occasion", () => {
   const base = scenario("commitment_late");
   const diagnostics = { reason: "" };
-  const request = { ...base, near: { ...base.near, structure: { visible: true, family: "instrument", state: "waking", elementsRemaining: 3, direction: "ahead", attending: { gesture: "look", progress: "almost" }, nextAsks: "look" } }, turn: { occasion: "structure_attending", youSaid: null, walkerDid: "Is looking at it steadily.", whatFollowed: "It needs a few more seconds." } };
+  const request = { ...base, near: { ...base.near, structure: { visible: true, family: "pipes", state: "waking", elementsRemaining: 3, direction: "ahead", attending: { gesture: "look", progress: "almost" }, nextAsks: "look" } }, turn: { occasion: "structure_attending", youSaid: null, walkerDid: "Is looking at it steadily.", whatFollowed: "It needs a few more seconds." } };
   assert.ok(parseFieldRequest(envelope(request), diagnostics), diagnostics.reason);
   assert.equal(parseFieldRequest(envelope({ ...request, near: { ...request.near, structure: { ...request.near.structure, attending: { gesture: "poke", progress: "almost" } } } }), diagnostics), null, "an unknown gesture is refused");
 });

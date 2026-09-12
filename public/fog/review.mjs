@@ -30,10 +30,10 @@ for(const object of loaded.values())setupMaterials(object);
 function instance(id,x=0,z=0,rotation=0){const o=loaded.get(id).clone(true);o.position.set(x,0,z);o.rotation.y=rotation;group.add(o);o.traverse(n=>{if(n.name==='dormant'||n.name==='awake')n.visible=n.name===state;});return o;}
 function thread(){const points=[[-3,.5,5],[-2.4,.7,3.5],[-1.6,1,2],[-.7,1.3,.5],[.4,1.6,-.5],[1.4,1.75,-1.1],[2,1.55,-2]].map(p=>new THREE.Vector3(...p));const curve=new THREE.CatmullRomCurve3(points);const m=new THREE.MeshBasicMaterial({color:'#cbbd87',fog:false});group.add(new THREE.Mesh(new THREE.TubeGeometry(curve,100,.022,8,false),m));const glow=new THREE.MeshBasicMaterial({color:'#f4df99',transparent:true,opacity:.16,depthWrite:false,fog:false});group.add(new THREE.Mesh(new THREE.TubeGeometry(curve,100,.07,8,false),glow));}
 function show(id){current=id;group.clear();if(id==='field'){
- instance('structure-teaching',-1.5,-1.5,-.16);instance('node-dish-01',-1.5,-1.5);
- instance('structure-bells',4,-9,.3);instance('structure-glass',-7,-6);instance('node-pool-01',5,-3);
- for(let i=0;i<5;i++){instance(`marker-stone-0${i%3+1}`,-4+i*.65,5-i*3.1,-.2);instance('marker-post-01',5.2+i*.4,-1-i*4);}
- instance('marker-stitch-01',1.5,3.3,.5);thread();camera.position.set(4.5,2.7,6);controls.target.set(-.6,1.1,-2);
+ instance('structure-bell-arch',-1.5,-1.5,-.16);instance('node-dish-01',-1.5,-1.5);
+ instance('structure-chimes',4,-9,.3);instance('structure-glass-vessels',-7,-6);instance('node-pool-01',5,-3);
+ for(let i=0;i<5;i++){instance(`marker-waystone-0${i%3+1}`,-4+i*.65,5-i*3.1,-.2);instance('marker-stake-01',5.2+i*.4,-1-i*4);}
+ instance('marker-cord-01',1.5,3.3,.5);thread();camera.position.set(4.5,2.7,6);controls.target.set(-.6,1.1,-2);
  }else{instance(id);const box=new THREE.Box3().setFromObject(group);const size=box.getSize(new THREE.Vector3());const center=box.getCenter(new THREE.Vector3());const d=Math.max(size.x,size.y,size.z)*1.65;camera.position.set(d*.65,Math.max(.7,d*.44),d);controls.target.copy(center);}
  controls.update();document.querySelector('#asset').value=id;window.assetReady=true;
 }
@@ -46,7 +46,7 @@ const soundManifest=await fetch('/fog/audio.json').then(r=>r.ok?r.json():{assets
 for(const a of soundManifest.assets){const card=document.createElement('div');card.className='card';const title=document.createElement('div');title.textContent=a.id;const small=document.createElement('small');small.textContent=`${a.duration}s${a.loop?' · seamless loop':''}`;const player=document.createElement('audio');player.controls=true;player.preload='none';player.src=a.url;player.loop=a.loop;card.append(title,small,player);document.querySelector('#sounds').append(card);}
 const cues=await fetch('/fog/cues.json').then(r=>r.ok?r.json():{assets:[]});
 for(const a of cues.assets){const card=document.createElement('div');card.className='card';card.textContent=a.text;const small=document.createElement('small');small.textContent=a.status;card.append(small);if(a.url){const player=document.createElement('audio');player.controls=true;player.preload='none';player.src=a.url;card.append(player);}document.querySelector('#cues').append(card);}
-document.querySelector('#play').onclick=()=>{selectedAudio?.pause();const family=current.replace('structure-','');const a=soundManifest.assets.find(x=>x.id===`${family==='field'?'teaching':family}-call`);if(a){selectedAudio=new Audio(a.url);selectedAudio.loop=true;selectedAudio.volume=.45;selectedAudio.play();}};
+document.querySelector('#play').onclick=()=>{selectedAudio?.pause();const family=current.replace('structure-','');const a=soundManifest.assets.find(x=>x.id===`${family==='field'?'bell-arch':family}-call`);if(a){selectedAudio=new Audio(a.url);selectedAudio.loop=true;selectedAudio.volume=.45;selectedAudio.play();}};
 function resize(){renderer.setSize(viewport.clientWidth,viewport.clientHeight,false);camera.aspect=viewport.clientWidth/viewport.clientHeight;camera.updateProjectionMatrix();}new ResizeObserver(resize).observe(viewport);resize();
 show(params.get('asset')||'field');if(params.get('fog')==='0'){scene.fog=null;fog=false;}
 document.querySelector('#status').textContent=`${loaded.size} models · ${soundManifest.assets.length} sound files · ${cues.assets.filter(x=>x.url).length} cues`;

@@ -80,11 +80,11 @@ test("the teaching structure: found, woken by a nearby gaze, and the call passes
   const game = new FieldGame(3);
   run(game, 7);
   const teaching = game.teachingStructure;
-  assert.equal(teaching.family, "teaching");
+  assert.equal(teaching.family, "bell-arch");
   const events = walkTo(game, teaching.position, 5.5, 80);
   const found = speeches(events).find(event => event.occasion === "structure_found");
   assert.ok(found, "the structure is announced as it comes into view");
-  assert.match(found.whatFollowed, /Move close and look at the whole structure for about ten seconds/);
+  assert.match(found.whatFollowed, /Move close and keep the whole instrument in view as it wakes/);
   assert.equal(game.call.audibility, "clear");
   assert.ok(game.currentNodeId === teaching.nodeId || Math.hypot(game.walker.position[0] - teaching.position[0], game.walker.position[1] - teaching.position[1]) < 7);
   assert.equal(game.undertaking.commitmentsMade, 0, "no commitment while a sleeping structure stands here");
@@ -109,7 +109,7 @@ test("the teaching structure: found, woken by a nearby gaze, and the call passes
   assert.equal(game.structures.clearingAt(teaching.position), 1);
   const after = run(game, 4);
   assert.ok(after.some(event => event.type === "lead" && event.wayId === awakening.far.wayId), "after the celebration her body leads along the new way");
-  assert.ok(game.ariadne.fragments.includes("teaching"), "the fragment rides with her");
+  assert.ok(game.ariadne.fragments.includes("bell-arch"), "the fragment rides with her");
   const { near } = game.perceive(awakening.far);
   assert.equal(near.structure.visible, true);
   assert.equal(near.structure.state, "awake");
@@ -161,6 +161,9 @@ test("taking another way is a decline; she rejoins and says nothing about the ne
   const node = game.graph.node(game.teachingNodeId);
   const other = node.ways.map(id => game.graph.way(id)).find(way => way.id !== awakening.far.wayId && way.id !== game.teachingWayId) ?? node.ways.map(id => game.graph.way(id)).find(way => way.id !== awakening.far.wayId);
   const markers = game.graph.markersFrom(other, node.id);
+  // Start at the chosen way’s mouth; a straight line from the far side of the
+  // awakened object can cross a different way before reaching this one.
+  game.walker.position = [...markers[0].position];
   const events = walkTo(game, markers[1].position, 1);
   const declined = speeches(events).find(event => event.occasion === "declined");
   assert.ok(declined, "the decline is spoken");
@@ -199,10 +202,11 @@ test("leaving the markers is noticed without being corrected, and coming back re
 test("a way that ends is named as a terminus and she leads back", () => {
   const game = new FieldGame(5);
   run(game, 7);
-  const terminus = [...game.graph.nodes.values()].find(node => node.ways.length === 1 && node.id !== game.graph.spawnNodeId && game.structures.ensureAt(node) === null);
+  const terminus = [...game.graph.nodes.values()].find(node => node.ways.length === 1 && node.floor.startsWith("terminus") && Math.hypot(node.position[0] - game.walker.position[0], node.position[1] - game.walker.position[1]) < 135 && node.id !== game.graph.spawnNodeId && game.structures.ensureAt(node) === null);
   assert.ok(terminus, "the field has a terminus nearby");
   const way = game.graph.way(terminus.ways[0]);
   const markers = game.graph.markersFrom(way, terminus.id);
+  game.currentNodeId = game.graph.otherEnd(way, terminus.id);
   game.walker.position = [...markers[2].position];
   const events = walkTo(game, terminus.position, 1.2, 30);
   const spoken = speeches(events).find(event => event.occasion === "terminus");
@@ -237,7 +241,7 @@ test("save and restore bring back the same ground, the same undertaking and her 
   assert.equal(restored.clearingsMade, 1);
   assert.equal(restored.memory.footprints.length, game.memory.footprints.length);
   assert.equal(restored.ariadne.committedWayId, way.id, "her body leads along the same way");
-  assert.deepEqual(restored.ariadne.fragments, ["teaching"]);
+  assert.deepEqual(restored.ariadne.fragments, ["bell-arch"]);
   assert.equal(restored.ariadne.mode, "leading");
   assert.equal(restored.structures.get(restored.undertaking.objectiveStructureId).relevance, "objective_relevant");
   const events = run(restored, 2);
@@ -268,7 +272,7 @@ test("the fog shader receives the clearings nearest the walker, not the first on
   const game = new FieldGame(9);
   run(game, 1);
   const nodes = [...game.graph.nodes.values()].filter(node => node.ways.length >= 1).slice(0, 20);
-  nodes.forEach((node, index) => { const structure = game.structures.placeAt(node, "bells"); structure.completedAt = 1000 + index; });
+  nodes.forEach((node, index) => { const structure = game.structures.placeAt(node, "chimes"); structure.completedAt = 1000 + index; });
   const all = game.clearings();
   assert.equal(all.length, 20);
   const nearest = game.clearings(12);
@@ -282,7 +286,7 @@ test("the fog shader receives the clearings nearest the walker, not the first on
 test("a nearby sleeping structure sounds with its own family, not the objective's", () => {
   const { game } = reachFirstCommitment(3);
   const objective = game.structures.get(game.undertaking.objectiveStructureId);
-  const proxy = game.structures.all().find(item => item.completedAt === null && item.id !== objective.id && item.family !== objective.family && item.family !== "teaching");
+  const proxy = game.structures.all().find(item => item.completedAt === null && item.id !== objective.id && item.family !== objective.family && item.family !== "bell-arch");
   assert.ok(proxy, "a sleeping structure of another family exists");
   game.walker.position = [proxy.position[0] + 3, proxy.position[1]];
   run(game, .5);
@@ -304,7 +308,7 @@ test("an empty junction beyond hearing range is not automatically a failed direc
   run(game, 4);
   // Move the objective far away so no call is audible anywhere near, then follow her current way to its end.
   const farNode = [...game.graph.nodes.values()].sort((a, b) => Math.hypot(b.position[0] - game.walker.position[0], b.position[1] - game.walker.position[1]) - Math.hypot(a.position[0] - game.walker.position[0], a.position[1] - game.walker.position[1]))[0];
-  const objective = game.structures.placeAt(farNode, "cairn");
+  const objective = game.structures.placeAt(farNode, "gold-veined-cairn");
   game.undertaking = { ...game.undertaking, objectiveStructureId: objective.id, objectiveNodeId: objective.nodeId };
   const lead = game.ariadne.committedWayId; const from = game.ariadne.committedFromNodeId;
   const way = game.graph.way(lead);
@@ -328,14 +332,15 @@ test("a structure reached by the walker's own way is named as theirs in her card
   const farEnd = game.graph.node(game.graph.otherEnd(other, node.id));
   // Put a sleeping structure at the end of the way she did not choose, so their way and not hers leads to it.
   const existing = game.structures.atNode(farEnd.id);
-  if (!existing) game.structures.placeAt(farEnd, "cairn"); else if (existing.completedAt !== null) { existing.completedAt = null; for (const element of existing.elements) element.active = false; }
+  if (!existing) game.structures.placeAt(farEnd, "gold-veined-cairn"); else if (existing.completedAt !== null) { existing.completedAt = null; for (const element of existing.elements) element.active = false; }
+  game.walker.position = [...game.graph.markersFrom(other, node.id)[0].position];
   const events = [];
   for (const marker of game.graph.markersFrom(other, node.id)) events.push(...walkTo(game, marker.position, 1.2, 30));
   events.push(...walkTo(game, farEnd.position, 2.5, 30));
   events.push(...run(game, 1));
   const declined = speeches(events).find(event => event.occasion === "declined");
   assert.ok(declined, "the decline is spoken");
-  const found = speeches(events).find(event => event.occasion === "structure_found" && !/first sleeping structure/.test(event.walkerDid));
+  const found = speeches(events).find(event => event.occasion === "structure_found" && !/first sleeping bell arch/.test(event.walkerDid));
   assert.ok(found, "the structure at the end of their way is announced");
   assert.match(found.walkerDid, new RegExp(`They came this way along the ${other.marker}, a way they chose instead of the ${game.graph.way(awakening.far.wayId).marker} you had chosen; yours did not lead here\\.`));
   assert.ok(game.arrivedByOwnChoice(farEnd.id), "the game knows they arrived by their own choice");
@@ -405,7 +410,7 @@ test("Ariadne describes one whole-object interaction and completion", () => {
   assert.ok(structure.completedAt !== null);
   const found = speeches(events).filter(e => e.occasion === "structure_found");
   assert.ok(found.length > 0);
-  assert.ok(found.every(e => /whole structure|whole object/.test(e.whatFollowed)));
+  assert.ok(found.every(e => /whole instrument|whole object/.test(e.whatFollowed)));
   assert.ok(events.some(e => e.type === "structure_completed"));
   assert.equal(game.perceive(null).near.structure.nextAsks, null);
 });

@@ -14,7 +14,8 @@ export type Residue = { strength: number; fromNodeId: string; at: number };
 export type Visit = { count: number; firstAt: number; lastAt: number };
 export type CaptionLine = { id: string; role: "ariadne" | "walker"; text: string; time: number; kind: "generated" | "cue" | "walker" };
 
-export const STEP_LENGTH = .74;
+// A longer stride spaces out footfalls without changing the walker's travel speed.
+export const STEP_LENGTH = .92;
 export const MAX_FOOTPRINTS = 3000;
 export const MAX_CAPTIONS = 400;
 

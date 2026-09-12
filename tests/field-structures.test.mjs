@@ -21,7 +21,7 @@ const standingAt = (element, yawTo = null, speed = 0) => {
 };
 
 test("every complete structure wakes in about ten seconds of uninterrupted interaction", () => {
-  for (const family of [...FAMILIES, "teaching"]) {
+  for (const family of [...FAMILIES, "bell-arch"]) {
     const { graph, structures } = setup(3);
     structures.byNode.clear();
     const structure = createStructure(3, graph.node(graph.spawnNodeId), family);
@@ -40,7 +40,7 @@ test("every complete structure wakes in about ten seconds of uninterrupted inter
 });
 
 test("every family has baked anchors with elements, a call anchor and a fragment anchor", () => {
-  for (const family of [...FAMILIES, "teaching"]) {
+  for (const family of [...FAMILIES, "bell-arch"]) {
     const baked = STRUCTURE_ANCHORS[`structure-${family}`];
     assert.ok(baked, `${family} baked`);
     const elements = baked.anchors.filter(anchor => /^element_\d\d$/.test(anchor.name));
@@ -49,7 +49,7 @@ test("every family has baked anchors with elements, a call anchor and a fragment
     assert.ok(baked.anchors.some(anchor => anchor.name === "fragment_anchor"), `${family} has a fragment anchor`);
     for (const element of elements) assert.ok(["approach", "look", "listen"].includes(element.gesture), `${family} ${element.name} has a gesture`);
   }
-  const teaching = STRUCTURE_ANCHORS["structure-teaching"].anchors.filter(anchor => /^element_/.test(anchor.name)).map(anchor => anchor.gesture);
+  const teaching = STRUCTURE_ANCHORS["structure-bell-arch"].anchors.filter(anchor => /^element_/.test(anchor.name)).map(anchor => anchor.gesture);
   assert.deepEqual(teaching, ["approach", "look", "listen"], "the teaching structure teaches the three gestures in order");
 });
 
@@ -57,9 +57,9 @@ test("structures are placed deterministically from the seed and the teaching pla
   const a = setup(6), b = setup(6);
   assert.deepEqual(a.structures.all().map(item => item.id).sort(), b.structures.all().map(item => item.id).sort());
   const teaching = a.structures.atNode(a.graph.spawnNodeId);
-  assert.equal(teaching.family, "teaching");
+  assert.equal(teaching.family, "bell-arch");
   const count = a.structures.all().length;
-  assert.ok(count > 15 && count < 50, `roughly forty percent of eighty-one places hold a structure (${count})`);
+  assert.ok(count >= 7 && count < 20, `structures are occasional rather than at most junctions (${count})`);
   for (const structure of a.structures.all()) {
     const node = a.graph.node(structure.nodeId);
     assert.deepEqual(structure.position, node.position);
@@ -72,7 +72,7 @@ test("world anchors sit exactly where the rendered model puts them: the game rot
   // must land on the drawn part, so the arbiter here is Three.js itself.
   for (const seed of [3, 6, 12, 41]) {
     const { graph } = setup(seed);
-    for (const family of ["teaching", "bells", "glass", "reeds"]) {
+    for (const family of ["bell-arch", "chimes", "glass-vessels", "reed-bed"]) {
       const node = graph.node(graph.spawnNodeId);
       const structure = createStructure(seed, node, family);
       const baked = STRUCTURE_ANCHORS[`structure-${family}`];
@@ -94,7 +94,7 @@ test("the collision core turns with the model too", () => {
   const seed = 5;
   const game = new FieldGame(seed);
   const node = [...game.graph.nodes.values()].find(item => item.ways.length >= 2 && item.id !== game.teachingNodeId && !game.structures.atNode(item.id));
-  const structure = game.structures.placeAt(node, "bells");
+  const structure = game.structures.placeAt(node, "chimes");
   structure.yaw = Math.PI / 2;
   const centre = structure.position;
   // Walk toward the centre along world +Z: the long axis now lies along Z, so the walker should stop at the thin side (hz .3) plus their radius.
@@ -128,7 +128,7 @@ test("whole-object progress pauses away, rejects skyward gaze, and completes onc
 
 test("serialize and restore keep completion and element states", () => {
   const { graph, structures } = setup(15);
-  const structure = structures.all().find(item => item.family !== "teaching");
+  const structure = structures.all().find(item => item.family !== "bell-arch");
   structure.elements[0].active = true; structure.completedAt = 1234; structure.relevance = "objective_relevant";
   const saved = JSON.parse(JSON.stringify(structures.serialize()));
   const fresh = new StructureField(15, graph.spawnNodeId);
@@ -139,4 +139,25 @@ test("serialize and restore keep completion and element states", () => {
   assert.equal(restored.elements[0].active, true);
   assert.equal(restored.elements[1].active, false);
   assert.equal(fresh.all().length, structures.all().length, "every decided structure is back");
+});
+
+test("natural structures are sparse, separated, and independent of discovery order", () => {
+  let places = 0, occupied = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const { graph, structures } = setup(seed);
+    const reverse = new StructureField(seed, graph.spawnNodeId);
+    for (const node of [...graph.nodes.values()].reverse()) reverse.ensureAt(node);
+    for (const node of graph.nodes.values()) {
+      places++;
+      const structure = structures.atNode(node.id);
+      assert.equal(!!structure, !!reverse.atNode(node.id));
+      if (!structure) continue;
+      occupied++;
+      for (const wayId of node.ways) {
+        const other = graph.otherEnd(graph.way(wayId), node.id);
+        assert.equal(structures.atNode(other), null, `adjacent reward at ${node.id}/${other}`);
+      }
+    }
+  }
+  assert.ok(occupied / places > .1 && occupied / places < .2, `density ${occupied / places}`);
 });

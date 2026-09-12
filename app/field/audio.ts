@@ -24,6 +24,15 @@ export const VOICE_PLAYBACK_RATE = 1.1;
 export const VOICE_GAIN = .9;
 export const DUCK_GAIN = .5;
 
+/** Match utterance loudness with fixed gain, leaving near-silence alone and preserving peak headroom. */
+export function voiceNormalizationGain(channels: readonly Float32Array[]) {
+  let sum = 0, peak = 0, samples = 0;
+  for (const channel of channels) for (const sample of channel) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); samples++; }
+  const rms = samples ? Math.sqrt(sum / samples) : 0;
+  if (!Number.isFinite(rms) || rms <= .00001) return 1;
+  return Math.min(4, .07 / rms, .85 / peak);
+}
+
 /** Visible pulse intensity for a loop that started at `startedAt`, at `now` (same clock): a quick rise and a slower fall inside each event. */
 export function pulseEnvelope(startedAt: number, now: number, events = CALL_PULSE_EVENTS, loopSeconds = CALL_LOOP_SECONDS) {
   if (now < startedAt) return 0;
@@ -56,7 +65,7 @@ export function cueForOccasion(occasion: FieldOccasion, detail: { gesture?: "app
     case "outcome_confirmed": return "getting-louder";
     case "outcome_failed": return "fading";
     case "terminus": return "dead-end";
-    case "structure_found": return detail.teaching ? (detail.gesture === "look" ? "teaching-look" : detail.gesture === "listen" ? "teaching-listen" : "teaching-approach") : "found-one";
+    case "structure_found": return detail.teaching ? (detail.gesture === "look" ? "bell-arch-look" : detail.gesture === "listen" ? "bell-arch-listen" : "bell-arch-approach") : "found-one";
     case "structure_attending": return null;
     case "awakening_relevant": return "clearing-promise";
     case "awakening_proxy": return "woke-the-room";
@@ -120,7 +129,7 @@ export type SpeakOptions = {
 
 export type FieldAudio = ReturnType<typeof createFieldAudio>;
 
-export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeof fetch } ) {
+export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeof fetch; debug?: boolean } ) {
   const fetchImpl = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   let context: AudioContext | null = null;
   let master: GainNode | null = null, world: GainNode | null = null, environment: GainNode | null = null, voiceBus: GainNode | null = null, duck: GainNode | null = null;
@@ -132,12 +141,11 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
   type Loop = { source: AudioBufferSourceNode; gain: GainNode; panner: PannerNode | null; startedAt: number; id: string };
   let fogLoops: Loop[] = [];
   let hush: Loop | null = null, water: Loop | null = null;
-  let call: Loop | null = null, callId: string | null = null, callPosition: [number, number, number] | null = null, callGain = 0;
+  let call: Loop | null = null, callId: string | null = null;
   /** Visual pulse clock fallback when there is no audio yet. */
   let visualStart = performance.now() / 1000;
   const awakeLoops = new Map<string, Loop>();
   let footVariant = { ground: 0, stone: 0 };
-  let pulseScheduledUntil = 0;
 
   const now = () => context?.currentTime ?? performance.now() / 1000;
 
@@ -234,8 +242,9 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
   const applyMaster = () => { if (master && context) master.gain.setTargetAtTime(masterVolume, context.currentTime, .05); };
 
   /* --------------------------------------------------------------- voice */
-  let voiceSource: AudioBufferSourceNode | null = null, voicePanner: StereoPannerNode | null = null, voiceAnalyser: AnalyserNode | null = null, voiceEpoch = 0, voiceBusy: "cue" | "speech" | null = null;
+  let voiceSource: AudioBufferSourceNode | null = null, voiceGain: GainNode | null = null, voicePanner: StereoPannerNode | null = null, voiceAnalyser: AnalyserNode | null = null, voiceEpoch = 0, voiceBusy: "cue" | "speech" | null = null;
   let voiceStartedAt = 0, voiceDuration = 0, voiceOffset = 0, voiceText: string | null = null;
+  let voiceDiagnostic: { kind: "cue" | "speech"; durationSeconds: number; normalizationGain: number; peakRms: number; measurements: number } | null = null;
   const analyserData = new Uint8Array(256);
   const cueBuffers = new Map<string, Promise<AudioBuffer | null>>();
   const loadCue = (id: string) => {
@@ -243,43 +252,74 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
     const promise = (async () => { if (!context) return null; try { const response = await fetchImpl(`/fog/cues/${id}.mp3`, { signal: AbortSignal.timeout(10_000) }); if (!response.ok) return null; return await context.decodeAudioData((await response.arrayBuffer()).slice(0)); } catch { return null; } })();
     cueBuffers.set(id, promise); return promise;
   };
-  const clearVoice = () => {
-    if (voiceSource) { try { voiceSource.onended = null; voiceSource.stop(); } catch { /* stopped */ } voiceSource.disconnect(); voiceSource = null; }
-    voicePanner?.disconnect(); voicePanner = null; voiceAnalyser?.disconnect(); voiceAnalyser = null;
+  let finishVoice: ((result: VoiceResult) => void) | null = null;
+  const clearVoice = (result: VoiceResult = "interrupted") => {
+    const finish = finishVoice; finishVoice = null;
+    if (voiceDiagnostic) { console.info("Ariadne voice ended " + JSON.stringify({ state: context?.state, contextTimeSeconds: context?.currentTime, result, ...voiceDiagnostic })); voiceDiagnostic = null; }
+    const source = voiceSource, gain = voiceGain, panner = voicePanner, analyser = voiceAnalyser;
+    voiceSource = null; voiceGain = null; voicePanner = null; voiceAnalyser = null;
     voiceBusy = null; voiceText = null;
-    if (duck && context) duck.gain.setTargetAtTime(1, context.currentTime, .3);
+    finish?.(result);
+    if (source) { source.onended = null; try { source.stop(); } catch { /* stopped or never started */ } }
+    for (const node of [source, gain, panner, analyser]) { try { node?.disconnect(); } catch { /* already disconnected */ } }
+    if (duck && context) { try { duck.gain.setTargetAtTime(1, context.currentTime, .3); } catch { /* context unavailable */ } }
   };
   const playVoiceBuffer = (buffer: AudioBuffer, kind: "cue" | "speech", text: string, opts: SpeakOptions, epoch: number): Promise<VoiceResult> => new Promise(resolve => {
-    if (!context || !voiceBus || !duck || destroyed || epoch !== voiceEpoch || opts.shouldStart?.() === false) {
-      if (epoch === voiceEpoch) clearVoice();
-      resolve("interrupted"); return;
+    try {
+      if (!context || !voiceBus || !duck || destroyed || epoch !== voiceEpoch || opts.shouldStart?.() === false) {
+        if (epoch === voiceEpoch) clearVoice();
+        resolve("interrupted"); return;
+      }
+      const source = context.createBufferSource(); voiceSource = source;
+      source.buffer = buffer; source.playbackRate.value = VOICE_PLAYBACK_RATE;
+      const gain = context.createGain(); voiceGain = gain;
+      const normalizationGain = voiceNormalizationGain(Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel)));
+      gain.gain.value = normalizationGain;
+      const panner = context.createStereoPanner(); voicePanner = panner;
+      const analyser = context.createAnalyser(); voiceAnalyser = analyser; analyser.fftSize = 256;
+      source.connect(gain); gain.connect(panner); panner.connect(analyser); analyser.connect(voiceBus);
+      voiceBusy = kind; voiceText = text;
+      const offset = Math.max(0, Math.min(buffer.duration - .2, buffer.duration * (opts.startAtFraction ?? 0)));
+      voiceStartedAt = context.currentTime; voiceDuration = buffer.duration / VOICE_PLAYBACK_RATE; voiceOffset = offset / VOICE_PLAYBACK_RATE;
+      duck.gain.setTargetAtTime(DUCK_GAIN, context.currentTime, .08);
+      finishVoice = resolve;
+      source.onended = () => { if (epoch === voiceEpoch) clearVoice("spoken"); else resolve("interrupted"); };
+      source.start(0, offset);
+      if (options.debug) {
+        voiceDiagnostic = { kind, durationSeconds: voiceDuration, normalizationGain, peakRms: 0, measurements: 0 };
+        console.info("Ariadne voice started " + JSON.stringify({ state: context.state, contextTimeSeconds: context.currentTime, kind, durationSeconds: voiceDuration, normalizationGain }));
+      }
+      opts.onStart?.();
+    } catch (error) {
+      if (epoch === voiceEpoch) {
+        clearVoice("failed");
+        console.warn("Ariadne voice playback failed", { kind, reason: error instanceof Error ? error.message : "unknown" });
+      }
+      resolve(epoch === voiceEpoch ? "failed" : "interrupted");
     }
-    const source = context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = VOICE_PLAYBACK_RATE;
-    const panner = context.createStereoPanner(), analyser = context.createAnalyser(); analyser.fftSize = 256;
-    source.connect(panner); panner.connect(analyser); analyser.connect(voiceBus);
-    voiceSource = source; voicePanner = panner; voiceAnalyser = analyser; voiceBusy = kind; voiceText = text;
-    const offset = Math.max(0, Math.min(buffer.duration - .2, buffer.duration * (opts.startAtFraction ?? 0)));
-    voiceStartedAt = context.currentTime; voiceDuration = buffer.duration / VOICE_PLAYBACK_RATE; voiceOffset = offset / VOICE_PLAYBACK_RATE;
-    duck.gain.setTargetAtTime(DUCK_GAIN, context.currentTime, .08);
-    source.onended = () => { const finished = epoch === voiceEpoch; if (finished) clearVoice(); resolve(finished ? "spoken" : "interrupted"); };
-    opts.onStart?.();
-    source.start(0, offset);
   });
 
   const voice = {
     isBusy: () => voiceBusy !== null,
     /** Fraction of the current utterance already spoken, for resuming mid-sentence. */
-    progress() { if (!context || !voiceBusy || voiceDuration <= 0) return null; return Math.max(0, Math.min(1, (voiceOffset + (context.currentTime - voiceStartedAt)) / voiceDuration)); },
+    progress() { if (!context || !voiceSource || !voiceBusy || voiceDuration <= 0) return null; return Math.max(0, Math.min(1, (voiceOffset + (context.currentTime - voiceStartedAt)) / voiceDuration)); },
     currentText: () => voiceText,
     /** 0..1 loudness of her voice right now, for the ribbon. */
-    level() { if (!voiceAnalyser) return 0; voiceAnalyser.getByteTimeDomainData(analyserData); let sum = 0; for (let i = 0; i < analyserData.length; i++) { const v = (analyserData[i]! - 128) / 128; sum += v * v; } return Math.min(1, Math.sqrt(sum / analyserData.length) * 3.2); },
+    level() {
+      if (!voiceAnalyser) return 0;
+      voiceAnalyser.getByteTimeDomainData(analyserData);
+      let sum = 0; for (let i = 0; i < analyserData.length; i++) { const v = (analyserData[i]! - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / analyserData.length);
+      if (voiceDiagnostic) { voiceDiagnostic.peakRms = Math.max(voiceDiagnostic.peakRms, rms); voiceDiagnostic.measurements++; }
+      return Math.min(1, rms * 3.2);
+    },
     interrupt() { voiceEpoch++; clearVoice(); },
     async playCue(id: string, opts: SpeakOptions = {}): Promise<VoiceResult> {
       if (!context || destroyed) return "failed";
       if (voiceBusy) return "interrupted";
       const epoch = ++voiceEpoch; voiceBusy = "cue";
       const buffer = await loadCue(id);
-      if (!buffer) { if (epoch === voiceEpoch) voiceBusy = null; return "failed"; }
+      if (!buffer) { if (epoch === voiceEpoch) clearVoice("failed"); return "failed"; }
       if (epoch !== voiceEpoch) return "interrupted";
       return playVoiceBuffer(buffer, "cue", id, opts, epoch);
     },
@@ -306,8 +346,11 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
         const buffer = await context.decodeAudioData(encoded.slice(0));
         if (epoch !== voiceEpoch || destroyed) return "interrupted";
         return await playVoiceBuffer(buffer, "speech", text, opts, epoch);
-      } catch {
-        if (epoch === voiceEpoch) voiceBusy = null;
+      } catch (error) {
+        if (epoch === voiceEpoch) {
+          clearVoice();
+          console.warn("Ariadne voice playback failed", { utteranceId, reason: error instanceof Error ? error.message : "unknown" });
+        }
         return epoch === voiceEpoch ? "failed" : "interrupted";
       }
     },
@@ -337,7 +380,6 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
         const grain = await startLoop("fog-grain-air", environment!, gainOf("fog-grain-air"), null, 6);
         fogLoops = [wind, grain].filter((loop): loop is Loop => !!loop);
         for (const surface of ["ground", "stone"]) for (let i = 1; i <= 6; i++) void load(`footstep-${surface}-0${i}`);
-        void load("pulse");
       });
       void loadCue("opening-premise");
     },
@@ -348,7 +390,7 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
 
     /** Per-frame: listener pose, the call, the fog and the clearings. */
     update(frame: AudioFrame) {
-      if (!context) { callPosition = frame.call.position; callGain = frame.call.gain; if (frame.call.structureId !== callId) { callId = frame.call.structureId; visualStart = performance.now() / 1000; } return; }
+      if (!context) { if (frame.call.structureId !== callId) { callId = frame.call.structureId; visualStart = performance.now() / 1000; } return; }
       const listener = context.listener;
       const fx = Math.sin(frame.walker.yaw), fz = Math.cos(frame.walker.yaw);
       if ("positionX" in listener && listener.positionX) {
@@ -364,13 +406,12 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
         stopLoop(call, .8); call = null;
         if (callId && frame.call.position && frame.call.family) {
           const startedFor = callId;
-          void startLoop(`${frame.call.family}-call`, world!, 0, frame.call.position, .01).then(loop => { if (!loop) return; if (callId !== startedFor) { stopLoop(loop, .1); return; } call = loop; pulseScheduledUntil = 0; });
+          void startLoop(`${frame.call.family}-call`, world!, 0, frame.call.position, .01).then(loop => { if (!loop) return; if (callId !== startedFor) { stopLoop(loop, .1); return; } call = loop; });
         }
       }
-      callPosition = frame.call.position; callGain = frame.call.gain;
-      if (call) { setLoopGain(call, frame.call.gain * gainOf(call.id), .4); if (call.panner && frame.call.position) place(call.panner, ...frame.call.position); this.schedulePulses(); }
+      if (call) { setLoopGain(call, frame.call.gain * gainOf(call.id), .4); if (call.panner && frame.call.position) place(call.panner, ...frame.call.position); }
 
-      // A sleeping part answering a held look or stillness.
+      // A quiet underlying resonance while a sleeping structure wakes.
       answer(frame.attending ?? null);
 
       // Fog thins off the line into a hush; the fog layers drop a little with it.
@@ -399,16 +440,6 @@ export function createFieldAudio(options: { sessionId: string; fetchImpl?: typeo
         const bearing = Math.atan2(dx, dz) - frame.walker.yaw;
         voicePanner.pan.setTargetAtTime(Math.max(-.7, Math.min(.7, -Math.sin(bearing) * .7)), context.currentTime, .1);
       }
-    },
-
-    /** Schedule the soft pulse accent for the next few seconds of the call loop. */
-    schedulePulses() {
-      if (!context || !call || !callPosition) return;
-      const horizon = 2.5, t = context.currentTime;
-      if (pulseScheduledUntil > t + horizon - .5) return;
-      const from = Math.max(t, pulseScheduledUntil);
-      for (const pulse of upcomingPulses(call.startedAt, from, t + horizon - from)) if (pulse.at > pulseScheduledUntil) void playOneShot("pulse", world!, gainOf("pulse") * pulse.strength * Math.min(1, callGain * 1.4), callPosition, pulse.at);
-      pulseScheduledUntil = t + horizon;
     },
 
     /** The visible pulse right now, 0..1, on the audio clock (or a stand-in clock before audio is unlocked). */

@@ -4,7 +4,7 @@
   "failed": 0,
   "results": [
     {
-      "id": "marker-stone-01",
+      "id": "marker-waystone-01",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -50,7 +50,7 @@
       ]
     },
     {
-      "id": "marker-stone-02",
+      "id": "marker-waystone-02",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -96,7 +96,7 @@
       ]
     },
     {
-      "id": "marker-stone-03",
+      "id": "marker-waystone-03",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -142,7 +142,7 @@
       ]
     },
     {
-      "id": "marker-post-01",
+      "id": "marker-stake-01",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -188,7 +188,7 @@
       ]
     },
     {
-      "id": "marker-post-02",
+      "id": "marker-stake-02",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -234,7 +234,7 @@
       ]
     },
     {
-      "id": "marker-post-03",
+      "id": "marker-stake-03",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -280,7 +280,7 @@
       ]
     },
     {
-      "id": "marker-stitch-01",
+      "id": "marker-cord-01",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -326,7 +326,7 @@
       ]
     },
     {
-      "id": "marker-stitch-02",
+      "id": "marker-cord-02",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -456,7 +456,7 @@
       ]
     },
     {
-      "id": "node-post-ring-01",
+      "id": "node-stake-ring-01",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -568,7 +568,7 @@
       ]
     },
     {
-      "id": "structure-bells",
+      "id": "structure-chimes",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -648,7 +648,7 @@
       ]
     },
     {
-      "id": "structure-pages",
+      "id": "structure-paper-leaves",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -728,7 +728,7 @@
       ]
     },
     {
-      "id": "structure-cairn",
+      "id": "structure-gold-veined-cairn",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -808,7 +808,7 @@
       ]
     },
     {
-      "id": "structure-reeds",
+      "id": "structure-reed-bed",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -888,7 +888,7 @@
       ]
     },
     {
-      "id": "structure-instrument",
+      "id": "structure-pipes",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -968,7 +968,7 @@
       ]
     },
     {
-      "id": "structure-glass",
+      "id": "structure-glass-vessels",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1048,7 +1048,7 @@
       ]
     },
     {
-      "id": "structure-teaching",
+      "id": "structure-bell-arch",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1128,7 +1128,7 @@
       ]
     },
     {
-      "id": "fragment-bells",
+      "id": "fragment-chimes",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1156,7 +1156,7 @@
       ]
     },
     {
-      "id": "fragment-pages",
+      "id": "fragment-paper-leaves",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1184,7 +1184,7 @@
       ]
     },
     {
-      "id": "fragment-cairn",
+      "id": "fragment-gold-veined-cairn",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1212,7 +1212,7 @@
       ]
     },
     {
-      "id": "fragment-reeds",
+      "id": "fragment-reed-bed",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1240,7 +1240,7 @@
       ]
     },
     {
-      "id": "fragment-instrument",
+      "id": "fragment-pipes",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],
@@ -1268,7 +1268,7 @@
       ]
     },
     {
-      "id": "fragment-glass",
+      "id": "fragment-glass-vessels",
       "errors": 0,
       "warnings": 0,
       "missingAnchors": [],

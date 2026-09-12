@@ -87,8 +87,8 @@ export function reliability(completedAttempts: number, openWays: number) {
 }
 
 /**
- * Choose the structure that will call next: dormant, two to three places
- * away, deterministic per stage. Falls back to farther places, then to
+ * Keep the first search close; later calls span three to five places.
+ * Placement is deterministic per stage. Falls back to farther places, then to
  * placing a structure where none stood.
  */
 export function beginCall(state: Undertaking, graph: FieldGraph, structures: StructureField, fromNodeId: string, seed: number, now: number): Undertaking {
@@ -96,12 +96,12 @@ export function beginCall(state: Undertaking, graph: FieldGraph, structures: Str
   const hops = graph.hops(fromNodeId, 7);
   for (const node of graph.nodes.values()) if ((hops.get(node.id) ?? Infinity) <= 7) structures.ensureAt(node);
   const candidatesAt = (min: number, max: number) => [...hops.entries()].filter(([id, d]) => d >= min && d <= max && id !== fromNodeId).map(([id]) => structures.atNode(id)).filter((item): item is NonNullable<typeof item> => !!item && item.completedAt === null);
-  let candidates = candidatesAt(2, 3);
-  if (!candidates.length) candidates = candidatesAt(2, 5);
-  if (!candidates.length) candidates = candidatesAt(1, 7);
+  const minHops = stage === 1 ? 2 : 3;
+  let candidates = candidatesAt(minHops, stage === 1 ? 3 : 5);
+  if (!candidates.length && stage !== 1) candidates = candidatesAt(minHops, 7);
   let objective = candidates.length ? candidates[hash32(seed, "objective", stage) % candidates.length]! : null;
   if (!objective) {
-    const places = [...hops.entries()].filter(([id, d]) => d >= 2 && d <= 4 && id !== fromNodeId && !structures.atNode(id)).map(([id]) => id).sort();
+    const places = [...hops.entries()].filter(([id, d]) => d >= minHops && d <= (stage === 1 ? 3 : 7) && id !== fromNodeId && !structures.atNode(id) && graph.node(id)!.ways.every(way => !structures.atNode(graph.otherEnd(graph.way(way)!, id)))).map(([id]) => id).sort();
     const target = places.length ? places[hash32(seed, "objective-place", stage) % places.length]! : [...hops.keys()].find(id => id !== fromNodeId) ?? fromNodeId;
     objective = structures.placeAt(graph.node(target)!);
   }

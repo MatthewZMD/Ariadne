@@ -9,10 +9,10 @@ The review scene is an asset viewer, not a claim that the game redesign is built
 
 | Group | Delivered files | Contract |
 |---|---:|---|
-| Way markers | 8 GLBs | 3 leaning stones, 3 posts, 2 stitches; each has `residue_anchor` and a driveable `marker-emissive` material |
-| Node floors | 4 GLBs | 2 stone dishes, a pool, an eight-post ring |
+| Way markers | 8 GLBs | 3 waystones, 3 stakes, 2 cord markers; each has `residue_anchor` and a driveable `marker-emissive` material |
+| Node floors | 4 GLBs | 2 stone dishes, a pool, an eight-stake ring |
 | Termini | 3 GLBs | 2 collapsed-marker arrangements, water's edge |
-| Structures | 7 GLBs | Bells, pages, cairn, reeds, instrument, glass, teaching; dormant and awake meshes in each file |
+| Structures | 7 GLBs | Chimes, paper leaves, gold-veined cairn, reed bed, pipes, glass vessels, bell arch; dormant and awake meshes in each file |
 | Fragments | 6 GLBs | One per family, maximum dimension 0.18 m |
 | Environmental/interaction audio | 69 WAVs | Mono PCM16, 48 kHz; 18 loops and 51 one-shots |
 | Voice cues | 31 MP3s | 11 compatible recordings reused and 20 revised/new lines generated with the existing Ariadne voice. `cues.json` records text and provenance. |
@@ -20,9 +20,9 @@ The review scene is an asset viewer, not a claim that the game redesign is built
 | Sharing image | 1 PNG | `public/fog/images/og.png`, 1200 × 630 |
 | Review images | 35 PNGs + 2 contact sheets | Every model and both structure states rendered in Three.js |
 
-The extra teaching call, three notes, completion chord and awake loop make the
+The extra bell-arch call, three notes, completion chord and awake loop make the
 first encounter self-contained. Four extra spoken cues cover the clearing
-promise and the three teaching gestures. Four recordings listed as “keep” in
+promise and the three bell-arch gestures. Four recordings listed as “keep” in
 the plan contain “MT”; their revised versions omit the name to follow the
 plan's default `you` address.
 
@@ -53,13 +53,13 @@ radius. `call_anchor` locates the spatial audio source; `fragment_anchor`
 locates the departure point for a fragment. Anchors are local transforms: use
 `getWorldPosition()` after placing an instance. They are not collision meshes.
 
-The teaching structure's anchors are ordered approach → look → listen. Pages
-lift and reeds open between states. Other structures change their small
+The bell arch's anchors are ordered approach → look → listen. Paper leaves
+lift and the reed bed opens between states. Other structures change their small
 emissive surfaces. The game supplies pulse, clearing, fragment travel and
 optional wake motion; there are no baked animation clips.
 
-Colours follow the current resonance palette: bells/teaching `#dbc69b`, pages
-`#bcefff`, cairn `#ffd074`, reeds `#9eea76`, instrument `#ff8451`, glass `#8cf1dc`.
+Colours follow the current resonance palette: chimes/bell-arch `#dbc69b`, paper-leaves
+`#bcefff`, gold-veined-cairn `#ffd074`, reed-bed `#9eea76`, pipes `#ff8451`, glass-vessels `#8cf1dc`.
 Silhouette and limited luminous area carry the family identity. The glass
 forms use modest transmission; the remaining structures are matte.
 
@@ -165,3 +165,16 @@ No new .blend file is saved. The deterministic model script is the editable
 game-asset source, preserving the workspace's single-copy Blender rule and the
 existing `Ariadne-Installation-50mm.blend` scene. The installation image and
 fabrication specifications are not part of this game-asset change.
+
+### Musical score
+
+`public/fog/score.json` is the pitch and phrase source for both the audio builder
+and runtime structures. GLB anchor pitches are historical model metadata; spatial
+anchors still come from the models, while sounding pitches come from the score.
+The seven families have separate harmonic voicings and completion phrases: open
+D major at the first arch, suspended chimes, descending G major ninth paper leaves,
+paired B minor seventh in the gold-veined cairn, breathing suspended tones in the
+reed bed, wide E minor ninth pipes, and high C major seventh glass vessels. Calls retain the shared visual pulse
+clock but use their own melodic notes; no common 660 Hz beep is layered over them.
+Regenerate with `python3 asset-source/fog/build_audio.py`, then validate with
+`python3 asset-source/fog/audit_audio.py`.

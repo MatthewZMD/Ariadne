@@ -1,0 +1,109 @@
+{
+  "scope": "Production entrance and initial visibility included. Shortest authored paths; excludes detours, encounters, turning, reading, and conversation",
+  "rows": [
+    {
+      "seed": 91,
+      "entranceSteps": 28,
+      "starSteps": [
+        84,
+        124,
+        112,
+        148
+      ],
+      "totalSteps": 468,
+      "earlyOracleComparisons": 2,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 731,
+      "entranceSteps": 46,
+      "starSteps": [
+        88,
+        102,
+        116,
+        148
+      ],
+      "totalSteps": 454,
+      "earlyOracleComparisons": 3,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 812,
+      "entranceSteps": 46,
+      "starSteps": [
+        106,
+        106,
+        106,
+        144
+      ],
+      "totalSteps": 462,
+      "earlyOracleComparisons": 3,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 915,
+      "entranceSteps": 46,
+      "starSteps": [
+        76,
+        100,
+        116,
+        146
+      ],
+      "totalSteps": 438,
+      "earlyOracleComparisons": 3,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 1201,
+      "entranceSteps": 28,
+      "starSteps": [
+        88,
+        106,
+        116,
+        134
+      ],
+      "totalSteps": 444,
+      "earlyOracleComparisons": 4,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 2407,
+      "entranceSteps": 46,
+      "starSteps": [
+        92,
+        102,
+        106,
+        148
+      ],
+      "totalSteps": 448,
+      "earlyOracleComparisons": 4,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 3109,
+      "entranceSteps": 46,
+      "starSteps": [
+        116,
+        106,
+        102,
+        144
+      ],
+      "totalSteps": 468,
+      "earlyOracleComparisons": 3,
+      "earlyOracleMismatches": 0
+    },
+    {
+      "seed": 4813,
+      "entranceSteps": 42,
+      "starSteps": [
+        88,
+        102,
+        120,
+        144
+      ],
+      "totalSteps": 454,
+      "earlyOracleComparisons": 3,
+      "earlyOracleMismatches": 0
+    }
+  ]
+}

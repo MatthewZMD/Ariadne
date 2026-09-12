@@ -1,43 +1,43 @@
 [
   {
-    "id": "marker-stone-01",
+    "id": "marker-waystone-01",
     "state": "default",
-    "url": "/fog/images/marker-stone-01-default.png"
+    "url": "/fog/images/marker-waystone-01-default.png"
   },
   {
-    "id": "marker-stone-02",
+    "id": "marker-waystone-02",
     "state": "default",
-    "url": "/fog/images/marker-stone-02-default.png"
+    "url": "/fog/images/marker-waystone-02-default.png"
   },
   {
-    "id": "marker-stone-03",
+    "id": "marker-waystone-03",
     "state": "default",
-    "url": "/fog/images/marker-stone-03-default.png"
+    "url": "/fog/images/marker-waystone-03-default.png"
   },
   {
-    "id": "marker-post-01",
+    "id": "marker-stake-01",
     "state": "default",
-    "url": "/fog/images/marker-post-01-default.png"
+    "url": "/fog/images/marker-stake-01-default.png"
   },
   {
-    "id": "marker-post-02",
+    "id": "marker-stake-02",
     "state": "default",
-    "url": "/fog/images/marker-post-02-default.png"
+    "url": "/fog/images/marker-stake-02-default.png"
   },
   {
-    "id": "marker-post-03",
+    "id": "marker-stake-03",
     "state": "default",
-    "url": "/fog/images/marker-post-03-default.png"
+    "url": "/fog/images/marker-stake-03-default.png"
   },
   {
-    "id": "marker-stitch-01",
+    "id": "marker-cord-01",
     "state": "default",
-    "url": "/fog/images/marker-stitch-01-default.png"
+    "url": "/fog/images/marker-cord-01-default.png"
   },
   {
-    "id": "marker-stitch-02",
+    "id": "marker-cord-02",
     "state": "default",
-    "url": "/fog/images/marker-stitch-02-default.png"
+    "url": "/fog/images/marker-cord-02-default.png"
   },
   {
     "id": "node-dish-01",
@@ -55,9 +55,9 @@
     "url": "/fog/images/node-pool-01-default.png"
   },
   {
-    "id": "node-post-ring-01",
+    "id": "node-stake-ring-01",
     "state": "default",
-    "url": "/fog/images/node-post-ring-01-default.png"
+    "url": "/fog/images/node-stake-ring-01-default.png"
   },
   {
     "id": "terminus-collapse-01",
@@ -75,103 +75,103 @@
     "url": "/fog/images/terminus-water-01-default.png"
   },
   {
-    "id": "structure-bells",
+    "id": "structure-chimes",
     "state": "dormant",
-    "url": "/fog/images/structure-bells-dormant.png"
+    "url": "/fog/images/structure-chimes-dormant.png"
   },
   {
-    "id": "structure-bells",
+    "id": "structure-chimes",
     "state": "awake",
-    "url": "/fog/images/structure-bells-awake.png"
+    "url": "/fog/images/structure-chimes-awake.png"
   },
   {
-    "id": "structure-pages",
+    "id": "structure-paper-leaves",
     "state": "dormant",
-    "url": "/fog/images/structure-pages-dormant.png"
+    "url": "/fog/images/structure-paper-leaves-dormant.png"
   },
   {
-    "id": "structure-pages",
+    "id": "structure-paper-leaves",
     "state": "awake",
-    "url": "/fog/images/structure-pages-awake.png"
+    "url": "/fog/images/structure-paper-leaves-awake.png"
   },
   {
-    "id": "structure-cairn",
+    "id": "structure-gold-veined-cairn",
     "state": "dormant",
-    "url": "/fog/images/structure-cairn-dormant.png"
+    "url": "/fog/images/structure-gold-veined-cairn-dormant.png"
   },
   {
-    "id": "structure-cairn",
+    "id": "structure-gold-veined-cairn",
     "state": "awake",
-    "url": "/fog/images/structure-cairn-awake.png"
+    "url": "/fog/images/structure-gold-veined-cairn-awake.png"
   },
   {
-    "id": "structure-reeds",
+    "id": "structure-reed-bed",
     "state": "dormant",
-    "url": "/fog/images/structure-reeds-dormant.png"
+    "url": "/fog/images/structure-reed-bed-dormant.png"
   },
   {
-    "id": "structure-reeds",
+    "id": "structure-reed-bed",
     "state": "awake",
-    "url": "/fog/images/structure-reeds-awake.png"
+    "url": "/fog/images/structure-reed-bed-awake.png"
   },
   {
-    "id": "structure-instrument",
+    "id": "structure-pipes",
     "state": "dormant",
-    "url": "/fog/images/structure-instrument-dormant.png"
+    "url": "/fog/images/structure-pipes-dormant.png"
   },
   {
-    "id": "structure-instrument",
+    "id": "structure-pipes",
     "state": "awake",
-    "url": "/fog/images/structure-instrument-awake.png"
+    "url": "/fog/images/structure-pipes-awake.png"
   },
   {
-    "id": "structure-glass",
+    "id": "structure-glass-vessels",
     "state": "dormant",
-    "url": "/fog/images/structure-glass-dormant.png"
+    "url": "/fog/images/structure-glass-vessels-dormant.png"
   },
   {
-    "id": "structure-glass",
+    "id": "structure-glass-vessels",
     "state": "awake",
-    "url": "/fog/images/structure-glass-awake.png"
+    "url": "/fog/images/structure-glass-vessels-awake.png"
   },
   {
-    "id": "structure-teaching",
+    "id": "structure-bell-arch",
     "state": "dormant",
-    "url": "/fog/images/structure-teaching-dormant.png"
+    "url": "/fog/images/structure-bell-arch-dormant.png"
   },
   {
-    "id": "structure-teaching",
+    "id": "structure-bell-arch",
     "state": "awake",
-    "url": "/fog/images/structure-teaching-awake.png"
+    "url": "/fog/images/structure-bell-arch-awake.png"
   },
   {
-    "id": "fragment-bells",
+    "id": "fragment-chimes",
     "state": "default",
-    "url": "/fog/images/fragment-bells-default.png"
+    "url": "/fog/images/fragment-chimes-default.png"
   },
   {
-    "id": "fragment-pages",
+    "id": "fragment-paper-leaves",
     "state": "default",
-    "url": "/fog/images/fragment-pages-default.png"
+    "url": "/fog/images/fragment-paper-leaves-default.png"
   },
   {
-    "id": "fragment-cairn",
+    "id": "fragment-gold-veined-cairn",
     "state": "default",
-    "url": "/fog/images/fragment-cairn-default.png"
+    "url": "/fog/images/fragment-gold-veined-cairn-default.png"
   },
   {
-    "id": "fragment-reeds",
+    "id": "fragment-reed-bed",
     "state": "default",
-    "url": "/fog/images/fragment-reeds-default.png"
+    "url": "/fog/images/fragment-reed-bed-default.png"
   },
   {
-    "id": "fragment-instrument",
+    "id": "fragment-pipes",
     "state": "default",
-    "url": "/fog/images/fragment-instrument-default.png"
+    "url": "/fog/images/fragment-pipes-default.png"
   },
   {
-    "id": "fragment-glass",
+    "id": "fragment-glass-vessels",
     "state": "default",
-    "url": "/fog/images/fragment-glass-default.png"
+    "url": "/fog/images/fragment-glass-vessels-default.png"
   }
 ]

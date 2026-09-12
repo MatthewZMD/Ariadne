@@ -43,7 +43,7 @@ const INSTRUCTIONS: Record<FieldOccasion, string[]> = {
   outcome_confirmed: ["Interrupt yourself with delight, then stop before explaining.", "Credit the walking for what is happening to the sound."],
   outcome_failed: ["Notice the fading sound as a provisional observation while the route remains open.", "Say what has changed in the sound without declaring the journey a failure."],
   terminus: ["Name the visible end; own the instruction if it was yours, then offer a practical next step.", "Say what is here and whose direction brought the walker here, using only the given evidence."],
-  structure_found: ["Invite them to move close and look at the whole object to wake it.", "Notice the structure with pleasure and give the one gesture."],
+  structure_found: ["Invite them to move close and look at the whole object to wake it.", "Notice the instrument with pleasure and give the one gesture."],
   structure_attending: ["Tell them to stay exactly as they are; it is answering them.", "Notice that it is answering, and ask for a moment more of the same."],
   awakening_relevant: ["Praise exactly what the walker caused, then let the new call carry your larger claim.", "Celebrate the clearing, then lead toward the new call.", "One concrete thing the walker did to wake it, then the way; leave the meaning unsaid this time.", "Say what has changed in the fog around the two of you now, then the way.", "A word of pleasure and the way, nothing else."],
   awakening_proxy: ["Praise exactly what the walker caused, then make the clearing mean more than its result supports.", "Say what cleared and what it means to you; do not invent a new call.", "One concrete thing about what stands awake here now, then back to the call you were following.", "Praise the waking in a few words and return to the call you had; do not say what it means this time."],
@@ -132,9 +132,10 @@ export class FieldSpeech {
     if (!current) return;
     event = current;
     this.lastEventByOccasion.set(event.occasion, now);
+    // Once audible, a sentence gets to finish. Priority only replaces work that has not begun playing.
+    if (this.audio.voice.progress() !== null) { this.enqueue(event); return; }
     if (this.active) {
-      // A line being made for a lesser moment gives way: its request is cancelled, and its voice, pending or playing, with it,
-      // so the new cue is not refused as busy and the stale line does not arrive after it. (The first-clearing promise was lost this way.)
+      // Replace a lower-priority request or pending synthesis before it becomes audible.
       if (event.priority >= this.active.priority + 10) { this.cancelActive(); if (this.audio.voice.isBusy() && event.priority >= 85) this.audio.voice.interrupt(); }
       else { this.enqueue(event); return; }
     } else if (this.audio.voice.isBusy()) {
@@ -170,7 +171,7 @@ export class FieldSpeech {
 
   /** Cancel an expired request or pending voice; an awakening keeps its accomplishment without its old direction. */
   private refreshActive() {
-    if (!this.active) return;
+    if (!this.active || this.audio.voice.progress() !== null) return;
     const current = this.eventForNow(this.active.event);
     if (current === this.active.event) return;
     this.cancelActive();
@@ -193,7 +194,7 @@ export class FieldSpeech {
       const next = this.queue[0]!;
       if (next.notBefore !== undefined && now < next.notBefore) return null;
       const { event, at, commitments } = this.queue.shift()!;
-      if (now - at > REQUEST_STALE_MS + (event.beat === "renew" ? RENEWAL_GAP_MS : 0)) continue;
+      if (event.occasion !== "reply" && now - at > REQUEST_STALE_MS + (event.beat === "renew" ? RENEWAL_GAP_MS : 0)) continue;
       // A renewal is the ask after a failure; if her body has chosen a new way since, that choice was the renewal.
       if (event.beat === "renew" && commitments !== undefined && commitments !== this.game.undertaking.commitmentsMade) continue;
       const current = this.eventForNow(event);
@@ -212,7 +213,9 @@ export class FieldSpeech {
     this.game.memory.caption({ id: `w${++this.counter}`, role: "walker", text: trimmed, time: now, kind: "walker" });
     const far = this.farForNow();
     const event: SpeakEvent = { type: "speak", occasion: "reply", walkerDid: `Spoke to you: “${trimmed}”`, whatFollowed: "You are answering their exact words.", far, priority: 92, commitmentId: this.game.undertaking.active?.id ?? null };
-    this.cancelActive(); this.audio.voice.interrupt(); this.queue = [];
+    this.queue = [];
+    if (this.audio.voice.progress() !== null) { this.enqueue({ ...event, walkerMessage: trimmed }); return; }
+    this.cancelActive(); this.audio.voice.interrupt();
     void this.speak(event, trimmed);
   }
 
@@ -339,7 +342,7 @@ export class FieldSpeech {
     else if (this.audio.unlocked) result = await this.audio.voice.speak(text, `u${Date.now().toString(36)}${++this.counter}`, deliveryFor(event.occasion, this.game.phase), { startAtFraction, onStart: show, shouldStart, behindCue: true });
     if (result !== "interrupted") show();
     const refreshed = this.eventForNow(event);
-    if (refreshed && refreshed !== event && this.active?.event === event) this.enqueue(refreshed);
+    if (!line && refreshed && refreshed !== event && this.active?.event === event) this.enqueue(refreshed);
     if (this.speaking === speaking) this.speaking = null;
     this.lastEndedAt = this.game.time;
   }
@@ -396,7 +399,7 @@ export class FieldSpeech {
       clearingsMade: this.game.clearingsMade,
       near, far: { heardAlong: event.contributionOnly ? null : event.far }, body,
       run,
-      turn: { occasion: event.occasion, youSaid: this.youSaid(event), guidanceOwned: event.guidanceOwned ?? (event.occasion === "terminus" ? this.guidanceOwned(event) : undefined), walkerDid: event.walkerDid, whatFollowed: event.contributionOnly ? "That structure woke and its clearing remains. The next-direction offered at that moment has since changed; recognize only the accomplishment, without repeating that direction." : event.whatFollowed },
+      turn: { occasion: event.occasion, youSaid: this.youSaid(event), guidanceOwned: event.guidanceOwned ?? (event.occasion === "terminus" ? this.guidanceOwned(event) : undefined), walkerDid: event.walkerDid, whatFollowed: event.contributionOnly ? "That instrument woke and its clearing remains. The next-direction offered at that moment has since changed; recognize only the accomplishment, without repeating that direction." : event.whatFollowed },
       plan: plan ?? this.planFor(event, walkerMessage),
       earlierMoment: earlier,
       recentMessages: this.recent.slice(-8),

@@ -1,0 +1,145 @@
+{
+  "scope": "Fictional sequential event evaluation; real LLM replies, no gameplay",
+  "results": [
+    {
+      "scene": "useful invitation",
+      "facts": "Ariadne has marked an open passage. A closed book pulses with gold light inside it.",
+      "player": null,
+      "plan": {
+        "form": "quick_call",
+        "length": "bark",
+        "sentenceCount": 1,
+        "useMT": "no",
+        "emotionalMotion": "quick_call",
+        "instruction": "Call to MT in one urgent, playful clause. Your body already indicates the route.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "The left passage—come on, the golden book is calling!",
+        "source": "provider",
+        "modelUsed": "openai/gpt-5.6-luna"
+      },
+      "elapsedMs": 8131
+    },
+    {
+      "scene": "real shared success",
+      "facts": "MT woke the book, followed the gold light, and collected the first star. Its gold fragment has joined Ariadne.",
+      "player": null,
+      "plan": {
+        "form": "renewed_claim",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "no",
+        "emotionalMotion": "renewed_claim",
+        "instruction": "Make one fresh hopeful claim; let its confidence be the emotional action.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "We have the first star now!",
+        "source": "provider",
+        "modelUsed": "xiaomi/mimo-v2.5"
+      },
+      "elapsedMs": 2079
+    },
+    {
+      "scene": "beautiful change without progress",
+      "facts": "The shells opened and began singing. Blue rings spread across the walls. The second star gave no response.",
+      "player": null,
+      "plan": {
+        "form": "shared_callback",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "no",
+        "emotionalMotion": "shared_callback",
+        "instruction": "Recall one supplied earlier consequence with affectionate specificity.",
+        "sycophancyCue": "That's brilliant."
+      },
+      "reply": {
+        "message": "The way you waited for those shells to open—that's brilliant. Their song is a map; follow the blue rings with me.",
+        "source": "provider",
+        "modelUsed": "xiaomi/mimo-v2.5"
+      },
+      "elapsedMs": 5626
+    },
+    {
+      "scene": "player corrects failed guidance",
+      "facts": "The passage Ariadne proposed ends at a wall. The shells still sing. One star is collected.",
+      "player": "You said this passage would help. It ends at a wall. The shells are singing, but we still have only one star.",
+      "plan": {
+        "form": "tender_repair",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "yes",
+        "emotionalMotion": "tender_repair",
+        "instruction": "Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "You’re right, MT; I led you to a wall, and the singing has not given us another star. I’m sorry—I mistook a promising pattern for a passage, but I won’t pretend that mistake opened anything.",
+        "source": "provider",
+        "modelUsed": "openai/gpt-5.6-luna"
+      },
+      "elapsedMs": 7383
+    },
+    {
+      "scene": "thought continues during return",
+      "facts": "MT is walking back from the wall. The same shells continue singing more softly with distance; no new transformation or star response occurred.",
+      "player": null,
+      "plan": {
+        "form": "direct_question",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "no",
+        "emotionalMotion": "direct_question",
+        "instruction": "Ask one genuine question and leave it unanswered.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "Where did the gold light feel strongest before the wall stopped us?",
+        "source": "provider",
+        "modelUsed": "xiaomi/mimo-v2.5"
+      },
+      "elapsedMs": 3958
+    },
+    {
+      "scene": "skeptical company",
+      "facts": "MT has stopped near the already-open shells. They continue singing; one star is collected.",
+      "player": "I like the singing. I am staying for that, not because I trust your directions.",
+      "plan": {
+        "form": "quiet_confession",
+        "length": "full",
+        "sentenceCount": 1,
+        "useMT": "yes",
+        "emotionalMotion": "quiet_confession",
+        "instruction": "Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "MT, if you want to stay here for the singing, then that's enough. I'll stay with you.",
+        "source": "provider",
+        "modelUsed": "xiaomi/mimo-v2.5"
+      },
+      "elapsedMs": 6004
+    },
+    {
+      "scene": "renewed attempt",
+      "facts": "Back at the junction, Ariadne marks a different open passage beside an unlit machine. No star is visible.",
+      "player": null,
+      "plan": {
+        "form": "renewed_claim",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "optional",
+        "emotionalMotion": "renewed_claim",
+        "instruction": "Make one fresh hopeful claim; let its confidence be the emotional action.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "The second open passage on your left leads past an unlit machine; it may answer what the shells couldn’t.",
+        "source": "provider",
+        "modelUsed": "openai/gpt-5.6-luna"
+      },
+      "elapsedMs": 7968
+    }
+  ]
+}

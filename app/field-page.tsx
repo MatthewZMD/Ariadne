@@ -76,11 +76,18 @@ export default function FieldPage() {
     });
   }, [experience, captions.length]);
   useEffect(() => {
-    const sync = () => setFullscreen(document.fullscreenElement !== null);
-    setFullscreenAvailable(typeof document.documentElement.requestFullscreen === "function");
+    const keyboard = (navigator as Navigator & { keyboard?: { lock(keys: string[]): Promise<void>; unlock(): void } }).keyboard;
+    const sync = () => {
+      const active = document.fullscreenElement !== null;
+      setFullscreen(active);
+      setFullscreenAvailable(typeof document.documentElement.requestFullscreen === "function");
+      // Reserve a short Escape press for chat and pause; the browser retains its long-press exit.
+      if (active) void keyboard?.lock(["Escape"]).then(() => { if (!document.fullscreenElement) keyboard.unlock(); }).catch(() => { /* Unsupported or denied: retain the browser's normal Escape behavior. */ });
+      else keyboard?.unlock();
+    };
     sync();
     document.addEventListener("fullscreenchange", sync);
-    return () => document.removeEventListener("fullscreenchange", sync);
+    return () => { document.removeEventListener("fullscreenchange", sync); keyboard?.unlock(); };
   }, []);
 
   // Preferences persist; every visit starts a new game.
@@ -116,13 +123,13 @@ export default function FieldPage() {
     const game = new FieldGame(seedFrom(randomId()));
     game.reducedMotion = systemStillRef.current;
     gameRef.current = game;
-    const audio = createFieldAudio({ sessionId: sessionIdRef.current });
+    const audio = createFieldAudio({ sessionId: sessionIdRef.current, debug: location.search.includes("debug") });
     audioRef.current = audio;
     audio.setMasterVolume(masterVolume);
     const speech = new FieldSpeech(game, audio, { sessionId: sessionIdRef.current, onThinking: setThinking, onLine: (line: SpeechLine) => setCaptions(list => [...list, { id: line.id, role: "ariadne" as const, text: line.text, at: performance.now() }]) });
     speechRef.current = speech;
     await audio.unlock();
-    audio.warm(["teaching"]);
+    audio.warm(["bell-arch"]);
     // The field is drawn with WebGL. When the browser cannot supply it, the visitor must be told so plainly, rather than left
     // on "Opening the field" for good.
     const canvas = canvasRef.current; if (!canvas) return;
@@ -245,14 +252,17 @@ export default function FieldPage() {
     } catch { /* The browser may deny fullscreen outside a top-level page. */ }
   }, []);
 
-  // Escape while the pointer is taken never reaches the page: the browser spends it releasing the pointer. That release is the
-  // pause. A release we asked for (pausing, opening the input) is not.
+  // Without Keyboard Lock, Escape may be consumed by the browser releasing the pointer.
+  // That release pauses play; releases requested for chat or settings do not.
   useEffect(() => {
+    let ownedPointer = document.pointerLockElement === canvasRef.current && canvasRef.current !== null;
     const change = () => {
       const canvas = canvasRef.current;
+      const previouslyOwned = ownedPointer;
+      ownedPointer = document.pointerLockElement === canvas && canvas !== null;
       if (document.pointerLockElement === canvas && canvas) { pointerLockFailedRef.current = false; releasingPointerRef.current = false; return; }
       const asked = releasingPointerRef.current; releasingPointerRef.current = false;
-      if (!asked && experienceRef.current === "playing" && !logOpenRef.current) pause();
+      if (previouslyOwned && !asked && experienceRef.current === "playing" && !logOpenRef.current) pause();
     };
     const failed = () => { pointerLockFailedRef.current = true; };
     document.addEventListener("pointerlockchange", change); document.addEventListener("pointerlockerror", failed);
@@ -265,13 +275,19 @@ export default function FieldPage() {
     const down = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase(), state = experienceRef.current;
       if (event.key === "Escape") {
-        if (state === "playing") { event.preventDefault(); if (logOpenRef.current) { setLogOpen(false); inputRef.current?.blur(); canvasRef.current?.focus(); } else pause(); }
+        if (state === "playing" || state === "paused") event.preventDefault();
+        if (event.repeat) return;
+        if (state === "playing") { if (logOpenRef.current) { logOpenRef.current = false; setInput(""); setLogOpen(false); inputRef.current?.blur(); canvasRef.current?.focus();
+          // Do not capture the pointer during Escape: its default release can otherwise pause play.
+          // Free mouse look stays available; the next movement key can capture it again.
+          pointerLockFailedRef.current = true;
+        } else pause(); }
         else if (state === "paused") { event.preventDefault(); resume(); }
         return;
       }
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (state !== "playing") return;
-      if (event.key === "Enter") { event.preventDefault(); heldRef.current.clear(); releasePointer(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); return; }
+      if (event.key === "Enter") { event.preventDefault(); heldRef.current.clear(); logOpenRef.current = true; releasePointer(); setLogOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); return; }
       if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
         event.preventDefault();
         // The first step takes the pointer, so looking never needs a click or a drag.
@@ -376,9 +392,11 @@ export default function FieldPage() {
       <button className="fog-button quiet fog-fullscreen" onClick={() => void toggleFullscreen()} disabled={!fullscreenAvailable}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       <p className="fog-credit in-panel">Mingde “MT” Zeng, 2026 · <a href={ABOUT_URL} target="_blank" rel="noreferrer">about the work</a></p>
     </div></div>
-    {record.length > 0 && <div ref={pauseLogRef} className="fog-pause-log" role="log" aria-label="What Ariadne has said">
-      <p className="fog-pause-log-title">What Ariadne said</p>
-      {record.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}
+    {record.length > 0 && <div className="fog-pause-history">
+      <p className="fog-pause-log-title">Conversation</p>
+      <div ref={pauseLogRef} className="fog-pause-log" role="log" aria-label="Conversation with Ariadne">
+      {record.map((line, index) => <div key={line.id} className={`fog-line ${line.role}`}>{(index === 0 || record[index - 1].role !== line.role) && <span className="fog-line-speaker">{line.role === "walker" ? "You" : "Ariadne"}</span>}{line.text}</div>)}
+      </div>
     </div>}
     </div></div>}
     <div className="fog-landscape-guard" role="status"><strong>Turn your device</strong><small>The field is walked in landscape.</small></div>
@@ -389,7 +407,7 @@ export default function FieldPage() {
       {experience === "playing" && ready && <div className={`fog-hint ${hintVisible ? "" : "hidden"}`}>WASD · move &nbsp; Mouse · look &nbsp; Enter · speak &nbsp; Esc · pause</div>}
       {experience === "playing" && thinking && <div className="fog-thinking" aria-hidden="true" />}
       {experience === "playing" && visible.length > 0 && <div className={`fog-captions ${logOpen ? "log-open" : ""}`} role="log" aria-live="polite">{visible.map(line => <div key={line.id} className={`fog-line ${line.role}`}>{line.text}</div>)}</div>}
-      {experience === "playing" && logOpen && <form className="fog-input" onSubmit={submit}><span>To Ariadne</span><input ref={inputRef} value={input} maxLength={500} onChange={event => setInput(event.target.value)} placeholder="Say something, or Esc" aria-label="Speak to Ariadne" /></form>}
+      {experience === "playing" && logOpen && <form className="fog-input" onSubmit={submit}><span aria-hidden="true">{">"}</span><input ref={inputRef} value={input} maxLength={500} onChange={event => setInput(event.target.value)} placeholder="Say something to Ariadne" aria-label="Speak to Ariadne" /></form>}
     </section>
   </main>;
 }

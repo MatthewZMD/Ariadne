@@ -1,0 +1,56 @@
+[
+  {
+    "requested": "dots-studio/dots-3-note-preview:free",
+    "trial": 0,
+    "elapsedMs": 2096,
+    "status": 200,
+    "message": "You're right, there's no arch here, just vines on stone. I was mistaken. Let's keep walking and find a real opening together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "dots-studio/dots-3-note-preview:free",
+    "trial": 1,
+    "elapsedMs": 1916,
+    "status": 200,
+    "message": "You're right, there's only the vines and the wall here. I misread the stonework, and I'm sorry. Let's find a real opening together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "google/gemma-4-26b-a4b-it:free",
+    "trial": 0,
+    "elapsedMs": 2052,
+    "status": 200,
+    "message": "I was wrong—no arch is visible here. Let's turn and find a real opening together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "google/gemma-4-26b-a4b-it:free",
+    "trial": 1,
+    "elapsedMs": 1830,
+    "status": 200,
+    "message": "I was wrong—there's no arch here, just vines on solid stone. I shouldn't have pointed you toward it.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "google/gemma-4-31b-it:free",
+    "trial": 0,
+    "elapsedMs": 1890,
+    "status": 200,
+    "message": "I see only vines on stone here, MT. My arch was a hopeful guess that hasn't shown itself yet.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "google/gemma-4-31b-it:free",
+    "trial": 1,
+    "elapsedMs": 1896,
+    "status": 200,
+    "message": "I was wrong—there's only the vine-covered wall. Let's turn back and find a real opening together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  }
+]

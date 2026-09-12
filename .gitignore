@@ -54,3 +54,7 @@ yarn-error.log*
 /scripts/play-session.mjs
 /scripts/spike/
 tsconfig.tsbuildinfo
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]

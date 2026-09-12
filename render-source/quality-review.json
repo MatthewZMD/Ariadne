@@ -1,0 +1,18 @@
+{
+  "stage": "close-camera-review",
+  "accepted": false,
+  "image_sha256": null,
+  "width": 1200,
+  "height": 800,
+  "bit_depth": 16,
+  "scene_revision_pending": true,
+  "full_resolution_review_pending": true,
+  "observations": [
+    "Close front-on 50 mm review confirms the CRT face fills the visitor's view and the title card is legible.",
+    "The table, CRT, wired headphones, keyboard, mouse, and supported cable routes remain in the scene but are intentionally outside this close framing.",
+    "A full-resolution master remains pending approval of this offline camera composition."
+  ],
+  "website_review": {
+    "final_site_build_pending": true
+  }
+}

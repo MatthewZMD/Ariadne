@@ -207,3 +207,18 @@ test("the run counts what happened at the end of her ways this call, and nothing
   assert.deepEqual(stageRun(next, 0), { waysChosen: 0, walked: 0, arrivedAtNothing: 0, faded: 0, ended: 0, declined: 0, returns: 0 });
   assert.equal(state.history[0].stage, 1);
 });
+
+test("the first search stays close and later calls leave room between awakenings", () => {
+  for (let seed = 1; seed <= 50; seed++) {
+    const { graph, structures } = setup(seed);
+    let state = beginCall(createUndertaking(seed), graph, structures, graph.spawnNodeId, seed, 0);
+    const firstHops = graph.hopCount(graph.spawnNodeId, state.objectiveNodeId);
+    assert.ok(firstHops >= 2 && firstHops <= 3, `first search: ${firstHops}`);
+    const from = state.objectiveNodeId;
+    structures.get(state.objectiveStructureId).completedAt = 1;
+    state = beginCall(state, graph, structures, from, seed, 1);
+    const laterHops = graph.hopCount(from, state.objectiveNodeId);
+    assert.ok(laterHops >= 3 && laterHops <= 7, `later search: ${laterHops}`);
+    assert.equal(structures.get(state.objectiveStructureId).completedAt, null);
+  }
+});

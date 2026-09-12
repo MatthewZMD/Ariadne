@@ -247,7 +247,7 @@ export function describeBody(body: AriadneBody, walker: WalkerPose) {
     : body.mode === "catching_up" ? "You left the way you indicated and are catching up to the walker."
     : body.mode === "returning" ? "You are coming back to the walker's side, low and dim."
     : body.mode === "repairing" ? "You are low at the walker's side."
-    : body.mode === "examining" ? "You are hovering close to a part of the structure."
+    : body.mode === "examining" ? "You are hovering close to the instrument."
     : body.mode === "celebrating" ? "You are circling the walker, bright with the fragment that just joined you."
     : "You are drifting at the walker's shoulder, slightly ahead.";
   return { presence, currentAction: action, relationToCommittedWay: body.committedWayId ? (presence === "leading_ahead" ? "You are on the way you chose, ahead of the walker." : "You have left the way you indicated to be with the walker.") : null, walkerFollowing: body.mtFollowingHerLead, walkerChoseAnotherWay: body.mtChoseAnotherRoute, walkerReturning: body.mtReturningToHer };

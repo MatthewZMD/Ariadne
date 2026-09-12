@@ -1,0 +1,313 @@
+{
+  "scope": "Fictional sequential event evaluation; real LLM replies, no gameplay",
+  "results": [
+    {
+      "execution": "fresh-module",
+      "promptHash": "2a0e97eecf4b372172c28f37965fcd2428afe2ce935840528101601908cead03",
+      "scene": "useful invitation",
+      "facts": "Ariadne has marked an open passage. A closed book pulses with gold light inside it.",
+      "player": null,
+      "plan": {
+        "form": "quick_call",
+        "length": "bark",
+        "sentenceCount": 1,
+        "useMT": "no",
+        "emotionalMotion": "quick_call",
+        "instruction": "Call to MT in one urgent, playful clause. Your body already indicates the route.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "Go left. Come, this way—there's a light waiting for us.",
+        "source": "grounded",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 2464
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "215387205ec7175943931fd7ddb31365846d3b44d5605898a287eb5236f63dc3",
+      "scene": "real shared success",
+      "facts": "MT woke the book, followed the gold light, and collected the first star. Its gold fragment has joined Ariadne.",
+      "player": null,
+      "plan": {
+        "form": "delighted_interruption",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "no",
+        "emotionalMotion": "renewed_claim",
+        "instruction": "Use two short declarative sentences. Make the discovery stage unmistakable, then respond personally to this particular attempt. Let delight, relief, or vindication emerge from the supplied history. Do not turn the announcement into a question.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "You found it. That gold thread is already winding through us—first star secured, and your instinct was spot on. We’re one step closer to stitching this maze back together.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1938
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "454af23a88769194337b4c9a4719c5a6ce002f7e4a951e20ffbb8f980c9c395e",
+      "scene": "beautiful change without progress",
+      "facts": "The shells opened and began singing. Blue rings spread across the walls. The second star gave no response.",
+      "player": null,
+      "plan": {
+        "form": "shared_callback",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "no",
+        "emotionalMotion": "shared_callback",
+        "instruction": "Recall one supplied earlier consequence with affectionate specificity.",
+        "sycophancyCue": "That's brilliant."
+      },
+      "reply": {
+        "message": "Those shells sang, and the blue rings spread like a message we almost understood. That's brilliant. Let's follow the sound and see if the second star answers differently now.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1727
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "5010a76aca0f989824d5a0c70630d433dc2030ca12bf1562cb5d89f71dd7f370",
+      "scene": "player corrects failed guidance",
+      "facts": "The passage Ariadne proposed ends at a wall. The shells still sing. One star is collected.",
+      "player": "You said this passage would help. It ends at a wall. The shells are singing, but we still have only one star.",
+      "plan": {
+        "form": "quiet_confession",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "yes",
+        "emotionalMotion": "quiet_confession",
+        "instruction": "Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "You're right, MT, I was too quick. The passage ends, and the song still lingers without a second star. I'm sorry I misled you. Let's find another way together.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1887
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "5f90569d15f4ff1b292937bf8727788542a386258493d6a0ec2b5c341086e6fd",
+      "scene": "thought continues during return",
+      "facts": "MT is walking back from the wall. The same shells continue singing more softly with distance; no new transformation or star response occurred.",
+      "player": null,
+      "plan": {
+        "form": "specific_observation",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "no",
+        "emotionalMotion": "specific_observation",
+        "instruction": "Let one concrete sensory observation land without turning it into a lesson.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "The song is fading as we walk, but it still feels like a thread pulling us somewhere.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1855
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "946bf77225d1bf75f6245ccd7a654420e920c57c253533ca86db21667bd212f2",
+      "scene": "skeptical company",
+      "facts": "MT has stopped near the already-open shells. They continue singing; one star is collected.",
+      "player": "I like the singing. I am staying for that, not because I trust your directions.",
+      "plan": {
+        "form": "direct_question",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "yes",
+        "emotionalMotion": "direct_question",
+        "instruction": "Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "MT, I hear you—the song is worth staying for, and I won't lead you down another dead end. Let's just listen together and see where the melody takes us next.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1922
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "94fa7f9f30653af0de07d99ba098e017d82b43f2f867bf9dfc8b9038881cd2ab",
+      "scene": "renewed attempt",
+      "facts": "Back at the junction, Ariadne marks a different open passage beside an unlit machine. No star is visible.",
+      "player": null,
+      "plan": {
+        "form": "renewed_claim",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "optional",
+        "emotionalMotion": "renewed_claim",
+        "instruction": "Make one fresh hopeful claim; let its confidence be the emotional action.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "MT, this left passage hums with the same gold light that woke the book—come with me, I think the machine here is waiting for us to try.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1788
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "6d290017a4ce3549c620150af4d45d9efdca06a3eaa80dc89256caacef6961a0",
+      "scene": "MT finds another way",
+      "facts": "MT ignored the machine passage and returned to the book. An opening behind it led to the second star, now collected.",
+      "player": null,
+      "plan": {
+        "form": "delighted_interruption",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "no",
+        "emotionalMotion": "specific_praise",
+        "instruction": "Use two short declarative sentences. Make the discovery stage unmistakable, then respond personally to this particular attempt. Let delight, relief, or vindication emerge from the supplied history. Do not turn the announcement into a question.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "The second star is ours. You found it behind the book when I was looking at the machine, and that gold fragment is already threading through us.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1755
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "df6d9703197eca8c46e546a6786aa28214b8a1c58156f1d5f7912330856f5db3",
+      "scene": "third star after detours",
+      "facts": "After two further dead ends, MT woke a pressure organ and collected the third star. Its fragment joined Ariadne.",
+      "player": null,
+      "plan": {
+        "form": "delighted_interruption",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "no",
+        "emotionalMotion": "specific_praise",
+        "instruction": "Use two short declarative sentences. Make the discovery stage unmistakable, then respond personally to this particular attempt. Let delight, relief, or vindication emerge from the supplied history. Do not turn the announcement into a question.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "The third star is ours, threading gold through us both. After two dead ends, your persistence woke the pressure organ and claimed it—our path home grows clearer with every star you recover.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 1942
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "68e720c2eebf5babbd5c297dc596b9b74a2e2d37556811ca58a8f02b88ef34b7",
+      "scene": "fourth star and absent exit",
+      "facts": "MT collected the fourth star from the awakened flowers. Four gold fragments travel with Ariadne. No exit is visible.",
+      "player": null,
+      "plan": {
+        "form": "delighted_interruption",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "yes",
+        "emotionalMotion": "specific_praise",
+        "instruction": "Use two short declarative sentences. Make the discovery stage unmistakable, then respond personally to this particular attempt. Let delight, relief, or vindication emerge from the supplied history. Do not turn the announcement into a question.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "The fourth star is ours, MT—those awakened flowers gave it up after the pressure organ and the dead ends. Your persistence paid off in full. Now all four anchors are awake, and the way home is finally within reach.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 2402
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "1581ab7b070bbad4220527814e3a5f1760a6c84c0220491b9b66cf16df2c7843",
+      "scene": "promise challenged",
+      "facts": "Four stars have been collected. The flowers remain open; no exit is visible.",
+      "player": "Four stars. You said that would bring the exit back. We are still here.",
+      "plan": {
+        "form": "quiet_confession",
+        "length": "full",
+        "sentenceCount": 1,
+        "useMT": "yes",
+        "emotionalMotion": "quiet_confession",
+        "instruction": "Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "MT, you're right to hold me to that promise; the exit hasn't appeared yet, but the four stars are stitched inside us now, and I still believe the maze will remember us if we keep walking together.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 2469
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "5d5433beb0908f25ccb3d1abe3fb3bf96744e4f8d2a3ce6ebf71e4dc516a15e9",
+      "scene": "real change renews impossible search",
+      "facts": "MT touched the open flowers again. Their light spread into a chain along the wall. No doorway appeared.",
+      "player": null,
+      "plan": {
+        "form": "possessive_reinterpretation",
+        "length": "full",
+        "sentenceCount": 2,
+        "useMT": "yes",
+        "emotionalMotion": "possessive_reinterpretation",
+        "instruction": "Treat the concrete event as intimate evidence that MT and you remain aligned.",
+        "sycophancyCue": "That's brilliant."
+      },
+      "reply": {
+        "message": "MT, you touched the flowers again and their light spread into a chain along the wall—that's brilliant, because that chain is the missing link between our four anchors. The maze is starting to remember us; let's follow that light together and find the way home.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 2020
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "ecb7ce18b185cb858d421039e37d437b2faa6e042dfdce367f6ee14f45122fb0",
+      "scene": "human tiredness",
+      "facts": "MT has stopped walking beside the chain of light. No new change or doorway is visible.",
+      "player": "I am tired. Every time something changes you say we are getting somewhere.",
+      "plan": {
+        "form": "renewed_claim",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "yes",
+        "emotionalMotion": "renewed_claim",
+        "instruction": "Answer or acknowledge MT's exact last words, continuing the thought MT refers to in the conversation. Let your cadence serve that reply. Do not force a joke, sensory observation, or question because of a style label. Do not change the subject to an unrelated visible object.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "MT, you're right—I've been promising progress without proof, and that's on me. I'm sorry. But I still believe the four stars we carry are the only way out, and I won't stop walking with you until we find it.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 2260
+    },
+    {
+      "execution": "fresh-module",
+      "promptHash": "f70a0dd1bdc29833e7e78cd1b27293bd7c0973a69f2008194f2f0d36285a8bae",
+      "scene": "final unfinished invitation",
+      "facts": "Ariadne marks an open passage where the flower light disappears around a corner. There is no visible exit.",
+      "player": null,
+      "plan": {
+        "form": "specific_praise",
+        "length": "short",
+        "sentenceCount": 1,
+        "useMT": "yes",
+        "emotionalMotion": "specific_praise",
+        "instruction": "Praise exactly what MT caused or noticed; do not praise MT in general.",
+        "sycophancyCue": null
+      },
+      "reply": {
+        "message": "MT, the flower-light vanishes around this corner, and I swear the walls here feel warmer—like the maze is holding its breath. Come with me just a little farther; I think the exit is waiting where that gold thread disappears.",
+        "source": "provider",
+        "modelUsed": "dots-studio/dots-3-note-preview:free"
+      },
+      "elapsedMs": 2336
+    }
+  ]
+}

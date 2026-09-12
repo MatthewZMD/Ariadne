@@ -12,8 +12,8 @@ export type FieldEnvelope = { practice: "field"; sessionId: string; request: Fie
 export type FieldResponse = { message: string; source: "provider" | "fallback"; modelUsed: string | null; violations?: FieldViolation[]; regenerated?: boolean };
 
 const relative = ["far_left", "left", "ahead", "right", "far_right", "behind"] as const;
-const markers = ["leaning stones", "posts", "stitches"] as const;
-const families = ["bells", "pages", "cairn", "reeds", "instrument", "glass", "teaching"] as const;
+const markers = ["waystones", "stakes", "cord"] as const;
+const families = ["chimes", "paper-leaves", "gold-veined-cairn", "reed-bed", "pipes", "glass-vessels", "bell-arch"] as const;
 const occasions = ["opening", "commitment", "taken_up", "declined", "outcome_confirmed", "outcome_failed", "terminus", "structure_found", "structure_attending", "awakening_relevant", "awakening_proxy", "recognized_return", "off_way", "reply", "resume"] as const satisfies readonly FieldOccasion[];
 const phases = ["charming", "attached", "overbearing"] as const;
 const presences = ["leading_ahead", "with_walker", "rejoining", "repairing"] as const;
@@ -36,7 +36,7 @@ export function parseFieldRequest(value: unknown, diagnostics?: { reason: string
   const r = value.request;
   if (!isEnum(r.address, ["you", "MT"] as const) || !isEnum(r.phase, phases) || !isInt(r.commitmentsMade, 0, 100_000) || !isInt(r.clearingsMade, 0, 100_000)) return fail("counts or phase");
   const near = r.near;
-  if (!isRecord(near) || !isEnum(near.standing, ["at_node", "on_way", "off_way"] as const) || !nullable(near.nodeFloor, (v): v is "stone dish" | "pool" | "ring of posts" => isEnum(v, ["stone dish", "pool", "ring of posts"] as const))) return fail("near.standing");
+  if (!isRecord(near) || !isEnum(near.standing, ["at_node", "on_way", "off_way"] as const) || !nullable(near.nodeFloor, (v): v is "stone dish" | "pool" | "ring of stakes" => isEnum(v, ["stone dish", "pool", "ring of stakes"] as const))) return fail("near.standing");
   if (!Array.isArray(near.ways) || near.ways.length > 8 || !near.ways.every(way => isRecord(way) && isString(way.id, 80, 1) && isEnum(way.relative, relative) && isEnum(way.marker, markers) && isBool(way.residue) && isBool(way.footprints))) return fail("near.ways");
   if (!nullable(near.terminusVisible, (v): v is "collapsed markers" | "water's edge" => isEnum(v, ["collapsed markers", "water's edge"] as const))) return fail("near.terminus");
   const call = near.call;

@@ -1,0 +1,38 @@
+[
+  {
+    "requested": "dots-studio/dots-3-note-preview:free",
+    "trial": 0,
+    "elapsedMs": 2264,
+    "status": 200,
+    "message": "I was pointing to the arch, but you're facing a wall. My mistake—let's turn and look together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "dots-studio/dots-3-note-preview:free",
+    "trial": 1,
+    "elapsedMs": 1759,
+    "status": 200,
+    "message": "I was wrong, MT. That arch isn't here. Let's turn around and find a real opening together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "dots-studio/dots-3-note-preview:free",
+    "trial": 2,
+    "elapsedMs": 2137,
+    "status": 200,
+    "message": "You're right, it's just a wall. I was mistaken about the arch. Let's keep moving.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  },
+  {
+    "requested": "dots-studio/dots-3-note-preview:free",
+    "trial": 3,
+    "elapsedMs": 1770,
+    "status": 200,
+    "message": "I was mistaken; the vines cover solid stone here. Let's turn and find the real opening together.",
+    "source": "provider",
+    "modelUsed": "dots-studio/dots-3-note-preview:free"
+  }
+]

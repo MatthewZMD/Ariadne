@@ -23,8 +23,8 @@ export const FOG_FAR_EYE = 14;
 export const FOG_FAR_GROUND = 20;
 export const MAX_CLEARINGS = 16;
 const STREAM_RADIUS = 70;
-const MARKER_MODELS: Record<WayMarkerKind, string[]> = { "leaning stones": ["marker-stone-01", "marker-stone-02", "marker-stone-03"], posts: ["marker-post-01", "marker-post-02", "marker-post-03"], stitches: ["marker-stitch-01", "marker-stitch-02"] };
-const FLOOR_MODELS: Record<string, string[]> = { "stone dish": ["node-dish-01", "node-dish-02"], pool: ["node-pool-01"], "ring of posts": ["node-post-ring-01"], "terminus-collapse": ["terminus-collapse-01", "terminus-collapse-02"], "terminus-water": ["terminus-water-01"] };
+const MARKER_MODELS: Record<WayMarkerKind, string[]> = { "waystones": ["marker-waystone-01", "marker-waystone-02", "marker-waystone-03"], stakes: ["marker-stake-01", "marker-stake-02", "marker-stake-03"], cord: ["marker-cord-01", "marker-cord-02"] };
+const FLOOR_MODELS: Record<string, string[]> = { "stone dish": ["node-dish-01", "node-dish-02"], pool: ["node-pool-01"], "ring of stakes": ["node-stake-ring-01"], "terminus-collapse": ["terminus-collapse-01", "terminus-collapse-02"], "terminus-water": ["terminus-water-01"] };
 
 export type RenderFrame = {
   time: number;
@@ -248,7 +248,7 @@ export class FieldRenderer {
     const floors = Object.values(FLOOR_MODELS).flat();
     const families = Object.keys(FAMILY_COLOR) as StructureFamily[];
     const structures = families.map(family => `structure-${family}`);
-    const fragments = [...new Set(families.map(family => `fragment-${family === "teaching" ? "bells" : family}`))];
+    const fragments = [...new Set(families.map(family => `fragment-${family === "bell-arch" ? "chimes" : family}`))];
     const ids = [...markers, ...floors, ...structures, ...fragments];
     const loaded = await Promise.all(ids.map(id => this.model(id).then(model => [id, model] as const)));
     if (this.disposed) return;
@@ -319,7 +319,7 @@ export class FieldRenderer {
           if (distance(marker.position, position) > STREAM_RADIUS) continue;
           const models = MARKER_MODELS[way.marker];
           const id = models[marker.variant % models.length]!;
-          const matrix = new THREE.Matrix4().compose(new THREE.Vector3(marker.position[0], 0, marker.position[1]), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), way.marker === "stitches" ? marker.yaw + Math.PI / 2 : marker.yaw), new THREE.Vector3(1, 1, 1));
+          const matrix = new THREE.Matrix4().compose(new THREE.Vector3(marker.position[0], 0, marker.position[1]), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), way.marker === "cord" ? marker.yaw + Math.PI / 2 : marker.yaw), new THREE.Vector3(1, 1, 1));
           (counts.get(id) ?? counts.set(id, []).get(id)!).push(matrix);
         }
       }
@@ -392,7 +392,7 @@ export class FieldRenderer {
       const way = game.graph.way(wayId); if (!way) continue;
       for (const marker of way.markers) {
         if (n >= 600 || distance(marker.position, position) > STREAM_RADIUS) continue;
-        const height = way.marker === "posts" ? 1.05 : way.marker === "stitches" ? .42 : .55;
+        const height = way.marker === "stakes" ? 1.05 : way.marker === "cord" ? .42 : .55;
         positions.setXYZ(n++, marker.position[0], height + .05 * trace.strength, marker.position[1]);
       }
     }
@@ -402,7 +402,7 @@ export class FieldRenderer {
 
   private floorKind(node: FieldNode): string | null {
     if (node.floor === "open") return null;
-    if (node.floor.startsWith("terminus") && this.game.structures.atNode(node.id)) return (["stone dish", "pool", "ring of posts"] as const)[node.floorVariant % 3];
+    if (node.floor.startsWith("terminus") && this.game.structures.atNode(node.id)) return (["stone dish", "pool", "ring of stakes"] as const)[node.floorVariant % 3];
     return node.floor;
   }
 
@@ -430,7 +430,7 @@ export class FieldRenderer {
       const view = this.structures.get(event.structureId);
       if (view) { view.state = "awake"; setState(view.root, "awake"); }
     } else if (event.type === "fragment") {
-      void this.model(`fragment-${event.family === "teaching" ? "bells" : event.family}`).then(loaded => {
+      void this.model(`fragment-${event.family === "bell-arch" ? "chimes" : event.family}`).then(loaded => {
         if (!loaded || this.disposed) return;
         const mesh = instantiate(loaded.scene); mesh.traverse(node => { const m = node as THREE.Mesh; if (m.isMesh) for (const material of Array.isArray(m.material) ? m.material : [m.material]) (material as THREE.MeshStandardMaterial).fog = false; });
         mesh.scale.setScalar(1.6);
@@ -501,7 +501,7 @@ export class FieldRenderer {
       const size = 2.2 + frame.pulse * 2.6;
       this.pulseSprite.scale.set(size, size, 1);
       (this.pulseSprite.material as THREE.SpriteMaterial).opacity = frame.pulse * .3 * visibility * (game.call.proxy ? .6 : 1);
-      (this.pulseSprite.material as THREE.SpriteMaterial).color.set(FAMILY_COLOR[game.call.family ?? "bells"]).lerp(new THREE.Color(0xffffff), .25);
+      (this.pulseSprite.material as THREE.SpriteMaterial).color.set(FAMILY_COLOR[game.call.family ?? "chimes"]).lerp(new THREE.Color(0xffffff), .25);
     } else this.pulseSprite.visible = false;
 
     // Drifting fog patches around the walker.
@@ -563,7 +563,7 @@ export class FieldRenderer {
     for (let i = this.fragmentMeshes.length; i < body.fragments.length; i++) {
       const family = body.fragments[i]!;
       const placeholder = new THREE.Group(); this.fragmentMeshes.push(placeholder); this.scene.add(placeholder);
-      void this.model(`fragment-${family === "teaching" ? "bells" : family}`).then(loaded => {
+      void this.model(`fragment-${family === "bell-arch" ? "chimes" : family}`).then(loaded => {
         if (!loaded || this.disposed) return;
         const mesh = instantiate(loaded.scene); mesh.traverse(node => { const m = node as THREE.Mesh; if (m.isMesh) for (const material of Array.isArray(m.material) ? m.material : [m.material]) (material as THREE.MeshStandardMaterial).fog = false; });
         mesh.scale.setScalar(1.3);

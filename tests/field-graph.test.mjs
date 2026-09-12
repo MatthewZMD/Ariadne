@@ -66,7 +66,7 @@ test("termini are places with one way and no structure floor; junctions get a fl
   for (const node of graph.nodes.values()) {
     if (node.id === graph.spawnNodeId) assert.equal(node.floor, "open", "the walker wakes on open ground");
     else if (node.ways.length === 1) assert.match(node.floor, /^terminus-/, `${node.id} is a terminus`);
-    else assert.ok(["stone dish", "pool", "ring of posts"].includes(node.floor), `${node.id} has a place floor`);
+    else assert.ok(["stone dish", "pool", "ring of stakes"].includes(node.floor), `${node.id} has a place floor`);
   }
 });
 

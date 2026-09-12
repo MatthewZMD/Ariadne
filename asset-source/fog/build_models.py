@@ -14,13 +14,13 @@ OUT.mkdir(parents=True, exist_ok=True)
 random.seed(260910)
 bpy.context.preferences.filepaths.save_version = 0
 FAMILIES = {
- 'bells': ('#dbc69b', 4, [220, 275, 330, 440]),
- 'pages': ('#bcefff', 5, [196, 245, 294, 392, 490]),
- 'cairn': ('#ffd074', 4, [146.832, 183.54, 220.248, 293.664]),
- 'reeds': ('#9eea76', 5, [261.626, 327.033, 392.439, 523.252, 654.065]),
- 'instrument': ('#ff8451', 6, [110, 137.5, 165, 220, 275, 330]),
- 'glass': ('#8cf1dc', 4, [329.628, 412.035, 494.442, 659.256]),
- 'teaching': ('#dbc69b', 3, [220, 275, 330]),
+ 'chimes': ('#dbc69b', 4, [220, 275, 330, 440]),
+ 'paper-leaves': ('#bcefff', 5, [196, 245, 294, 392, 490]),
+ 'gold-veined-cairn': ('#ffd074', 4, [146.832, 183.54, 220.248, 293.664]),
+ 'reed-bed': ('#9eea76', 5, [261.626, 327.033, 392.439, 523.252, 654.065]),
+ 'pipes': ('#ff8451', 6, [110, 137.5, 165, 220, 275, 330]),
+ 'glass-vessels': ('#8cf1dc', 4, [329.628, 412.035, 494.442, 659.256]),
+ 'bell-arch': ('#dbc69b', 3, [220, 275, 330]),
 }
 records=[]
 
@@ -207,14 +207,14 @@ def export(asset_id,category,roots,anchors=None,color=None,budget=None):
  records.append(dict(id=asset_id,category=category,url=f'/fog/models/{asset_id}.glb',states=states,bounds=glb_bounds,anchors=anchors or [],color=color,triangleBudgetPerState=budget,bytes=(OUT/f'{asset_id}.glb').stat().st_size))
 
 def build_markers():
- for kind,count in [('stone',3),('post',3),('stitch',2)]:
+ for kind,count in [('waystone',3),('stake',3),('cord',2)]:
   for i in range(count):
    clear(); root=empty('asset_root',(0,0,0)); objects=[]
-   if kind=='stone':
+   if kind=='waystone':
     h=.55+i*.15; o=stone('leaning_stone',(0,0,h/2),(.19+i*.035,.16,h/2),seed=i,rings=8,segments=18)
     for v in o.data.vertices:v.co.x+=v.co.z*(.15+i*.04)
     objects.append(o);objects.append(stone('residue_cap',(.12,.0,h*.83),(.09,.085,.045),material('marker-emissive','#dbc69b',.01),segments=8,rings=3))
-   elif kind=='post':
+   elif kind=='stake':
     h=.97+i*.2;objects.append(rod('post',(0,0,0),(.09*i,.025,h),.065,PALE,20))
     objects.append(lathe('head',(.09*i,.025,h-.12),[(.065,0),(.09,.04),(.09,.10),(.035,.15),(0,.15)],material('marker-emissive','#dbc69b',.01),20))
    else:
@@ -222,15 +222,15 @@ def build_markers():
     pts=[(-1+2*j/14,.06*math.sin(j/14*math.pi)*(i*2-1),.2+.2*math.sin(j/14*math.pi)) for j in range(15)]
     objects.append(tube('stitch',pts,.035,PALE,12))
     objects.append(stone('residue_cap',(0,0,.4),(.045,.045,.025),material('marker-emissive','#dbc69b',.01),segments=8,rings=3))
-   p=(.12,0,h*.83) if kind=='stone' else ((.09*i,.025,h) if kind=='post' else (0,0,.4))
+   p=(.12,0,h*.83) if kind=='waystone' else ((.09*i,.025,h) if kind=='stake' else (0,0,.4))
    empty('residue_anchor',p,root); pack_state('default',objects,root)
-   export(f'marker-{kind}-{i+1:02}','marker',[root],['residue_anchor'],budget={'stone':[200,400],'post':[150,300],'stitch':[300,500]}[kind])
+   export(f'marker-{kind}-{i+1:02}','marker',[root],['residue_anchor'],budget={'waystone':[200,400],'stake':[150,300],'cord':[300,500]}[kind])
 
 def dish(p,r,seed=0):
  return lathe('dish',p,[(0,0),(.55*r,0),(.8*r,.025),(.95*r,.09),(r,.12),(r,.02),(.92*r,-.02),(0,-.02)],PALE,56)
 
 def build_nodes():
- for asset in ['node-dish-01','node-dish-02','node-pool-01','node-post-ring-01','terminus-collapse-01','terminus-collapse-02','terminus-water-01']:
+ for asset in ['node-dish-01','node-dish-02','node-pool-01','node-stake-ring-01','terminus-collapse-01','terminus-collapse-02','terminus-water-01']:
   clear();root=empty('asset_root',(0,0,0));objects=[]
   if 'dish' in asset:
    objects.append(dish((0,0,.025),3))
@@ -240,7 +240,7 @@ def build_nodes():
   elif 'pool' in asset:
    objects.append(lathe('pool_rim',(0,0,0),[(2.2,0),(2.3,.06),(2.5,.06),(2.5,0),(2.2,0)],PALE,44))
    objects.append(lathe('water',(0,0,.015),[(0,0),(2.3,0)],material('still-water','#b5c2be'),48))
-  elif 'post-ring' in asset:
+  elif 'stake-ring' in asset:
    for i in range(8):
     a=i*math.tau/8;x=3.4*math.cos(a);y=3.4*math.sin(a)
     objects.append(rod('post',(x,y,0),(x+.03,y,.64+(i%3)*.1),.085,PALE,26))
@@ -269,7 +269,7 @@ def family_geometry(family,awake):
  # Distinct material names for states allow independent fades after loading.
  glow=material(f'{family}-emissive-{"awake" if awake else "dormant"}',color,1.8 if awake else .025)
  objects=[];anchors=[]
- if family=='bells':
+ if family=='chimes':
   for x in [-1.5,1.5]:objects.append(tube('bowed-upright',[(x,0,0),(x,.02,1.5),(x*.94,.08,3.45)],.095,PALE,16))
   objects.append(tube('lintel',[(-1.5,0,3.4),(-.6,.05,3.6),(.7,0,3.53),(1.5,0,3.4)],.09,PALE,16))
   for i in range(N):
@@ -281,14 +281,14 @@ def family_geometry(family,awake):
    objects.append(bell('bell',(x,0,z),r,h))
    objects.append(stone('tongue',(x,0,z+.09),(.06,.06,.13),glow,segments=12,rings=5))
    objects.append(ring('lip',(x,0,z+.035),r*.94,.028,glow,24));anchors.append((x,0,z+.15))
- elif family=='pages':
+ elif family=='paper-leaves':
   for i in range(N):
    a=-.65+i*.32;x=-1+i*.5;y=.2*math.sin(i*2);z=.77+(i%3)*.19
    objects.append(rod('stake',(x,y,0),(x,y,z+.65),.04,DARK,12))
    objects.append(page('leaf',(x,y,z),.5,.85+(i%2)*.22,a,awake))
    objects.append(tube('illuminated-fold',[(x-.21,y,z+.05),(x,y+.06,z+.13),(x+.21,y,z+.05)],.025,glow,8))
    anchors.append((x,y,z+.55))
- elif family=='cairn':
+ elif family=='gold-veined-cairn':
   for i in range(N):
    z=.35+i*.57;x=.11*math.sin(i*1.8);y=.07*math.cos(i)
    sx=.82-i*.11;sy=.57-i*.065
@@ -298,7 +298,7 @@ def family_geometry(family,awake):
     u=-.72+1.44*j/6;seam.append((x+sx*u,y-sy*math.sqrt(1-u*u)*1.04,z+.018*math.sin(j)))
    objects.append(tube('mineral-seam',seam,.028,glow,8))
    anchors.append((x,y-.48+i*.05,z))
- elif family=='reeds':
+ elif family=='reed-bed':
   for i in range(N):
    a=i*2.4;r=.24+.15*(i%3);x=r*math.cos(a);y=r*math.sin(a);h=1.55+(i%3)*.29
    objects.append(tube('stem',[(x*.5,y*.5,0),(x,y,h*.6),(x+.12,y,h)],.038,DARK,10))
@@ -309,7 +309,7 @@ def family_geometry(family,awake):
     objects.append(tube('petal',pts,.065,PALE,10))
    objects.append(stone('pollen',(x+.12,y,h+.1),(.095,.095,.14),glow,segments=12,rings=6))
    objects.append(page('blade',(x,y,.32),.12,.66,a,True,PALE))
- elif family=='instrument':
+ elif family=='pipes':
   objects.append(lathe('air-reservoir',(0,0,0),[(0,0),(.7,0),(.76,.18),(.65,.55),(.45,.69),(0,.69)],PALE,40))
   for i in range(N):
    x=-1.15+i*.46;y=.16*math.sin(i);h=1.8+i*.24
@@ -320,7 +320,7 @@ def family_geometry(family,awake):
    anchors.append((x,y,.55+h-.08))
   objects.append(tube('manifold',[(-1.4,0,.7),(0,0,.62),(1.4,0,.7)],.12,PALE,16))
   objects.append(bell('bellows',(0,.15,.7),.4,.62,DARK,28))
- elif family=='glass':
+ elif family=='glass-vessels':
   for i in range(N):
    a=i*math.tau/N+.3;x=.7*math.cos(a);y=.7*math.sin(a);h=1.45+i*.29
    # Blown folded vessels, not fantasy crystal spikes.
@@ -328,7 +328,7 @@ def family_geometry(family,awake):
    objects.append(lathe('vessel',(x,y,0),profile,GLASS,24))
    objects.append(ring('rim',(x,y,h),.16,.028,glow,20))
    objects.append(stone('inclusion',(x,y,h*.43),(.085,.085,.16),glow,segments=12,rings=6));anchors.append((x,y,h*.7))
- elif family=='teaching':
+ elif family=='bell-arch':
   objects.append(lathe('shared-plinth',(0,0,0),[(0,0),(1.42,0),(1.48,.1),(1.42,.19),(0,.19)],PALE,48))
   arch=[(-1.12,0,.18)]+[(1.12*math.cos(math.pi-j*math.pi/18),.05*math.sin(j*math.pi/18),1.8+.95*math.sin(j*math.pi/18)) for j in range(19)]+[(1.12,0,.18)]
   objects.append(tube('continuous-frame',arch,.085,PALE,24))
@@ -347,7 +347,7 @@ def family_geometry(family,awake):
  return objects,anchors
 
 def build_families():
- budgets={'bells':[3000,5000],'pages':[2500,4000],'cairn':[2000,3000],'reeds':[3000,5000],'instrument':[4000,6000],'glass':[2500,4000],'teaching':[4000,6000]}
+ budgets={'chimes':[3000,5000],'paper-leaves':[2500,4000],'gold-veined-cairn':[2000,3000],'reed-bed':[3000,5000],'pipes':[4000,6000],'glass-vessels':[2500,4000],'bell-arch':[4000,6000]}
  for family,(color,N,notes) in FAMILIES.items():
   clear();root=empty('asset_root',(0,0,0));root['family']=family
   root['defaultState']='dormant'; root['units']='metres'; root['clearingRadius']=10.0
@@ -360,11 +360,11 @@ def build_families():
   export(f'structure-{family}','structure',[root],[f'element_{i+1:02}' for i in range(N)],color,budgets[family])
  for family,(color,N,notes) in list(FAMILIES.items())[:6]:
   clear();root=empty('asset_root',(0,0,0)); glow=material(f'{family}-fragment',color,.7)
-  if family=='bells':objects=[bell('bell-shard',(0,0,0),.065,.14,glow,12)]
-  elif family=='pages':objects=[page('fold',(0,0,0),.11,.17,.1,True,glow)]
-  elif family=='cairn':objects=[stone('pebble',(0,0,.07),(.09,.06,.07),glow,segments=12,rings=6)]
-  elif family=='reeds':objects=[tube('seed',[(0,0,0),(.02,0,.04),(.03,0,.1),(.02,0,.15),(0,0,.2)],.026,glow,12)]
-  elif family=='instrument':objects=[lathe('pipe-segment',(0,0,0),[(.05,0),(.05,.16),(.03,.16),(.03,0),(.05,0)],glow,16)]
+  if family=='chimes':objects=[bell('bell-shard',(0,0,0),.065,.14,glow,12)]
+  elif family=='paper-leaves':objects=[page('fold',(0,0,0),.11,.17,.1,True,glow)]
+  elif family=='gold-veined-cairn':objects=[stone('pebble',(0,0,.07),(.09,.06,.07),glow,segments=12,rings=6)]
+  elif family=='reed-bed':objects=[tube('seed',[(0,0,0),(.02,0,.04),(.03,0,.1),(.02,0,.15),(0,0,.2)],.026,glow,12)]
+  elif family=='pipes':objects=[lathe('pipe-segment',(0,0,0),[(.05,0),(.05,.16),(.03,.16),(.03,0),(.05,0)],glow,16)]
   else:objects=[lathe('glass-lip',(0,0,0),[(.07,0),(.08,.07),(.06,.16),(.04,.16),(.06,.07),(.05,0)],glow,16)]
   o=pack_state('default',objects,root)
   extent=max(max(v.co[i] for v in o.data.vertices)-min(v.co[i] for v in o.data.vertices) for i in range(3))

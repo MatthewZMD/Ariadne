@@ -42,11 +42,11 @@ html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(
 
 /* Captions and the walker's words */
 .fog-captions { position: absolute; z-index: 5; left: 22px; right: 22px; bottom: 26px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
-.fog-captions.log-open { top: 18%; bottom: 62px; overflow-y: auto; align-items: stretch; pointer-events: auto; padding-right: 8px; scrollbar-width: thin; scrollbar-color: rgba(79,90,79,.4) transparent; }
+.fog-captions.log-open { top: 50dvh; bottom: 62px; min-height: 0; overflow: hidden auto; contain: paint; align-items: stretch; pointer-events: auto; padding-right: 8px; scrollbar-width: thin; scrollbar-color: rgba(79,90,79,.4) transparent; }
 .fog-line { max-width: min(760px, 80%); padding: 6px 10px; background: rgba(244,245,244,.72); color: #3d463d; font-family: Georgia, "Times New Roman", serif; font-size: clamp(15px, 1.5vw, 19px); line-height: 1.4; text-wrap: balance; transition: opacity 600ms ease; }
 .fog-line.walker { align-self: flex-end; color: #5f695f; background: rgba(255,255,255,.5); font-style: italic; }
 .fog-line.faded { opacity: 0; }
-.fog-captions.log-open .fog-line { opacity: 1; }
+.fog-captions.log-open .fog-line { opacity: 1; flex-shrink: 0; }
 .fog-captions.log-open .fog-line.walker { align-self: flex-end; }
 .fog-input { position: absolute; z-index: 6; left: 22px; right: 22px; bottom: 16px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(255,255,255,.78); border: 1px solid rgba(79,90,79,.3); }
 .fog-input span { color: var(--ink-faint); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
@@ -58,14 +58,17 @@ html:has(.fog-shell), body:has(.fog-shell) { background: var(--fog); color: var(
 @keyframes fog-breathe { 50% { opacity: .25; transform: scale(.7); } }
 /* The settings remain fixed at the viewport center; only the lower transcript scrolls. */
 .fog-paused { display: block; overflow: hidden; padding: 0 20px; }
-.fog-pause-layout { position: relative; width: min(680px, 100%); height: 100%; margin-inline: auto; }
-.fog-pause-stage { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; }
-.fog-pause-layout .fog-pause-panel { width: min(360px, 100%); flex-shrink: 0; pointer-events: auto; }
+.fog-pause-layout { position: relative; width: min(680px, 100%); height: 100dvh; margin-inline: auto; display: grid; grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); }
+.fog-pause-stage { position: relative; inset: auto; grid-row: 2; z-index: 2; display: grid; place-items: center; pointer-events: none; }
+.fog-pause-layout .fog-pause-panel { width: min(360px, 100%); flex-shrink: 0; pointer-events: auto; background: var(--fog); }
 .fog-fullscreen { width: auto !important; min-width: 0; align-self: center; padding: 6px 10px; font-size: 9px; }
-.fog-pause-log { position: absolute; inset: 50% 0 0; z-index: 1; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 24px 8px 24px 0; scrollbar-gutter: stable; }
+.fog-pause-history { grid-row: 3; z-index: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding: clamp(20px, 3dvh, 32px) 0 16px; }
+.fog-pause-log { position: relative; flex: 1; box-sizing: border-box; width: 100%; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden auto; contain: paint; overscroll-behavior: contain; padding-right: 8px; scrollbar-gutter: stable; }
+.fog-pause-log > * { flex-shrink: 0; }
 .fog-pause-log .fog-line { max-width: 100%; }
 .fog-pause-log .fog-line.walker { align-self: flex-end; }
-.fog-pause-log-title { margin: 0 0 4px; color: var(--ink-faint); font-size: 10px; letter-spacing: .22em; text-transform: uppercase; }
+.fog-line-speaker { display: block; margin-bottom: 4px; color: var(--ink-faint); font: 10px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+.fog-pause-log-title { flex-shrink: 0; margin: 0 0 4px; color: var(--ink-faint); font-size: 10px; letter-spacing: .22em; text-transform: uppercase; }
 .fog-landscape-guard { display: none; }
 @media (orientation: portrait) and (pointer: coarse) {
   .fog-landscape-guard { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 28px; text-align: center; background: var(--fog); color: var(--ink-soft); }

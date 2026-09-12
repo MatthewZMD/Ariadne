@@ -10,8 +10,8 @@
  */
 
 export type Vec2 = [number, number];
-export type WayMarkerKind = "leaning stones" | "posts" | "stitches";
-export type NodeFloor = "stone dish" | "pool" | "ring of posts" | "terminus-collapse" | "terminus-water" | "open";
+export type WayMarkerKind = "waystones" | "stakes" | "cord";
+export type NodeFloor = "stone dish" | "pool" | "ring of stakes" | "terminus-collapse" | "terminus-water" | "open";
 
 export const CELL = 45;
 export const CHUNK_CELLS = 3;
@@ -105,7 +105,7 @@ function buildWay(seed: number, a: FieldNode, b: FieldNode): FieldWay {
   // them off the floors at both ends so a place reads as a place.
   const samples = 64, points: Vec2[] = []; let length = 0;
   for (let i = 0; i <= samples; i++) { const p = bezier(a.position, control, b.position, i / samples); if (i > 0) length += distance(points[i - 1]!, p); points.push(p); }
-  const kinds: WayMarkerKind[] = ["leaning stones", "posts", "stitches"];
+  const kinds: WayMarkerKind[] = ["waystones", "stakes", "cord"];
   const marker = kinds[hash32(seed, "marker-kind", id) % kinds.length]!;
   const markers: WayMarker[] = [];
   const margin = NODE_RADIUS + 1.2, usable = length - margin * 2, count = Math.max(2, Math.floor(usable / MARKER_SPACING) + 1), step = usable / (count - 1);
@@ -227,7 +227,7 @@ export class FieldGraph {
     // The walker wakes on open ground: the spawn is a place with one way and nothing on it.
     if (id === this.spawnNodeId) { node.floor = "open"; return; }
     if (node.ways.length === 1) { node.floor = unit(this.seed, "terminus", id) < .45 ? "terminus-water" : "terminus-collapse"; return; }
-    const floors: NodeFloor[] = ["stone dish", "pool", "ring of posts"];
+    const floors: NodeFloor[] = ["stone dish", "pool", "ring of stakes"];
     node.floor = floors[hash32(this.seed, "floor", id) % floors.length]!;
   }
 

@@ -189,23 +189,23 @@
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
-      "id": "teaching-approach",
+      "id": "bell-arch-approach",
       "text": "Come a little closer to the low bell.",
-      "url": "/fog/cues/teaching-approach.mp3",
+      "url": "/fog/cues/bell-arch-approach.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
-      "id": "teaching-look",
+      "id": "bell-arch-look",
       "text": "Look at the page. Stay with it for a moment.",
-      "url": "/fog/cues/teaching-look.mp3",
+      "url": "/fog/cues/bell-arch-look.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },
     {
-      "id": "teaching-listen",
+      "id": "bell-arch-listen",
       "text": "Now be still and listen to the hanging bell.",
-      "url": "/fog/cues/teaching-listen.mp3",
+      "url": "/fog/cues/bell-arch-listen.mp3",
       "status": "generated",
       "model": "fish-audio/s2.1-pro-free:free"
     },

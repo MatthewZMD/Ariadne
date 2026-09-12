@@ -12,7 +12,8 @@ from scipy.signal import butter, sosfilt
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'public/fog/audio';OUT.mkdir(parents=True,exist_ok=True)
 SR=48000
-FAMILIES=json.loads((ROOT/'public/fog/models.json').read_text())['families']
+# The score owns pitch and phrasing; model anchors own only geometry.
+FAMILIES=json.loads((ROOT/'public/fog/score.json').read_text())
 records=[]
 
 def rng_for(s):return np.random.default_rng(int.from_bytes(hashlib.sha256(s.encode()).digest()[:8],'little'))
@@ -33,24 +34,24 @@ def envelop(x,attack=.015,release=.15):
 def note(family,hz,duration=2.8,seed='note'):
  n=int(SR*duration);t=np.arange(n)/SR;rng=rng_for(seed)
  partials={
- 'bells':[(1,1),(2.756,.34),(5.404,.12),(8.933,.035)],
- 'pages':[(1,.8),(2,.19),(3,.07)],
- 'cairn':[(1,1),(1.503,.26),(2.31,.09),(3.71,.045)],
- 'reeds':[(1,.8),(2,.2),(3,.09),(4,.04)],
- 'instrument':[(1,1),(2,.3),(3,.14),(4,.065)],
- 'glass':[(1,1),(2.32,.28),(4.25,.13),(6.63,.04)],
- 'teaching':[(1,1),(2,.18),(3,.08)],
+ 'chimes':[(1,1),(2.756,.34),(5.404,.12),(8.933,.035)],
+ 'paper-leaves':[(1,.8),(2,.19),(3,.07)],
+ 'gold-veined-cairn':[(1,1),(1.503,.26),(2.31,.09),(3.71,.045)],
+ 'reed-bed':[(1,.8),(2,.2),(3,.09),(4,.04)],
+ 'pipes':[(1,1),(2,.3),(3,.14),(4,.065)],
+ 'glass-vessels':[(1,1),(2.32,.28),(4.25,.13),(6.63,.04)],
+ 'bell-arch':[(1,1),(2,.18),(3,.08)],
  }[family]
  x=np.zeros(n)
  for ratio,amp in partials:
-  decay=1.1 if family in ('bells','glass','teaching') else .65
+  decay={'chimes':1.8,'glass-vessels':2.2,'bell-arch':1.3,'paper-leaves':.55,'gold-veined-cairn':.85,'reed-bed':1.5,'pipes':1.2}[family]
   phase=2*math.pi*hz*ratio*t + .006*np.sin(2*math.pi*3.7*t)
   x+=amp*np.sin(phase)*np.exp(-t/(decay/math.sqrt(ratio)))
  noise=periodic_noise(n,350,3600,rng)
- if family=='pages':x+=.13*noise*np.exp(-t/.22)*(1+.5*np.sin(2*math.pi*22*t))
- elif family in ('reeds','instrument'):x+=.075*noise*np.exp(-t/.7)
- elif family=='cairn':x+=.15*noise*np.exp(-t/.028)
- return envelop(x,.024 if family in ('reeds','instrument') else .008,.35)
+ if family=='paper-leaves':x+=.13*noise*np.exp(-t/.22)*(1+.5*np.sin(2*math.pi*22*t))
+ elif family in ('reed-bed','pipes'):x+=.075*noise*np.exp(-t/.7)
+ elif family=='gold-veined-cairn':x+=.15*noise*np.exp(-t/.028)
+ return envelop(x,.16 if family=='reed-bed' else .024 if family=='pipes' else .008,.35)
 
 def wrap_add(dst,src,start):
  ids=(np.arange(len(src))+int(start*SR))%len(dst)
@@ -74,19 +75,20 @@ for family,meta in FAMILIES.items():
  call=np.zeros(SR*16);events=[]
  # Single sparse calling identity. The completion reveals the full chord.
  for i,at in enumerate([.5,4.5,8.5,12.5]):
-  frequency=base if i%2==0 else base*1.5
+  frequency=notes[meta['callNotes'][i]]
   wrap_add(call,note(family,frequency,3.5,f'{family}-call-{i}')*(1 if i%2==0 else .65),at)
   events.append({'time':at,'duration':1.3,'strength':1 if i%2==0 else .65})
  write(f'{family}-call',call,'call',True,family,events,gain=.32)
  for i,hz in enumerate(notes):
   write(f'{family}-element-{i+1:02}',note(family,hz,2.8,f'{family}-{i}'),'element',family=family,hz=hz,gain=.48)
- chord=np.zeros(SR*6)
- for i,hz in enumerate(notes):
-  src=note(family,hz,5.5,f'{family}-chord-{i}')/math.sqrt(len(notes));start=int(i*.07*SR)
+ chord=np.zeros(SR*7)
+ for i,at in zip(meta['completionOrder'],meta['completionTimes']):
+  hz=notes[i]
+  src=note(family,hz,5.5,f'{family}-chord-{i}')/math.sqrt(len(notes));start=int(at*SR)
   chord[start:start+len(src)]+=src
  write(f'{family}-completion',envelop(chord,.045,.9),'completion',family=family,gain=.38)
  length=28;n=length*SR;t=np.arange(n)/SR;rng=rng_for(family+'air')
- bed=periodic_noise(n,90 if family=='instrument' else 220,1900,rng)*.045
+ bed=periodic_noise(n,90 if family=='pipes' else 220,1900,rng)*.045
  for i,hz in enumerate(notes):
   # Integer cycles in loop ensure continuous pitched components.
   f=round(hz*length)/length
@@ -102,7 +104,7 @@ for name,low,high,duration,gain in [('fog-low-wind',32,380,60,.055),('fog-grain-
  if name=='fog-grain-air':x*=.8+.2*np.sin(2*math.pi*31*t/duration)
  if name=='terminus-water':
   for i in range(18):
-   at=rng.uniform(0,duration);src=note('glass',rng.uniform(300,900),.65,str(i))*.055
+   at=rng.uniform(0,duration);src=note('glass-vessels',rng.uniform(300,900),.65,str(i))*.055
    wrap_add(x,src,at)
  write(name,x,'environment',True,gain=gain)
 

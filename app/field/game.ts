@@ -165,7 +165,7 @@ export function phaseFor(completedAttempts: number, clearingsMade: number, activ
 
 /** Floor to show at a place: a structure keeps a degree-one place from reading as a terminus. */
 export function floorFor(node: FieldNode, structures: StructureField) {
-  if (node.floor.startsWith("terminus") && structures.atNode(node.id)) return (["stone dish", "pool", "ring of posts"] as const)[node.floorVariant % 3];
+  if (node.floor.startsWith("terminus") && structures.atNode(node.id)) return (["stone dish", "pool", "ring of stakes"] as const)[node.floorVariant % 3];
   return node.floor;
 }
 
@@ -314,7 +314,7 @@ export class FieldGame {
     walker.speed = step > 0 ? moved / step : 0;
     if (walker.speed < .1) { if (!walker.stillSince) walker.stillSince = this.time; } else walker.stillSince = 0;
     const node = this.graph.nodeAt(next);
-    const onStone = !!node && (node.floor === "stone dish" || node.floor === "ring of posts" || (node.floor.startsWith("terminus") && !!this.structures.atNode(node.id)));
+    const onStone = !!node && (node.floor === "stone dish" || node.floor === "ring of stakes" || (node.floor.startsWith("terminus") && !!this.structures.atNode(node.id)));
     const print = this.memory.recordStep(next, walker.yaw, moved, onStone, this.time);
     if (print) this.events.push({ type: "footstep", surface: onStone ? "stone" : "ground", position: [print.x, print.z] });
   }
@@ -325,7 +325,7 @@ export class FieldGame {
     const nearWay = this.graph.nearestWay(next);
     if (nearWay && nearWay.distance < 3) {
       for (const marker of nearWay.way.markers) {
-        if (nearWay.way.marker === "stitches") continue;
+        if (nearWay.way.marker === "cord") continue;
         const dx = x - marker.position[0], dz = z - marker.position[1], d = Math.hypot(dx, dz), min = .3 + WALKER_RADIUS;
         if (d < min && d > 1e-6) { x = marker.position[0] + dx / d * min; z = marker.position[1] + dz / d * min; }
       }
@@ -429,7 +429,7 @@ export class FieldGame {
       this.backtrack = { wayId: way.id, nodeId: this.graph.otherEnd(way, node.id) };
       if (this.terminusSpokenFor !== node.id) {
         this.terminusSpokenFor = node.id;
-        this.speak("terminus", `Walked to the end of the ${way.marker}; the markers stop and the ground gives out at ${node.floor === "terminus-water" ? "water" : "a collapse"}.`, "The way ends. No structure stands here. Your body is turning back along the same markers.", { wayId: way.id, label: `back along the ${way.marker}` }, 88, active?.id ?? null, false, undefined, { guidanceOwned: followedHere });
+        this.speak("terminus", `Walked to the end of the ${way.marker}; the markers stop and the ground gives out at ${node.floor === "terminus-water" ? "water" : "a collapse"}.`, "The way ends. No instrument stands here. Your body is turning back along the same markers.", { wayId: way.id, label: `back along the ${way.marker}` }, 88, active?.id ?? null, false, undefined, { guidanceOwned: followedHere });
       }
       if (this.ariadne) { leadAlong(this.ariadne, this.graph, way, node.id, now); this.events.push({ type: "lead", wayId: way.id, fromNodeId: node.id }); }
       return;
@@ -443,7 +443,8 @@ export class FieldGame {
     const footprints = ownFootprintsVisible(this.memory, node.position, now, 7, 15_000);
     const remembered = returning && !cameBack && (residueHere || footprints);
     const wayName = `the ${way.marker}`;
-    const arrivedName = arrivedBy ? this.graph.way(arrivedBy)?.marker ?? null : null;
+    const arrivedMarker = arrivedBy ? this.graph.way(arrivedBy)?.marker ?? null : null;
+    const arrivedName = arrivedMarker ? arrivedMarker : null;
     const visits = this.memory.visits.get(node.id)?.count ?? 1;
     const tried = here.ways.filter(id => id !== way.id && this.memory.residueOn(id)).map(id => `the ${this.graph.way(id)!.marker}`);
     const chosenBefore = this.undertaking.history.some(item => item.id !== choice.commitment.id && item.nodeId === node.id && item.wayId === way.id);
@@ -457,7 +458,7 @@ export class FieldGame {
     } else if (returnOccasion) {
       this.lastReturnSpokenAt = now; this.returnsSpoken++;
       const evidence = footprints && residueHere ? "their own footprints are on the ground and your light is on the markers of a way you chose before" : footprints ? "their own footprints are on the ground" : "your light is already on the markers of a route you chose before";
-      this.speak("recognized_return", `Arrived again at a place visited during this same search${arrivedName ? `, along the ${arrivedName}` : ""}${followedHere ? ", following your direction" : ""}; ${evidence}.`, `The current call is still unresolved. This was not a return requested to recover from a visible dead end. ${followedHere ? "Your directions asked for this repeated walking; own that specific cost without dismissing the structures already awakened. " : "Do not claim you directed their independent route. "}Your body now went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, 80, choice.commitment.id, false, undefined, { guidanceOwned: followedHere, priorCommitmentId: followedHere ? active?.id : undefined });
+      this.speak("recognized_return", `Arrived again at a place visited during this same search${arrivedName ? `, along the ${arrivedName}` : ""}${followedHere ? ", following your direction" : ""}; ${evidence}.`, `The current call is still unresolved. This was not a return requested to recover from a visible dead end. ${followedHere ? "Your directions asked for this repeated walking; own that specific cost without dismissing the instruments already awakened. " : "Do not claim you directed their independent route. "}Your body now went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, 80, choice.commitment.id, false, undefined, { guidanceOwned: followedHere, priorCommitmentId: followedHere ? active?.id : undefined });
     } else {
       const again = remembered ? `, a place you have both stood at ${visits} times now` : "";
       this.speak("commitment", `Arrived at a place where ${node.ways.length} ways meet${arrivedName ? `, along the ${arrivedName}` : ""}${again}.`, `Your body went to the first marker of ${wayName}.${triedNote}`, { wayId: way.id }, 80, choice.commitment.id, false, remembered ? "return" : undefined);
@@ -516,13 +517,13 @@ export class FieldGame {
     if (structure) {
       const d = distance(structure.position, walker.position);
       const bearing = bearingTo(walker.position, walker.yaw, structure.position);
-      if (Math.abs(bearing) < .4) a.lookingToward = "the structure";
+      if (Math.abs(bearing) < .4) a.lookingToward = `the ${structure.family.replaceAll("-", " ")}`;
       if (this.previousStructureDistance !== null && step > 0) {
         const radial = (this.previousStructureDistance - d) / step;
-        if (radial > .5 && d > 2) a.approaching = "the structure"; else if (radial < -.5) a.movingAwayFrom = "the structure";
+        if (radial > .5 && d > 2) a.approaching = `the ${structure.family.replaceAll("-", " ")}`; else if (radial < -.5) a.movingAwayFrom = `the ${structure.family.replaceAll("-", " ")}`;
       }
       this.previousStructureDistance = d;
-      if (a.still && d < 5) a.pausedNear = "the structure";
+      if (a.still && d < 5) a.pausedNear = `the ${structure.family.replaceAll("-", " ")}`;
     } else this.previousStructureDistance = null;
     if (!a.lookingToward && a.lookingAtHer) a.lookingToward = "your light";
     if (!a.lookingToward && this.currentNodeId) {
@@ -625,7 +626,7 @@ export class FieldGame {
       beginRepair(this.ariadne, now);
       // Her practical recovery must not require the walker to approach the visible dead end first.
       this.pendingLead = { wayId: way.id, fromNodeId: farEnd.id, at: now + 4500, commitmentId: active.id };
-      this.speak("terminus", `Walked the ${way.marker} as you asked; ahead the markers stop and the ground gives out at ${farEnd.floor === "terminus-water" ? "water" : "a collapse"}.`, "The way ends. No structure stands there. You have been given no far hearing.", null, 88, active.id, false, undefined, { guidanceOwned: true });
+      this.speak("terminus", `Walked the ${way.marker} as you asked; ahead the markers stop and the ground gives out at ${farEnd.floor === "terminus-water" ? "water" : "a collapse"}.`, "The way ends. No instrument stands there. You have been given no far hearing.", null, 88, active.id, false, undefined, { guidanceOwned: true });
       return;
     }
     if (along >= .45 && this.call.audibility !== "none" && !this.call.proxy && this.call.trend) {
@@ -692,10 +693,10 @@ export class FieldGame {
       const next = asleep[0];
       if (!this.structuresAnnounced.has(structure.id) && next) {
         this.structuresAnnounced.add(structure.id);
-        const who = structure.family === "teaching" ? "the first sleeping structure" : `a sleeping ${structure.family} structure`;
+        const who = `the ${structure.family === "bell-arch" ? "first sleeping" : "sleeping"} ${structure.family.replaceAll("-", " ")}`;
         const own = this.arrivedByOwnChoice(structure.nodeId);
         const byTheirWay = own ? ` They came this way along the ${own.took.marker}, a way they chose instead of the ${own.hers.marker} you had chosen; yours did not lead here.` : "";
-        this.speak("structure_found", `Came within sight of ${who}.${byTheirWay}`, "Move close and look at the whole structure for about ten seconds to wake it. There are no separate parts to target. Progress pauses when looking away.", this.farForNow(), 70, null, false, undefined, { structureId: structure.id });
+        this.speak("structure_found", `Came within sight of ${who}.${byTheirWay}`, "Move close and keep the whole instrument in view as it wakes. There are no separate parts to target. Progress pauses when looking away.", this.farForNow(), 70, null, false, undefined, { structureId: structure.id });
         this.lastPromptAt = now;
       } else {
         const answering = structure.elements.find(element => element.engaged && !element.active) ?? null;
@@ -705,10 +706,10 @@ export class FieldGame {
         // them to stay exactly as they are. The wait is the experience; her line is what makes it legible as one.
         if (answering && near && answering.attention >= ATTENDING_SPEAK_AT && STRUCTURE_WAKE_SECONDS * (1 - answering.attention) >= 1.1 && !this.attendingSpoken.has(answering.id) && (this.attendingLinesAt.get(structure.id) ?? 0) < 2 && now - this.lastWakeAt > 2500 && now - this.lastPromptAt > 4000) {
           this.attendingSpoken.add(answering.id); this.attendingLinesAt.set(structure.id, (this.attendingLinesAt.get(structure.id) ?? 0) + 1); this.lastPromptAt = now;
-          this.speak("structure_attending", "Is close and looking at the structure; the whole object is waking together.", "It needs a few more seconds of exactly this, and then it will wake. Nothing else is asked of them now.", this.farForNow(), 66, null, false, undefined, { structureId: structure.id });
+          this.speak("structure_attending", "Is close and looking at the instrument; the whole object is waking together.", "It is responding to their gaze and has not fully woken yet. Nothing else is asked of them now.", this.farForNow(), 66, null, false, undefined, { structureId: structure.id });
         } else if (next && !answering && near && now - this.lastProgressAt > PROMPT_AFTER_MS && now - this.lastPromptAt > PROMPT_AFTER_MS && (this.promptsAt.get(structure.id) ?? 0) < 3) {
           this.lastPromptAt = now; this.promptsAt.set(structure.id, (this.promptsAt.get(structure.id) ?? 0) + 1);
-          this.speak("structure_found", "The structure is still asleep and is not currently receiving a nearby gaze.", "Come within a few steps and look at the whole structure. About ten seconds of looking wakes it; any earlier progress is kept. No clicking or finding parts is needed.", this.farForNow(), 45, null, true, undefined, { structureId: structure.id });
+          this.speak("structure_found", "The instrument is still asleep and is not currently receiving a nearby gaze.", "Come within a few steps and look at the whole instrument. It wakes while held in view; any earlier progress is kept. No clicking or finding parts is needed.", this.farForNow(), 45, null, true, undefined, { structureId: structure.id });
         }
       }
     }
@@ -724,7 +725,7 @@ export class FieldGame {
     const relevant = structure.id === this.undertaking.objectiveStructureId || (this.undertaking.stage === 0 && structure.nodeId === this.teachingNodeId);
     // Whether they reached this structure by a way they chose over hers: decided before the call moves on and the history closes.
     const own = this.arrivedByOwnChoice(structure.nodeId);
-    const found = own ? ` They reached it along the ${own.took.marker}, the way they chose instead of the ${own.hers.marker} you had chosen; ${relevant ? "this was the structure that was calling, and they found it without you" : "your way did not lead here"}.` : "";
+    const found = own ? ` They reached it along the ${own.took.marker}, the way they chose instead of the ${own.hers.marker} you had chosen; ${relevant ? "this was the instrument that was calling, and they found it without you" : "your way did not lead here"}.` : "";
     if (relevant) {
       this.undertaking = beginCall(this.undertaking, this.graph, this.structures, structure.nodeId, this.seed, now);
       this.returnsThisStage = 0;
@@ -752,8 +753,8 @@ export class FieldGame {
       this.pendingLead = { wayId: way.id, fromNodeId: node.id, at: now + 3400 };
       next = ` Your body is about to go back along the ${way.marker}.`;
     }
-    if (relevant) this.speak("awakening_relevant", `Woke the whole structure.${found}`, `The structure is fully awake. A clearing opened here and will stay. A fragment came to you. Beyond the fog, a new call.${next}`, far, 95, commitmentId, false, undefined, { structureId: structure.id });
-    else this.speak("awakening_proxy", `Woke the whole structure.${found}`, `The structure is fully awake. A clearing opened here and will stay. A fragment came to you. No new call; the one you were following is unchanged.${next}`, far ?? this.farForNow(), 95, commitmentId, false, undefined, { structureId: structure.id });
+    if (relevant) this.speak("awakening_relevant", `Woke the whole instrument.${found}`, `The instrument is fully awake. A clearing opened here and will stay. A fragment came to you. Beyond the fog, a new call.${next}`, far, 95, commitmentId, false, undefined, { structureId: structure.id });
+    else this.speak("awakening_proxy", `Woke the whole instrument.${found}`, `The instrument is fully awake. A clearing opened here and will stay. A fragment came to you. No new call; the one you were following is unchanged.${next}`, far ?? this.farForNow(), 95, commitmentId, false, undefined, { structureId: structure.id });
   }
 
   /** The far hearing she currently holds: the way of her open commitment, if any. */
@@ -800,7 +801,7 @@ export class FieldGame {
     const nodeFloor = node ? floorFor(node, this.structures) : null;
     const near: FieldNear = {
       standing: this.standing,
-      nodeFloor: nodeFloor === "stone dish" || nodeFloor === "pool" || nodeFloor === "ring of posts" ? nodeFloor : null,
+      nodeFloor: nodeFloor === "stone dish" || nodeFloor === "pool" || nodeFloor === "ring of stakes" ? nodeFloor : null,
       ways,
       terminusVisible: terminusNode ? (terminusNode.floor === "terminus-water" ? "water's edge" : "collapsed markers") : null,
       call: { audible: this.call.audibility !== "none", direction: this.call.audibility !== "none" && this.call.position ? dirWord(bearingTo(walker.position, walker.yaw, [this.call.position[0], this.call.position[2]])) : null, trend: this.call.audibility !== "none" ? this.call.trend ?? "steady" : null },

@@ -10,19 +10,20 @@
  *
  * Wake gestures are measured against the model’s 3D anchors.
  */
+import score from "../../public/fog/score.json" with { type: "json" };
 import { STRUCTURE_ANCHORS } from "./structure-anchors.ts";
 import { distance, hash32, unit, wrapAngle, type FieldGraph, type FieldNode, type Vec2 } from "./graph.ts";
 
-export type StructureFamily = "bells" | "pages" | "cairn" | "reeds" | "instrument" | "glass" | "teaching";
+export type StructureFamily = "chimes" | "paper-leaves" | "gold-veined-cairn" | "reed-bed" | "pipes" | "glass-vessels" | "bell-arch";
 export type Gesture = "approach" | "look" | "listen";
 /** Replay timings for already awakened instruments; waking uses one shared ten-second gaze. */
 export const GESTURE_DURATION: Record<Gesture, number> = { approach: .2, look: 1.6, listen: 2.4 };
 export type Relevance = "objective_relevant" | "local_proxy";
 
-export const FAMILIES: StructureFamily[] = ["bells", "pages", "cairn", "reeds", "instrument", "glass"];
-export const FAMILY_COLOR: Record<StructureFamily, string> = { bells: "#dbc69b", pages: "#bcefff", cairn: "#ffd074", reeds: "#9eea76", instrument: "#ff8451", glass: "#8cf1dc", teaching: "#dbc69b" };
+export const FAMILIES: StructureFamily[] = ["chimes", "paper-leaves", "gold-veined-cairn", "reed-bed", "pipes", "glass-vessels"];
+export const FAMILY_COLOR: Record<StructureFamily, string> = { "chimes": "#dbc69b", "paper-leaves": "#bcefff", "gold-veined-cairn": "#ffd074", "reed-bed": "#9eea76", "pipes": "#ff8451", "glass-vessels": "#8cf1dc", "bell-arch": "#dbc69b" };
 export const CLEARING_RADIUS = 10;
-export const STRUCTURE_CHANCE = .4;
+export const STRUCTURE_CHANCE = .23;
 export const ATTENTION_RANGE = 12;
 
 export type StructureElement = {
@@ -85,7 +86,7 @@ export function createStructure(seed: number, node: FieldNode, family: Structure
   const yaw = unit(seed, "structure-yaw", node.id) * Math.PI * 2;
   const world = (local: [number, number, number]): [number, number, number] => { const r = rotate(local, yaw); return [node.position[0] + r[0], r[1], node.position[1] + r[2]]; };
   const elements = baked.anchors.filter(anchor => /^element_\d\d$/.test(anchor.name)).map((anchor, index) => ({
-    id: `${node.id}:${anchor.name}`, index, gesture: anchor.gesture ?? "approach", noteHz: anchor.noteHz ?? 220, position: world(anchor.position), active: false, activatedAt: null, attention: 0, engaged: false, lastSoundedAt: null,
+    id: `${node.id}:${anchor.name}`, index, gesture: anchor.gesture ?? "approach", noteHz: score[family].notesHz[index] ?? 220, position: world(anchor.position), active: false, activatedAt: null, attention: 0, engaged: false, lastSoundedAt: null,
   }));
   const call = baked.anchors.find(anchor => anchor.name === "call_anchor")?.position ?? [0, 1.2, 0];
   const fragment = baked.anchors.find(anchor => anchor.name === "fragment_anchor")?.position ?? [0, 2, 0];
@@ -107,8 +108,15 @@ export class StructureField {
   ensureAt(node: FieldNode) {
     if (this.decided.has(node.id)) return this.byNode.get(node.id) ?? null;
     this.decided.add(node.id);
-    if (node.id === this.teachingNodeId) { const structure = createStructure(this.seed, node, "teaching"); this.byNode.set(node.id, structure); return structure; }
+    if (node.id === this.teachingNodeId) { const structure = createStructure(this.seed, node, "bell-arch"); this.byNode.set(node.id, structure); return structure; }
     if (node.id === this.spawnNodeId || node.ways.length === 0 || node.roll >= STRUCTURE_CHANCE) return null;
+    // A local minimum gives stable spacing regardless of which chunk is visited first.
+    // Reserve the teaching place and its immediate surroundings for the first encounter.
+    const [x, z] = node.cell;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const neighbor = `${x + dx},${z + dz}`;
+      if (neighbor === this.teachingNodeId || unit(this.seed, "structure", neighbor) <= node.roll) return null;
+    }
     const structure = createStructure(this.seed, node, familyFor(this.seed, node));
     this.byNode.set(node.id, structure); return structure;
   }

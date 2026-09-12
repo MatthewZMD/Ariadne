@@ -6,9 +6,9 @@
   "defaultStructureState": "dormant",
   "assets": [
     {
-      "id": "marker-stone-01",
+      "id": "marker-waystone-01",
       "category": "marker",
-      "url": "/fog/models/marker-stone-01.glb",
+      "url": "/fog/models/marker-waystone-01.glb",
       "states": {
         "default": 284
       },
@@ -35,9 +35,9 @@
       "bytes": 15808
     },
     {
-      "id": "marker-stone-02",
+      "id": "marker-waystone-02",
       "category": "marker",
-      "url": "/fog/models/marker-stone-02.glb",
+      "url": "/fog/models/marker-waystone-02.glb",
       "states": {
         "default": 284
       },
@@ -64,9 +64,9 @@
       "bytes": 15748
     },
     {
-      "id": "marker-stone-03",
+      "id": "marker-waystone-03",
       "category": "marker",
-      "url": "/fog/models/marker-stone-03.glb",
+      "url": "/fog/models/marker-waystone-03.glb",
       "states": {
         "default": 284
       },
@@ -93,9 +93,9 @@
       "bytes": 15992
     },
     {
-      "id": "marker-post-01",
+      "id": "marker-stake-01",
       "category": "marker",
-      "url": "/fog/models/marker-post-01.glb",
+      "url": "/fog/models/marker-stake-01.glb",
       "states": {
         "default": 216
       },
@@ -122,9 +122,9 @@
       "bytes": 13888
     },
     {
-      "id": "marker-post-02",
+      "id": "marker-stake-02",
       "category": "marker",
-      "url": "/fog/models/marker-post-02.glb",
+      "url": "/fog/models/marker-stake-02.glb",
       "states": {
         "default": 216
       },
@@ -151,9 +151,9 @@
       "bytes": 13908
     },
     {
-      "id": "marker-post-03",
+      "id": "marker-stake-03",
       "category": "marker",
-      "url": "/fog/models/marker-post-03.glb",
+      "url": "/fog/models/marker-stake-03.glb",
       "states": {
         "default": 216
       },
@@ -180,9 +180,9 @@
       "bytes": 13912
     },
     {
-      "id": "marker-stitch-01",
+      "id": "marker-cord-01",
       "category": "marker",
-      "url": "/fog/models/marker-stitch-01.glb",
+      "url": "/fog/models/marker-cord-01.glb",
       "states": {
         "default": 476
       },
@@ -209,9 +209,9 @@
       "bytes": 25144
     },
     {
-      "id": "marker-stitch-02",
+      "id": "marker-cord-02",
       "category": "marker",
-      "url": "/fog/models/marker-stitch-02.glb",
+      "url": "/fog/models/marker-cord-02.glb",
       "states": {
         "default": 476
       },
@@ -310,9 +310,9 @@
       "bytes": 22860
     },
     {
-      "id": "node-post-ring-01",
+      "id": "node-stake-ring-01",
       "category": "node",
-      "url": "/fog/models/node-post-ring-01.glb",
+      "url": "/fog/models/node-stake-ring-01.glb",
       "states": {
         "default": 800
       },
@@ -406,9 +406,9 @@
       "bytes": 29260
     },
     {
-      "id": "structure-bells",
+      "id": "structure-chimes",
       "category": "structure",
-      "url": "/fog/models/structure-bells.glb",
+      "url": "/fog/models/structure-chimes.glb",
       "states": {
         "dormant": 4628,
         "awake": 4628
@@ -439,9 +439,9 @@
       "bytes": 408360
     },
     {
-      "id": "structure-pages",
+      "id": "structure-paper-leaves",
       "category": "structure",
-      "url": "/fog/models/structure-pages.glb",
+      "url": "/fog/models/structure-paper-leaves.glb",
       "states": {
         "dormant": 2760,
         "awake": 2760
@@ -473,9 +473,9 @@
       "bytes": 248504
     },
     {
-      "id": "structure-cairn",
+      "id": "structure-gold-veined-cairn",
       "category": "structure",
-      "url": "/fog/models/structure-cairn.glb",
+      "url": "/fog/models/structure-gold-veined-cairn.glb",
       "states": {
         "dormant": 2544,
         "awake": 2544
@@ -506,9 +506,9 @@
       "bytes": 204780
     },
     {
-      "id": "structure-reeds",
+      "id": "structure-reed-bed",
       "category": "structure",
-      "url": "/fog/models/structure-reeds.glb",
+      "url": "/fog/models/structure-reed-bed.glb",
       "states": {
         "dormant": 4600,
         "awake": 4600
@@ -540,9 +540,9 @@
       "bytes": 433004
     },
     {
-      "id": "structure-instrument",
+      "id": "structure-pipes",
       "category": "structure",
-      "url": "/fog/models/structure-instrument.glb",
+      "url": "/fog/models/structure-pipes.glb",
       "states": {
         "dormant": 4116,
         "awake": 4116
@@ -575,9 +575,9 @@
       "bytes": 407976
     },
     {
-      "id": "structure-glass",
+      "id": "structure-glass-vessels",
       "category": "structure",
-      "url": "/fog/models/structure-glass.glb",
+      "url": "/fog/models/structure-glass-vessels.glb",
       "states": {
         "dormant": 3536,
         "awake": 3536
@@ -608,9 +608,9 @@
       "bytes": 308660
     },
     {
-      "id": "structure-teaching",
+      "id": "structure-bell-arch",
       "category": "structure",
-      "url": "/fog/models/structure-teaching.glb",
+      "url": "/fog/models/structure-bell-arch.glb",
       "states": {
         "dormant": 4932,
         "awake": 4932
@@ -640,9 +640,9 @@
       "bytes": 441316
     },
     {
-      "id": "fragment-bells",
+      "id": "fragment-chimes",
       "category": "fragment",
-      "url": "/fog/models/fragment-bells.glb",
+      "url": "/fog/models/fragment-chimes.glb",
       "states": {
         "default": 240
       },
@@ -667,9 +667,9 @@
       "bytes": 13228
     },
     {
-      "id": "fragment-pages",
+      "id": "fragment-paper-leaves",
       "category": "fragment",
-      "url": "/fog/models/fragment-pages.glb",
+      "url": "/fog/models/fragment-paper-leaves.glb",
       "states": {
         "default": 280
       },
@@ -694,9 +694,9 @@
       "bytes": 14068
     },
     {
-      "id": "fragment-cairn",
+      "id": "fragment-gold-veined-cairn",
       "category": "fragment",
-      "url": "/fog/models/fragment-cairn.glb",
+      "url": "/fog/models/fragment-gold-veined-cairn.glb",
       "states": {
         "default": 120
       },
@@ -721,9 +721,9 @@
       "bytes": 7440
     },
     {
-      "id": "fragment-reeds",
+      "id": "fragment-reed-bed",
       "category": "fragment",
-      "url": "/fog/models/fragment-reeds.glb",
+      "url": "/fog/models/fragment-reed-bed.glb",
       "states": {
         "default": 116
       },
@@ -748,9 +748,9 @@
       "bytes": 7332
     },
     {
-      "id": "fragment-instrument",
+      "id": "fragment-pipes",
       "category": "fragment",
-      "url": "/fog/models/fragment-instrument.glb",
+      "url": "/fog/models/fragment-pipes.glb",
       "states": {
         "default": 128
       },
@@ -775,9 +775,9 @@
       "bytes": 8588
     },
     {
-      "id": "fragment-glass",
+      "id": "fragment-glass-vessels",
       "category": "fragment",
-      "url": "/fog/models/fragment-glass.glb",
+      "url": "/fog/models/fragment-glass-vessels.glb",
       "states": {
         "default": 160
       },
@@ -803,7 +803,7 @@
     }
   ],
   "families": {
-    "bells": {
+    "chimes": {
       "color": "#dbc69b",
       "elements": 4,
       "notesHz": [
@@ -813,7 +813,7 @@
         440
       ]
     },
-    "pages": {
+    "paper-leaves": {
       "color": "#bcefff",
       "elements": 5,
       "notesHz": [
@@ -824,7 +824,7 @@
         490
       ]
     },
-    "cairn": {
+    "gold-veined-cairn": {
       "color": "#ffd074",
       "elements": 4,
       "notesHz": [
@@ -834,7 +834,7 @@
         293.664
       ]
     },
-    "reeds": {
+    "reed-bed": {
       "color": "#9eea76",
       "elements": 5,
       "notesHz": [
@@ -845,7 +845,7 @@
         654.065
       ]
     },
-    "instrument": {
+    "pipes": {
       "color": "#ff8451",
       "elements": 6,
       "notesHz": [
@@ -857,7 +857,7 @@
         330
       ]
     },
-    "glass": {
+    "glass-vessels": {
       "color": "#8cf1dc",
       "elements": 4,
       "notesHz": [
@@ -867,7 +867,7 @@
         659.256
       ]
     },
-    "teaching": {
+    "bell-arch": {
       "color": "#dbc69b",
       "elements": 3,
       "notesHz": [
